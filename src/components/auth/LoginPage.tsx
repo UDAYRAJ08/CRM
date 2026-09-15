@@ -240,7 +240,7 @@ export const LoginPage: React.FC = () => {
               }`}
             >
               <Users className="w-3.5 h-3.5" />
-              <span className="truncate">Team Persona</span>
+              <span className="truncate">Choose Profile</span>
             </button>
 
             <button
@@ -253,7 +253,7 @@ export const LoginPage: React.FC = () => {
               }`}
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span className="truncate">Email & Passcode</span>
+              <span className="truncate">Email & Password</span>
             </button>
 
             <button
@@ -349,7 +349,7 @@ export const LoginPage: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 2: Email & Passcode Sign In */}
+          {/* TAB 2: Email & Password Sign In */}
           {authMode === 'email' && (
             <form onSubmit={handleEmailLogin} className="space-y-4">
               <div>
@@ -360,7 +360,7 @@ export const LoginPage: React.FC = () => {
                   <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
                   <input
                     type="email"
-                    placeholder="udaysharma@ingversionsdigital.com"
+                    placeholder="you@yourcompany.com"
                     value={emailInput}
                     onChange={(e) => setEmailInput(e.target.value)}
                     required
@@ -420,7 +420,7 @@ export const LoginPage: React.FC = () => {
                 </label>
                 <input
                   type="email"
-                  placeholder="e.g. uday@company.com"
+                  placeholder="e.g. you@yourcompany.com"
                   value={regEmail}
                   onChange={(e) => setRegEmail(e.target.value)}
                   className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
