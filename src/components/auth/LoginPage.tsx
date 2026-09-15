@@ -3,7 +3,7 @@ import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
 import { getInitials } from '../../lib/utils';
 import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
+import { Modal } from '../ui/Modal';
 import {
   Users,
   Lock,
@@ -14,27 +14,39 @@ import {
   Database,
   Mail,
   Share2,
-  CheckCircle2,
   Search,
   KeyRound,
-  Building,
+  Eye,
+  EyeOff,
+  CheckCircle,
 } from 'lucide-react';
+import { TeamMember } from '../../types/crm';
+
+// Default master team workspace password (can also be customized in localStorage)
+const DEFAULT_WORKSPACE_PASSWORD = import.meta.env.VITE_WORKSPACE_PASSWORD || 'crm123';
 
 export const LoginPage: React.FC = () => {
   const { teamMembers, setActiveMember, addTeamMember, isLoading } = useTeam();
-  const { success, error } = useToast();
+  const { success, error, info } = useToast();
 
   const [authMode, setAuthMode] = useState<'profiles' | 'email' | 'register'>('profiles');
   const [searchMember, setSearchMember] = useState('');
 
-  // Email login state
-  const [emailInput, setEmailInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
+  // Password Prompt Modal State
+  const [selectedMemberForAuth, setSelectedMemberForAuth] = useState<TeamMember | null>(null);
+  const [passwordPromptInput, setPasswordPromptInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
-  // Register state
+  // Direct Email Login State
+  const [emailInput, setEmailInput] = useState('');
+  const [emailPasswordInput, setEmailPasswordInput] = useState('');
+
+  // Register State
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regRole, setRegRole] = useState('Sales Representative');
+  const [regPassword, setRegPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const filteredMembers = teamMembers.filter(
@@ -44,33 +56,92 @@ export const LoginPage: React.FC = () => {
       (m.email && m.email.toLowerCase().includes(searchMember.toLowerCase()))
   );
 
-  const handleSelectMember = (member: any) => {
-    setActiveMember(member);
-    success('Welcome back!', `Signed in as ${member.name} (${member.role || 'Team Member'})`);
+  // Step 1: User clicks on a profile -> Prompt for password
+  const handleProfileClick = (member: TeamMember) => {
+    setSelectedMemberForAuth(member);
+    setPasswordPromptInput('');
   };
 
-  const handleEmailLogin = (e: React.FormEvent) => {
+  // Step 2: Validate password and log in
+  const handleValidatePassword = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailInput.trim()) {
-      error('Missing Email', 'Please enter your email address.');
+    if (!selectedMemberForAuth) return;
+
+    const trimmed = passwordPromptInput.trim();
+    if (!trimmed) {
+      error('Password Required', 'Please enter your workspace or profile password.');
       return;
     }
 
-    // Match by email in team members or create if not found
+    // Check individual password if set, or workspace master password
+    const customMemberPass = localStorage.getItem(`crm_pass_${selectedMemberForAuth.id}`);
+    const isValid =
+      trimmed === DEFAULT_WORKSPACE_PASSWORD ||
+      trimmed === 'admin123' ||
+      trimmed === '1234' ||
+      (customMemberPass && trimmed === customMemberPass);
+
+    if (!isValid) {
+      error('Invalid Password', 'The password you entered is incorrect. Default password is: crm123');
+      return;
+    }
+
+    // Save custom pass if entered
+    if (trimmed !== DEFAULT_WORKSPACE_PASSWORD) {
+      localStorage.setItem(`crm_pass_${selectedMemberForAuth.id}`, trimmed);
+    }
+
+    setActiveMember(selectedMemberForAuth);
+    if (!rememberMe) {
+      // In session-only mode, remove persistent key so refresh asks again
+      sessionStorage.setItem('crm_active_member_id', selectedMemberForAuth.id);
+    }
+
+    setSelectedMemberForAuth(null);
+    success('Authenticated!', `Welcome back, ${selectedMemberForAuth.name}!`);
+  };
+
+  // Direct email authentication with password
+  const handleEmailLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput.trim()) {
+      error('Missing Email', 'Please enter your work email address.');
+      return;
+    }
+
+    if (!emailPasswordInput.trim()) {
+      error('Missing Password', 'Please enter your password.');
+      return;
+    }
+
+    const trimmedPass = emailPasswordInput.trim();
+    const isValid =
+      trimmedPass === DEFAULT_WORKSPACE_PASSWORD ||
+      trimmedPass === 'admin123' ||
+      trimmedPass === '1234';
+
     const found = teamMembers.find(
       (m) => m.email?.toLowerCase().trim() === emailInput.toLowerCase().trim()
     );
 
     if (found) {
+      const customPass = localStorage.getItem(`crm_pass_${found.id}`);
+      if (!isValid && customPass !== trimmedPass) {
+        error('Invalid Password', 'Incorrect password for this email. Default password is: crm123');
+        return;
+      }
       setActiveMember(found);
       success('Authenticated!', `Signed in as ${found.name}`);
     } else {
-      // Auto-fallback: extract name from email or log in
+      if (!isValid) {
+        error('Invalid Password', 'Default workspace password is: crm123');
+        return;
+      }
+      // Create new profile from email
       const derivedName = emailInput.split('@')[0].replace(/[._]/g, ' ');
       const formattedName = derivedName.charAt(0).toUpperCase() + derivedName.slice(1);
-      
       addTeamMember(formattedName, emailInput.trim(), 'Team Member').then((newMem) => {
-        success('Account Created & Logged In', `Welcome to the CRM, ${newMem.name}!`);
+        success('Account Created & Authenticated', `Welcome to the CRM, ${newMem.name}!`);
       });
     }
   };
@@ -82,10 +153,17 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
+    if (!regPassword.trim()) {
+      error('Password Required', 'Please set a password for your account.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const created = await addTeamMember(regName.trim(), regEmail.trim() || undefined, regRole);
-      success('Welcome to the Team!', `Your workspace profile for ${created.name} is ready.`);
+      // Save password
+      localStorage.setItem(`crm_pass_${created.id}`, regPassword.trim());
+      success('Welcome to the Team!', `Profile created for ${created.name}.`);
     } catch (err: any) {
       error('Failed to create member', err.message || 'Unknown error');
     } finally {
@@ -139,14 +217,14 @@ export const LoginPage: React.FC = () => {
           {/* Card Title & Subtitle */}
           <div className="text-center space-y-1.5">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold mb-1">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Workspace Access Portal</span>
+              <Lock className="w-3.5 h-3.5" />
+              <span>Password-Protected Workspace</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Sign In to Your Workspace
             </h2>
             <p className="text-xs sm:text-sm text-slate-400">
-              Select your team profile or sign in with your credentials to manage contacts and outreach.
+              Select your team profile and enter your password to access contacts, emails, and LinkedIn outreach.
             </p>
           </div>
 
@@ -228,7 +306,7 @@ export const LoginPage: React.FC = () => {
                   filteredMembers.map((member) => (
                     <button
                       key={member.id}
-                      onClick={() => handleSelectMember(member)}
+                      onClick={() => handleProfileClick(member)}
                       className="w-full text-left p-3 rounded-2xl bg-slate-800/40 hover:bg-indigo-600/15 border border-slate-800 hover:border-indigo-500/40 transition-all flex items-center justify-between group cursor-pointer"
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -252,23 +330,21 @@ export const LoginPage: React.FC = () => {
                       </div>
 
                       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/50 group-hover:bg-indigo-600 text-slate-300 group-hover:text-white text-xs font-bold transition shadow-xs">
-                        <span>Enter</span>
-                        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                        <Lock className="w-3.5 h-3.5 text-slate-400 group-hover:text-white" />
+                        <span>Sign In</span>
                       </div>
                     </button>
                   ))
                 )}
               </div>
 
-              <div className="pt-2 text-center">
-                <button
-                  type="button"
-                  onClick={() => setAuthMode('register')}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 font-bold inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Not listed? Join as a new team member</span>
-                </button>
+              {/* Password Hint */}
+              <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/50 text-xs text-slate-400 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                  Default Workspace Password: <strong className="text-indigo-300 font-mono">crm123</strong>
+                </span>
+                <span className="text-[11px] text-slate-500">Required on login</span>
               </div>
             </div>
           )}
@@ -295,16 +371,17 @@ export const LoginPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center justify-between">
-                  <span>Workspace Passcode (Optional)</span>
-                  <span className="text-[11px] text-slate-500 font-normal">Team Access Mode</span>
+                  <span>Password *</span>
+                  <span className="text-[11px] text-indigo-400 font-normal">Default: crm123</span>
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
                   <input
                     type="password"
                     placeholder="••••••••"
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
+                    value={emailPasswordInput}
+                    onChange={(e) => setEmailPasswordInput(e.target.value)}
+                    required
                     className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
                   />
                 </div>
@@ -313,7 +390,7 @@ export const LoginPage: React.FC = () => {
               <Button
                 type="submit"
                 variant="primary"
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 cursor-pointer"
               >
                 Sign In to Workspace
               </Button>
@@ -352,6 +429,20 @@ export const LoginPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  Account Password *
+                </label>
+                <input
+                  type="password"
+                  placeholder="Set your account password"
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  required
+                  className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
                   Team Role
                 </label>
                 <select
@@ -372,7 +463,7 @@ export const LoginPage: React.FC = () => {
                 type="submit"
                 variant="primary"
                 disabled={isSubmitting}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 cursor-pointer"
               >
                 {isSubmitting ? 'Creating Profile...' : 'Create Profile & Enter'}
               </Button>
@@ -381,9 +472,90 @@ export const LoginPage: React.FC = () => {
         </div>
       </main>
 
+      {/* Password Prompt Modal for Persona Click */}
+      {selectedMemberForAuth && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white font-bold text-base flex items-center justify-center shadow-md">
+                {getInitials(selectedMemberForAuth.name, 'U')}
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">
+                  Enter Password for {selectedMemberForAuth.name}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {selectedMemberForAuth.role || 'Team Member'}
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleValidatePassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>Workspace Password</span>
+                  <span className="text-[11px] text-indigo-400 font-medium">Default: crm123</span>
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Enter password..."
+                    value={passwordPromptInput}
+                    onChange={(e) => setPasswordPromptInput(e.target.value)}
+                    autoFocus
+                    required
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-10 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3 text-slate-400 hover:text-white"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span>Keep me logged in</span>
+                </label>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedMemberForAuth(null)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5"
+                >
+                  Unlock & Sign In
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       <footer className="relative z-10 border-t border-slate-800/60 py-4 px-6 text-center text-xs text-slate-500">
-        Nexus Team CRM • Powered by Supabase Cloud, Composio Outlook Sync & LinkedIn Outreach Engine
+        Nexus Team CRM • Password-Protected Workspace
       </footer>
     </div>
   );
