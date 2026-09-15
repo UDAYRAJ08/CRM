@@ -17,15 +17,16 @@ import { EmailSettingsModal } from './components/email/EmailSettingsModal';
 import { RemindersDashboard } from './components/reminders/RemindersDashboard';
 import { ReminderFormModal } from './components/reminders/ReminderFormModal';
 import { CompaniesView } from './components/companies/CompaniesView';
+import { syncOutlookInbox } from './lib/inboundSyncService';
+import { LinkedInComposerModal } from './components/linkedin/LinkedInComposerModal';
+import { LoginPage } from './components/auth/LoginPage';
 import { Loader2 } from 'lucide-react';
 
-import { syncOutlookInbox } from './lib/inboundSyncService';
-
-import { LinkedInComposerModal } from './components/linkedin/LinkedInComposerModal';
 
 const CRMMain: React.FC = () => {
-  const { activeMember } = useTeam();
+  const { activeMember, isLoading: isTeamLoading } = useTeam();
   const { success, info } = useToast();
+
   const [activeView, setActiveView] = useState<'contacts' | 'reminders' | 'companies' | 'imports'>('contacts');
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -133,6 +134,21 @@ const CRMMain: React.FC = () => {
   };
 
   const activeRemindersCount = reminders.filter((r) => !r.done).length;
+
+  if (isTeamLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-3 text-slate-400">
+        <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold animate-pulse">
+          C
+        </div>
+        <p className="text-xs font-medium">Initializing workspace...</p>
+      </div>
+    );
+  }
+
+  if (!activeMember) {
+    return <LoginPage />;
+  }
 
   return (
     <div className="flex min-h-screen bg-slate-50/80">

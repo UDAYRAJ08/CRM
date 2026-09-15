@@ -36,7 +36,8 @@ export const Header: React.FC<HeaderProps> = ({
   setSearchQuery,
   activeView,
 }) => {
-  const { activeMember, setIsPickerOpen } = useTeam();
+  const { activeMember, setIsPickerOpen, logout } = useTeam();
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const initials = getInitials(activeMember?.name, 'U');
 
@@ -138,27 +139,73 @@ export const Header: React.FC<HeaderProps> = ({
 
         <div className="h-6 w-px bg-slate-200 mx-0.5 hidden sm:block" />
 
-        {/* Active user switcher button */}
-        <button
-          onClick={() => setIsPickerOpen(true)}
-          className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition bg-white text-left shadow-xs cursor-pointer"
-          title="Click to switch your name / user persona"
-        >
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white font-bold text-xs flex items-center justify-center shadow-xs">
-            {initials}
-          </div>
-          <div className="hidden lg:block text-left">
-            <div className="text-xs font-bold text-slate-900 leading-tight">
-              {activeMember?.name || 'Pick Name'}
+        {/* Active user dropdown menu */}
+        <div className="relative">
+          <button
+            onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+            className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition bg-white text-left shadow-xs cursor-pointer"
+            title="Account & Persona Menu"
+          >
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white font-bold text-xs flex items-center justify-center shadow-xs">
+              {initials}
             </div>
-            <div className="text-[10px] text-slate-500 font-medium">
-              {activeMember?.role || 'Team Member'}
+            <div className="hidden lg:block text-left">
+              <div className="text-xs font-bold text-slate-900 leading-tight">
+                {activeMember?.name || 'Pick Name'}
+              </div>
+              <div className="text-[10px] text-slate-500 font-medium">
+                {activeMember?.role || 'Team Member'}
+              </div>
             </div>
-          </div>
-          <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-        </button>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          </button>
+
+          {isUserMenuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setIsUserMenuOpen(false)}
+              />
+              <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="p-2.5 border-b border-slate-100">
+                  <p className="text-xs font-bold text-slate-900 truncate">
+                    {activeMember?.name}
+                  </p>
+                  <p className="text-[11px] text-slate-500 truncate">
+                    {activeMember?.email || activeMember?.role || 'Active Member'}
+                  </p>
+                </div>
+
+                <div className="py-1">
+                  <button
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      setIsPickerOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/60 rounded-xl transition text-left cursor-pointer"
+                  >
+                    <Users className="w-4 h-4 text-slate-400" />
+                    <span>Switch Persona</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      logout();
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition text-left cursor-pointer"
+                  >
+                    <User className="w-4 h-4 text-rose-500" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );
 };
+
 

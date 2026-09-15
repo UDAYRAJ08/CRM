@@ -6,6 +6,7 @@ interface TeamContextValue {
   teamMembers: TeamMember[];
   activeMember: TeamMember | null;
   setActiveMember: (member: TeamMember) => void;
+  logout: () => void;
   addTeamMember: (name: string, email?: string, role?: string) => Promise<TeamMember>;
   isPickerOpen: boolean;
   setIsPickerOpen: (open: boolean) => void;
@@ -33,19 +34,12 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const found = members.find((m) => m.id === savedId);
         if (found) {
           setActiveMemberState(found);
-          setIsPickerOpen(false);
           return;
         }
       }
 
-      // If no member selected or saved member deleted, open picker
-      if (members.length > 0) {
-        // Auto-select first member if not previously set, but still allow change
-        setActiveMemberState(members[0]);
-        localStorage.setItem(ACTIVE_MEMBER_KEY, members[0].id);
-      } else {
-        setIsPickerOpen(true);
-      }
+      // If no valid saved session, keep activeMember as null to prompt login
+      setActiveMemberState(null);
     } catch (e) {
       console.error('Failed to load team members', e);
     } finally {
@@ -61,6 +55,11 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveMemberState(member);
     localStorage.setItem(ACTIVE_MEMBER_KEY, member.id);
     setIsPickerOpen(false);
+  };
+
+  const logout = () => {
+    setActiveMemberState(null);
+    localStorage.removeItem(ACTIVE_MEMBER_KEY);
   };
 
   const addTeamMember = async (name: string, email?: string, role?: string): Promise<TeamMember> => {
@@ -80,6 +79,7 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
         teamMembers,
         activeMember,
         setActiveMember,
+        logout,
         addTeamMember,
         isPickerOpen,
         setIsPickerOpen,
