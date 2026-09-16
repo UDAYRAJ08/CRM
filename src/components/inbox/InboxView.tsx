@@ -80,10 +80,57 @@ export const InboxView: React.FC<InboxViewProps> = ({
       const items: InboundMessageItem[] = [];
       const seenKeys = new Set<string>();
 
-      // 1. Fetch from emails table where status is 'received' or is_inbound is true
+      // 1. Fetch all inbound interactions across all contacts in one unified query
+      const allInboundInteractions = await db.getAllInboundInteractions();
+      for (const inter of allInboundInteractions) {
+        const contact = inter.contact || (inter.contact_id ? contactMap.get(inter.contact_id) : null);
+        if (!contact) continue;
+
+        // Extract from content
+        const subjectMatch = inter.content.match(/Subject:\s*([^\n]+)/i);
+        const fromMatch = inter.content.match(/From:\s*([^\n<]+)(?:<([^>]+)>)?/i);
+        const subject = subjectMatch ? subjectMatch[1].trim() : 'Email Reply';
+        const senderName = fromMatch ? fromMatch[1].trim() : contact.name;
+        const senderEmail = fromMatch && fromMatch[2] ? fromMatch[2].trim() : contact.email || '';
+
+        // Extract body (after Subject line)
+        let body = inter.content;
+        const lines = inter.content.split('\n');
+        const subjectIdx = lines.findIndex((l) => l.toLowerCase().startsWith('subject:'));
+        if (subjectIdx !== -1 && subjectIdx + 1 < lines.length) {
+          body = lines
+            .slice(subjectIdx + 1)
+            .join('\n')
+            .replace(/\[MsgID:[^\]]+\]/g, '')
+            .trim();
+        }
+
+        const key = `${contact.id}_${subject}_${inter.created_at.slice(0, 16)}`;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          items.push({
+            id: inter.id,
+            contactId: contact.id,
+            contact: contact,
+            senderName: senderName || contact.name,
+            senderEmail: senderEmail || contact.email || '',
+            subject: subject,
+            body: body,
+            receivedAt: inter.created_at,
+            interactionId: inter.id,
+          });
+        }
+      }
+
+      // 2. Fetch from emails table where subject starts with Inbound or status is received
       const allEmails = await db.getEmails();
       for (const email of allEmails) {
-        if (email.status === 'received' || email.is_inbound) {
+        if (
+          email.status === 'received' ||
+          email.is_inbound ||
+          email.subject.toLowerCase().startsWith('re:') ||
+          email.subject.toLowerCase().includes('inbound')
+        ) {
           const contact = email.contact_id ? contactMap.get(email.contact_id) : null;
           const senderEmail = (email.sender_email || email.recipient_email || '').toLowerCase().trim();
           const matchedContact = contact || (senderEmail ? contactMap.get(senderEmail) : null);
@@ -102,53 +149,6 @@ export const InboxView: React.FC<InboxViewProps> = ({
                 body: email.body,
                 receivedAt: email.sent_at || email.created_at || new Date().toISOString(),
                 emailRecordId: email.id,
-              });
-            }
-          }
-        }
-      }
-
-      // 2. Fetch from interactions table for each contact to catch all logged inbound replies
-      for (const contact of contacts) {
-        const interactions = await db.getInteractions(contact.id);
-        for (const inter of interactions) {
-          if (
-            inter.content.includes('📥 Inbound Email Reply Received') ||
-            inter.content.includes('Inbound Email') ||
-            inter.content.toLowerCase().includes('reply received')
-          ) {
-            // Extract from content
-            const subjectMatch = inter.content.match(/Subject:\s*([^\n]+)/i);
-            const fromMatch = inter.content.match(/From:\s*([^\n<]+)(?:<([^>]+)>)?/i);
-            const subject = subjectMatch ? subjectMatch[1].trim() : 'Email Reply';
-            const senderName = fromMatch ? fromMatch[1].trim() : contact.name;
-            const senderEmail = fromMatch && fromMatch[2] ? fromMatch[2].trim() : contact.email || '';
-
-            // Extract body (after Subject line)
-            let body = inter.content;
-            const lines = inter.content.split('\n');
-            const subjectIdx = lines.findIndex((l) => l.toLowerCase().startsWith('subject:'));
-            if (subjectIdx !== -1 && subjectIdx + 1 < lines.length) {
-              body = lines
-                .slice(subjectIdx + 1)
-                .join('\n')
-                .replace(/\[MsgID:[^\]]+\]/g, '')
-                .trim();
-            }
-
-            const key = `${contact.id}_${subject}_${inter.created_at.slice(0, 16)}`;
-            if (!seenKeys.has(key)) {
-              seenKeys.add(key);
-              items.push({
-                id: inter.id,
-                contactId: contact.id,
-                contact: contact,
-                senderName: senderName || contact.name,
-                senderEmail: senderEmail || contact.email || '',
-                subject: subject,
-                body: body,
-                receivedAt: inter.created_at,
-                interactionId: inter.id,
               });
             }
           }

@@ -428,6 +428,9 @@ export const db = {
   },
 
   async saveEmail(email: Partial<EmailRecord>): Promise<EmailRecord> {
+    const validStatus =
+      email.status === 'received' ? 'sent' : email.status || 'sent';
+
     const payload = {
       id: email.id || crypto.randomUUID(),
       contact_id: email.contact_id || null,
@@ -437,7 +440,7 @@ export const db = {
       ai_generated: email.ai_generated || false,
       sent_by: email.sent_by || null,
       sent_at: email.sent_at || new Date().toISOString(),
-      status: email.status || 'sent',
+      status: validStatus,
       error_message: email.error_message || null,
       created_at: email.created_at || new Date().toISOString(),
     };
@@ -466,6 +469,43 @@ export const db = {
       is_inbound: email.is_inbound,
       sender_email: email.sender_email,
     } as EmailRecord;
+  },
+
+  async getAllInboundInteractions(): Promise<Array<Interaction & { contact?: Contact | null }>> {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('interactions')
+        .select('*, contact:contacts(*, company:companies(*)), creator:team_members(*)')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        return data.filter(
+          (i) =>
+            i.content.includes('📥 Inbound Email Reply Received') ||
+            i.content.includes('Inbound Email') ||
+            i.content.toLowerCase().includes('reply received')
+        );
+      }
+    }
+
+    const all = getLocal<Interaction[]>('interactions', INITIAL_INTERACTIONS);
+    const contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
+    const companies = getLocal<Company[]>('companies', INITIAL_COMPANIES);
+
+    return all
+      .filter(
+        (i) =>
+          i.content.includes('📥 Inbound Email Reply Received') ||
+          i.content.includes('Inbound Email') ||
+          i.content.toLowerCase().includes('reply received')
+      )
+      .map((i) => {
+        const c = contacts.find((ct) => ct.id === i.contact_id);
+        const comp = c?.company_id ? companies.find((cp) => cp.id === c.company_id) : null;
+        return {
+          ...i,
+          contact: c ? { ...c, company: comp } : null,
+        };
+      });
   },
 
   async getImportLogs(): Promise<ImportLog[]> {
