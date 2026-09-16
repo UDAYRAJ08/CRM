@@ -242,6 +242,19 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
         created_at: receivedAt,
       });
 
+      // 3. Complete any pending follow-up reminders for this contact since they replied!
+      try {
+        const allReminders = await db.getReminders();
+        const pendingForContact = allReminders.filter(
+          (r) => r.contact_id === matchedContact.id && !r.done
+        );
+        for (const rem of pendingForContact) {
+          await db.toggleReminder(rem.id, true);
+        }
+      } catch (remErr) {
+        console.warn('Could not auto-resolve reminder', remErr);
+      }
+
       newRepliesCount++;
       matchedContacts.push({
         contactName: matchedContact.name,

@@ -261,6 +261,7 @@ const CRMMain: React.FC = () => {
                   reminders={reminders}
                   onRefresh={refreshAllData}
                   onOpenContact={(c) => setSelectedContact(c)}
+                  onOpenEmailComposer={(c) => handleOpenEmailComposer(c)}
                   onAddNewReminder={() => handleOpenAddReminder()}
                 />
               )}

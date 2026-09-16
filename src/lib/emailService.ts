@@ -200,6 +200,22 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
       content: `Subject: ${params.subject}\n\n${params.body}`,
       created_by: params.senderId || null,
     });
+
+    // 1. Automatically update contact status from 'new' to 'contacted'
+    await db.saveContact({
+      id: params.contactId,
+      status: 'contacted',
+    });
+
+    // 2. Automatically schedule a 3-Day Follow-up Reminder if not already scheduled
+    const threeDaysLater = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    await db.saveReminder({
+      contact_id: params.contactId,
+      assigned_to: params.senderId || null,
+      due_date: threeDaysLater,
+      note: `Follow-up Step 1: Send reminder email if ${params.recipientName || 'lead'} does not reply within 3 days.`,
+      done: false,
+    });
   }
 
   // If live delivery was attempted and failed, throw error

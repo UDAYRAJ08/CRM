@@ -13,6 +13,7 @@ import {
   User,
   Plus,
   ArrowUpRight,
+  Mail,
 } from 'lucide-react';
 import { isToday, isPast, isFuture, format, isThisWeek } from 'date-fns';
 
@@ -20,6 +21,7 @@ interface RemindersDashboardProps {
   reminders: Reminder[];
   onRefresh: () => void;
   onOpenContact: (contact: Contact) => void;
+  onOpenEmailComposer?: (contact: Contact) => void;
   onAddNewReminder: () => void;
 }
 
@@ -27,6 +29,7 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
   reminders,
   onRefresh,
   onOpenContact,
+  onOpenEmailComposer,
   onAddNewReminder,
 }) => {
   const { activeMember } = useTeam();
@@ -292,6 +295,20 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {reminder.contact && onOpenEmailComposer && !reminder.done && (
+                  <div className="shrink-0 ml-3">
+                    <Button
+                      size="sm"
+                      variant={isPastDue ? 'danger' : 'outline'}
+                      onClick={() => onOpenEmailComposer(reminder.contact!)}
+                      leftIcon={<Mail className="w-3.5 h-3.5" />}
+                      className="text-xs py-1 px-2.5 font-bold"
+                    >
+                      {isPastDue ? 'Send Reminder' : 'Follow-up Email'}
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })

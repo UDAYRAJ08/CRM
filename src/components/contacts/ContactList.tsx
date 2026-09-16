@@ -23,8 +23,11 @@ import {
   ArrowUpDown,
   Tag,
   CheckSquare,
+  Clock,
+  AlertTriangle,
+  Reply,
+  CheckCircle2,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
 
 interface ContactListProps {
   contacts: Contact[];
@@ -36,6 +39,58 @@ interface ContactListProps {
   onOpenBulkEmail: (selectedContacts: Contact[]) => void;
   onAddNewContact: () => void;
   onRefresh: () => void;
+}
+
+function getFollowUpInfo(contact: Contact) {
+  if (contact.status === 'new') {
+    return {
+      label: 'Not Started',
+      badgeClass: 'bg-blue-50 text-blue-700 border-blue-200/80',
+      actionText: 'Send 1st Email',
+      isOverdue: false,
+      stage: 'new',
+    };
+  }
+  if (contact.status === 'qualified') {
+    return {
+      label: 'Replied & Qualified',
+      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold',
+      actionText: 'View Details',
+      isOverdue: false,
+      stage: 'qualified',
+    };
+  }
+  if (contact.status === 'contacted') {
+    const contactDate = new Date(contact.updated_at || contact.created_at).getTime();
+    const diffHours = (Date.now() - contactDate) / (1000 * 60 * 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffDays >= 3) {
+      return {
+        label: `🚨 3-Day Follow-up Due (${diffDays}d ago)`,
+        badgeClass: 'bg-rose-100 text-rose-800 border-rose-300 font-extrabold shadow-xs',
+        actionText: 'Send Follow-up Message',
+        isOverdue: true,
+        stage: 'overdue',
+      };
+    } else {
+      const remainingDays = Math.max(1, 3 - diffDays);
+      return {
+        label: `⏳ Waiting (Follow-up in ${remainingDays}d)`,
+        badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-semibold',
+        actionText: 'Follow-up Email',
+        isOverdue: false,
+        stage: 'contacted',
+      };
+    }
+  }
+  return {
+    label: contact.status,
+    badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
+    actionText: 'Contact',
+    isOverdue: false,
+    stage: contact.status,
+  };
 }
 
 export const ContactList: React.FC<ContactListProps> = ({
@@ -151,19 +206,18 @@ export const ContactList: React.FC<ContactListProps> = ({
 
   const statusTabs: Array<{ id: string; label: string }> = [
     { id: 'all', label: 'All Contacts' },
-    { id: 'new', label: 'New' },
-    { id: 'contacted', label: 'Contacted' },
-    { id: 'qualified', label: 'Qualified' },
+    { id: 'new', label: '🆕 Not Started' },
+    { id: 'contacted', label: '⏰ Follow-ups & Reminders' },
+    { id: 'qualified', label: '📥 Replied & Qualified' },
     { id: 'proposal', label: 'Proposal' },
     { id: 'won', label: 'Won' },
-    { id: 'lost', label: 'Lost' },
   ];
 
   return (
     <div className="space-y-4">
       {/* Top Filter and Controls Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-        {/* Status Pills */}
+        {/* Pipeline Workflow Tabs */}
         <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto">
           {statusTabs.map((tab) => {
             const isActive = statusFilter === tab.id;
@@ -176,9 +230,9 @@ export const ContactList: React.FC<ContactListProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setStatusFilter(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
                   isActive
-                    ? 'bg-indigo-600 text-white shadow-xs'
+                    ? 'bg-indigo-600 text-white shadow-xs font-bold'
                     : 'bg-slate-100/80 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -220,13 +274,34 @@ export const ContactList: React.FC<ContactListProps> = ({
             className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
           >
             <option value="all">All Owners</option>
+            <option value="unassigned">Unassigned</option>
             {teamMembers.map((m) => (
               <option key={m.id} value={m.id}>
-                Owner: {m.name}
+                {m.name}
               </option>
             ))}
-            <option value="unassigned">Unassigned</option>
           </select>
+
+          {/* Sort By */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+          >
+            <option value="created_at">Date Added</option>
+            <option value="name">Name</option>
+            <option value="company">Company</option>
+          </select>
+
+          <button
+            onClick={() => setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'))}
+            className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-600 transition cursor-pointer"
+            title="Toggle sort order"
+          >
+            <ArrowUpDown className="w-4 h-4" />
+          </button>
+
+          <div className="h-4 w-px bg-slate-200 mx-1" />
 
           {/* View mode buttons */}
           <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
@@ -320,7 +395,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                   </th>
                   <th className="p-3.5">Contact</th>
                   <th className="p-3.5">Company</th>
-                  <th className="p-3.5">Status</th>
+                  <th className="p-3.5">Lifecycle / Follow-up Timer</th>
                   <th className="p-3.5">Owner</th>
                   <th className="p-3.5">Tags</th>
                   <th className="p-3.5 text-right">Actions</th>
@@ -329,12 +404,7 @@ export const ContactList: React.FC<ContactListProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {filteredContacts.map((contact) => {
                   const isSelected = selectedIds.has(contact.id);
-                  const initials = contact.name
-                    .split(' ')
-                    .map((n) => n[0])
-                    .slice(0, 2)
-                    .join('')
-                    .toUpperCase();
+                  const followUp = getFollowUpInfo(contact);
 
                   return (
                     <tr
@@ -395,7 +465,11 @@ export const ContactList: React.FC<ContactListProps> = ({
                       </td>
 
                       <td className="p-3.5">
-                        <StatusBadge status={contact.status} />
+                        <span
+                          className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border ${followUp.badgeClass}`}
+                        >
+                          {followUp.label}
+                        </span>
                       </td>
 
                       <td className="p-3.5 text-slate-600">
@@ -434,16 +508,29 @@ export const ContactList: React.FC<ContactListProps> = ({
                         className="p-3.5 text-right"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="flex items-center justify-end gap-1">
-                          {contact.phone && (
-                            <a
-                              href={`tel:${contact.phone}`}
-                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
-                              title={`Call ${contact.phone}`}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {followUp.isOverdue ? (
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onClick={() => onOpenEmailComposer(contact)}
+                              leftIcon={<Mail className="w-3 h-3" />}
+                              className="text-[11px] py-1 px-2.5 font-bold shadow-xs"
                             >
-                              <Phone className="w-3.5 h-3.5" />
-                            </a>
+                              Send Reminder
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => onOpenEmailComposer(contact)}
+                              leftIcon={<Mail className="w-3.5 h-3.5 text-indigo-600" />}
+                              className="text-[11px] py-1 px-2 font-medium"
+                            >
+                              {followUp.actionText}
+                            </Button>
                           )}
+
                           {onOpenLinkedIn && (
                             <button
                               onClick={() => onOpenLinkedIn(contact)}
@@ -453,13 +540,6 @@ export const ContactList: React.FC<ContactListProps> = ({
                               <span className="text-[11px] font-black">in</span>
                             </button>
                           )}
-                          <button
-                            onClick={() => onOpenEmailComposer(contact)}
-                            className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                            title="Compose Email"
-                          >
-                            <Mail className="w-3.5 h-3.5" />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -475,6 +555,7 @@ export const ContactList: React.FC<ContactListProps> = ({
           {filteredContacts.map((contact) => {
             const isSelected = selectedIds.has(contact.id);
             const initials = getInitials(contact.name, 'C');
+            const followUp = getFollowUpInfo(contact);
 
             return (
               <div
@@ -497,59 +578,56 @@ export const ContactList: React.FC<ContactListProps> = ({
                     </div>
                   </div>
 
-                  <StatusBadge status={contact.status} />
+                  <span
+                    className={`inline-flex items-center text-[10px] px-2 py-0.5 rounded-full border ${followUp.badgeClass}`}
+                  >
+                    {followUp.label}
+                  </span>
                 </div>
 
                 <div className="space-y-1 text-xs text-slate-600">
                   {contact.company && (
-                    <div className="flex items-center gap-1.5 font-medium text-slate-800">
+                    <div className="flex items-center gap-1.5">
                       <Building className="w-3.5 h-3.5 text-slate-400" />
                       <span>{contact.company.name}</span>
                     </div>
                   )}
                   {contact.email && (
-                    <div className="flex items-center gap-1.5 text-slate-500 truncate">
-                      <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <div className="flex items-center gap-1.5 truncate">
+                      <Mail className="w-3.5 h-3.5 text-slate-400" />
                       <span className="truncate">{contact.email}</span>
+                    </div>
+                  )}
+                  {contact.phone && (
+                    <div className="flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{contact.phone}</span>
                     </div>
                   )}
                 </div>
 
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                    <User className="w-3 h-3 text-slate-400" />
-                    <span>{contact.owner?.name || 'Unassigned'}</span>
+                  <div className="flex items-center gap-1">
+                    {contact.tags?.slice(0, 2).map((t) => (
+                      <span
+                        key={t}
+                        className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium"
+                      >
+                        #{t}
+                      </span>
+                    ))}
                   </div>
 
-                  <div
-                    className="flex items-center gap-1"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {contact.phone && (
-                      <a
-                        href={`tel:${contact.phone}`}
-                        className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
-                        title="Call"
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                    {onOpenLinkedIn && (
-                      <button
-                        onClick={() => onOpenLinkedIn(contact)}
-                        className="p-1 text-[#0077b5] hover:bg-blue-50 rounded font-bold text-xs"
-                        title="Message on LinkedIn"
-                      >
-                        in
-                      </button>
-                    )}
-                    <button
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      size="sm"
+                      variant={followUp.isOverdue ? 'danger' : 'primary'}
                       onClick={() => onOpenEmailComposer(contact)}
-                      className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
-                      title="Compose Email"
+                      leftIcon={<Mail className="w-3.5 h-3.5" />}
+                      className="text-[11px] py-1 px-2.5 font-bold"
                     >
-                      <Mail className="w-3.5 h-3.5" />
-                    </button>
+                      {followUp.actionText}
+                    </Button>
                   </div>
                 </div>
               </div>
