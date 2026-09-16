@@ -36,7 +36,7 @@ function parseComposioResponse(rawText: string): any[] {
           const inner = JSON.parse(c.text);
           const results = inner?.data?.results || inner?.results || [];
           for (const r of results) {
-            const valList = r?.response?.data?.value;
+            const valList = r?.response?.data?.value || r?.response?.data_preview?.value;
             if (Array.isArray(valList)) {
               messages = valList;
               break;
@@ -52,7 +52,7 @@ function parseComposioResponse(rawText: string): any[] {
     if (messages.length === 0) {
       const results = parsed?.result?.results || parsed?.data?.results || [];
       for (const r of results) {
-        const valList = r?.response?.data?.value;
+        const valList = r?.response?.data?.value || r?.response?.data_preview?.value;
         if (Array.isArray(valList)) {
           messages = valList;
           break;
@@ -83,10 +83,8 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
   }
 
   try {
-    const endpoint =
-      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? '/api/composio'
-        : 'https://connect.composio.dev/mcp';
+    // Both Vite dev server and Vercel vercel.json rewrite /api/composio -> https://connect.composio.dev/mcp
+    const endpoint = '/api/composio';
 
     // Query last 30 inbox emails from connected Outlook mailbox
     const composioRes = await fetch(endpoint, {
@@ -134,13 +132,25 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       };
     }
 
-    // Fetch CRM contacts and existing interactions
+    // Fetch CRM contacts and existing sent emails for matching
     const contacts = await db.getContacts();
-    const contactEmailMap = new Map<string, Contact>();
+    const sentEmails = await db.getEmails();
 
+    const contactEmailMap = new Map<string, Contact>();
     contacts.forEach((c) => {
       if (c.email) {
         contactEmailMap.set(c.email.trim().toLowerCase(), c);
+      }
+    });
+
+    // Also map sent emails recipient_email -> contact
+    const sentRecipientMap = new Map<string, Contact>();
+    sentEmails.forEach((e) => {
+      if (e.recipient_email && e.contact_id) {
+        const found = contacts.find((c) => c.id === e.contact_id);
+        if (found) {
+          sentRecipientMap.set(e.recipient_email.trim().toLowerCase(), found);
+        }
       }
     });
 
@@ -151,20 +161,54 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       const fromEmail = msg?.from?.emailAddress?.address?.trim().toLowerCase();
       if (!fromEmail) continue;
 
-      const matchedContact = contactEmailMap.get(fromEmail);
-      if (!matchedContact) continue;
+      // Ignore automated system notifications & delivery reports
+      if (
+        fromEmail.includes('notifications.hive.com') ||
+        fromEmail.includes('mailer-daemon') ||
+        fromEmail.includes('hrms@') ||
+        fromEmail.includes('no-reply') ||
+        fromEmail.includes('noreply')
+      ) {
+        continue;
+      }
 
+      let matchedContact = contactEmailMap.get(fromEmail) || sentRecipientMap.get(fromEmail);
+      const senderName = msg?.from?.emailAddress?.name || fromEmail.split('@')[0];
       const subject = msg?.subject || 'No Subject';
       const bodyPreview = msg?.bodyPreview || '';
       const receivedAt = msg?.receivedDateTime || new Date().toISOString();
       const messageId = msg?.id || '';
-      const senderName = msg?.from?.emailAddress?.name || matchedContact.name;
+
+      // If this reply is from a new lead not yet in CRM, auto-create them!
+      if (!matchedContact) {
+        matchedContact = await db.saveContact({
+          name: senderName,
+          email: fromEmail,
+          status: 'qualified',
+          tags: ['Inbound Lead', 'Replied'],
+        });
+        contactEmailMap.set(fromEmail, matchedContact);
+      } else if (!matchedContact.email) {
+        // Backfill missing email address on contact
+        matchedContact = await db.saveContact({
+          id: matchedContact.id,
+          email: fromEmail,
+          status: 'qualified',
+        });
+        contactEmailMap.set(fromEmail, matchedContact);
+      } else if (matchedContact.status === 'new' || matchedContact.status === 'contacted') {
+        // Promote lead to qualified
+        matchedContact = await db.saveContact({
+          id: matchedContact.id,
+          status: 'qualified',
+        });
+      }
 
       // Check if this interaction / email was already logged for this contact
       const existingInteractions = await db.getInteractions(matchedContact.id);
       const alreadyLogged = existingInteractions.some(
         (i) =>
-          (messageId && i.content.includes(`[MsgID:${messageId}]`)) ||
+          (messageId && i.content.includes(messageId.slice(0, 15))) ||
           (i.content.includes(subject) && i.created_at.slice(0, 16) === receivedAt.slice(0, 16))
       );
 
@@ -190,14 +234,6 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
         content: `📥 Inbound Email Reply Received\nFrom: ${senderName} <${fromEmail}>\nSubject: ${subject}\n\n${bodyPreview}\n[MsgID:${messageId}]`,
         created_at: receivedAt,
       });
-
-      // 3. Auto-update contact stage if it was 'new' or 'contacted'
-      if (matchedContact.status === 'new' || matchedContact.status === 'contacted') {
-        await db.saveContact({
-          id: matchedContact.id,
-          status: 'qualified',
-        });
-      }
 
       newRepliesCount++;
       matchedContacts.push({
