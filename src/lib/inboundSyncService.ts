@@ -66,6 +66,12 @@ function parseComposioResponse(rawText: string): any[] {
   return messages;
 }
 
+function cleanReplyBody(raw: string): string {
+  if (!raw) return '';
+  const splitMatch = raw.split(/\r?\n\s*On\s+[A-Za-z]+,\s+\d+.*wrote:/i)[0];
+  return (splitMatch || raw).replace(/\[MsgID:[^\]]+\]/g, '').trim();
+}
+
 export async function syncOutlookInbox(): Promise<InboundSyncResult> {
   const composioApiKey =
     localStorage.getItem('crm_composio_api_key') ||
@@ -86,7 +92,7 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
     // Both Vite dev server and Vercel vercel.json rewrite /api/composio -> https://connect.composio.dev/mcp
     const endpoint = '/api/composio';
 
-    // Query last 30 inbox emails from connected Outlook mailbox
+    // Query last 50 inbox emails from connected Outlook mailbox
     const composioRes = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -109,7 +115,7 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
                 arguments: {
                   folder: 'inbox',
                   orderby: 'receivedDateTime desc',
-                  top: 30,
+                  top: 50,
                 },
               },
             ],
@@ -175,7 +181,8 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       let matchedContact = contactEmailMap.get(fromEmail) || sentRecipientMap.get(fromEmail);
       const senderName = msg?.from?.emailAddress?.name || fromEmail.split('@')[0];
       const subject = msg?.subject || 'No Subject';
-      const bodyPreview = msg?.bodyPreview || '';
+      const rawBody = msg?.bodyPreview || msg?.body?.content || '';
+      const bodyPreview = cleanReplyBody(rawBody);
       const receivedAt = msg?.receivedDateTime || new Date().toISOString();
       const messageId = msg?.id || '';
 
