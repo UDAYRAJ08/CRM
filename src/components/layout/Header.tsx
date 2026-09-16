@@ -66,7 +66,9 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         ) : (
           <div className="text-sm font-semibold text-slate-700 capitalize">
-            {activeView === 'reminders'
+            {activeView === 'inbox'
+              ? 'Inbox & Lead Email Replies'
+              : activeView === 'reminders'
               ? 'Follow-up & Reminders Center'
               : activeView === 'companies'
               ? 'Companies & Accounts'

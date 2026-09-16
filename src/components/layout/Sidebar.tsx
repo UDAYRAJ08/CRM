@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Users,
+  Inbox,
   CalendarCheck2,
   Building2,
   FileSpreadsheet,
@@ -14,6 +15,7 @@ interface SidebarProps {
   setActiveView: (view: string) => void;
   contactCount: number;
   reminderCount: number;
+  inboxCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -21,6 +23,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setActiveView,
   contactCount,
   reminderCount,
+  inboxCount = 0,
 }) => {
   const navItems = [
     {
@@ -28,6 +31,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Contacts',
       icon: <Users className="w-4 h-4" />,
       badge: contactCount,
+    },
+    {
+      id: 'inbox',
+      label: 'Inbox & Replies',
+      icon: <Inbox className="w-4 h-4" />,
+      badge: inboxCount > 0 ? inboxCount : undefined,
+      badgeColor: 'bg-emerald-100 text-emerald-800 font-bold',
     },
     {
       id: 'reminders',

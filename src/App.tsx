@@ -17,6 +17,7 @@ import { EmailSettingsModal } from './components/email/EmailSettingsModal';
 import { RemindersDashboard } from './components/reminders/RemindersDashboard';
 import { ReminderFormModal } from './components/reminders/ReminderFormModal';
 import { CompaniesView } from './components/companies/CompaniesView';
+import { InboxView } from './components/inbox/InboxView';
 import { syncOutlookInbox } from './lib/inboundSyncService';
 import { LinkedInComposerModal } from './components/linkedin/LinkedInComposerModal';
 import { LoginPage } from './components/auth/LoginPage';
@@ -27,9 +28,10 @@ const CRMMain: React.FC = () => {
   const { activeMember, isLoading: isTeamLoading } = useTeam();
   const { success, info } = useToast();
 
-  const [activeView, setActiveView] = useState<'contacts' | 'reminders' | 'companies' | 'imports'>('contacts');
+  const [activeView, setActiveView] = useState<'contacts' | 'inbox' | 'reminders' | 'companies' | 'imports'>('contacts');
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [inboxCount, setInboxCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncingInbox, setIsSyncingInbox] = useState(false);
@@ -48,6 +50,7 @@ const CRMMain: React.FC = () => {
 
   const [isEmailComposerOpen, setIsEmailComposerOpen] = useState(false);
   const [emailTargetContact, setEmailTargetContact] = useState<Contact | null>(null);
+  const [emailReplySubject, setEmailReplySubject] = useState<string | undefined>(undefined);
   const [isLinkedInComposerOpen, setIsLinkedInComposerOpen] = useState(false);
   const [linkedInTargetContact, setLinkedInTargetContact] = useState<Contact | null>(null);
   const [isBulkEmailOpen, setIsBulkEmailOpen] = useState(false);
@@ -55,6 +58,28 @@ const CRMMain: React.FC = () => {
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [reminderTargetContact, setReminderTargetContact] = useState<Contact | null>(null);
   const [isEmailSettingsOpen, setIsEmailSettingsOpen] = useState(false);
+
+  const countInboundReplies = async (contactList: Contact[]) => {
+    try {
+      let count = 0;
+      const emails = await db.getEmails();
+      count += emails.filter((e) => e.status === 'received' || e.is_inbound).length;
+
+      // Also check qualified contacts from inbound
+      for (const c of contactList) {
+        const inters = await db.getInteractions(c.id);
+        const replyInters = inters.filter(
+          (i) => i.content.includes('📥 Inbound Email Reply Received') || i.content.includes('Inbound Email')
+        );
+        if (replyInters.length > 0) {
+          count = Math.max(count, replyInters.length);
+        }
+      }
+      setInboxCount(count);
+    } catch (e) {
+      console.warn('Error counting inbound replies:', e);
+    }
+  };
 
   const refreshAllData = useCallback(async () => {
     try {
@@ -64,6 +89,7 @@ const CRMMain: React.FC = () => {
       ]);
       setContacts(fetchedContacts);
       setReminders(fetchedReminders);
+      countInboundReplies(fetchedContacts);
 
       // Only update selectedContact if a contact is STILL selected (check ref)
       if (selectedContactIdRef.current) {
@@ -92,9 +118,10 @@ const CRMMain: React.FC = () => {
           '📥 New Email Reply Received!',
           `Found ${result.newRepliesCount} reply from ${result.matchedContacts.map((m) => m.contactName).join(', ')}`
         );
-        refreshAllData();
+        await refreshAllData();
       } else if (!silent) {
         info('Inbox Synced', result.message);
+        await refreshAllData();
       }
     } catch (err: any) {
       if (!silent) {
@@ -105,16 +132,24 @@ const CRMMain: React.FC = () => {
     }
   };
 
-  // Background inbox sync every 90 seconds
+  // Sync on startup once contacts are loaded
+  useEffect(() => {
+    if (!isLoading && contacts.length > 0) {
+      handleSyncInbox(true);
+    }
+  }, [isLoading]);
+
+  // Background inbox sync every 60 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       handleSyncInbox(true);
-    }, 90000);
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  const handleOpenEmailComposer = (contact: Contact) => {
+  const handleOpenEmailComposer = (contact: Contact, replySubject?: string) => {
     setEmailTargetContact(contact);
+    setEmailReplySubject(replySubject);
     setIsEmailComposerOpen(true);
   };
 
@@ -161,6 +196,7 @@ const CRMMain: React.FC = () => {
         setActiveView={(v) => setActiveView(v as any)}
         contactCount={contacts.length}
         reminderCount={activeRemindersCount}
+        inboxCount={inboxCount}
       />
 
       {/* Main Workspace Area */}
@@ -196,13 +232,26 @@ const CRMMain: React.FC = () => {
                     setEditingContact(c);
                     setIsContactFormOpen(true);
                   }}
-                  onOpenEmailComposer={handleOpenEmailComposer}
+                  onOpenEmailComposer={(c) => handleOpenEmailComposer(c)}
                   onOpenLinkedIn={handleOpenLinkedInComposer}
                   onOpenBulkEmail={handleOpenBulkEmail}
                   onAddNewContact={() => {
                     setEditingContact(null);
                     setIsContactFormOpen(true);
                   }}
+                  onRefresh={refreshAllData}
+                />
+              )}
+
+              {activeView === 'inbox' && (
+                <InboxView
+                  contacts={contacts}
+                  onSelectContact={(c) => setSelectedContact(c)}
+                  onOpenEmailComposer={(c, sub) => handleOpenEmailComposer(c, sub)}
+                  onOpenLinkedIn={handleOpenLinkedInComposer}
+                  onOpenAddReminder={handleOpenAddReminder}
+                  onSyncInbox={() => handleSyncInbox(false)}
+                  isSyncing={isSyncingInbox}
                   onRefresh={refreshAllData}
                 />
               )}
@@ -271,8 +320,10 @@ const CRMMain: React.FC = () => {
           onClose={() => {
             setIsEmailComposerOpen(false);
             setEmailTargetContact(null);
+            setEmailReplySubject(undefined);
           }}
           contact={emailTargetContact}
+          initialSubject={emailReplySubject}
           onEmailSent={refreshAllData}
         />
       )}

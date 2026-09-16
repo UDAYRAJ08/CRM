@@ -14,6 +14,8 @@ interface EmailComposerModalProps {
   isOpen: boolean;
   onClose: () => void;
   contact: Contact;
+  initialSubject?: string;
+  initialBody?: string;
   onEmailSent?: () => void;
 }
 
@@ -21,6 +23,8 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
   isOpen,
   onClose,
   contact,
+  initialSubject,
+  initialBody,
   onEmailSent,
 }) => {
   const { activeMember } = useTeam();
@@ -44,15 +48,18 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
       const firstName = contact.name.split(' ')[0] || contact.name;
       const compName = contact.company?.name || 'your team';
       setRecipientEmail(contact.email || '');
-      setSubject(`Helping ${compName} meet project deadlines`);
-      setBody(`Hyy ${firstName},\n\nIf you are looking for a reliable team to help you with your tasks and ensure you meet your upcoming project deadlines with ease, we would love to support you.\n\nWe specialize in assisting teams with execution, removing workflow bottlenecks, and delivering on target.\n\nWould you be open to a quick 10-minute chat this week to explore how we can help?\n\nBest regards,\n${activeMember?.name || 'CRM Team'}`);
+      setSubject(initialSubject || `Helping ${compName} meet project deadlines`);
+      setBody(
+        initialBody ||
+          `Hyy ${firstName},\n\nIf you are looking for a reliable team to help you with your tasks and ensure you meet your upcoming project deadlines with ease, we would love to support you.\n\nWe specialize in assisting teams with execution, removing workflow bottlenecks, and delivering on target.\n\nWould you be open to a quick 10-minute chat this week to explore how we can help?\n\nBest regards,\n${activeMember?.name || 'CRM Team'}`
+      );
       setIsAiGenerated(false);
       setSandboxError(null);
 
       // Fetch interactions for AI context
       db.getInteractions(contact.id).then(setInteractions);
     }
-  }, [isOpen, contact, activeMember]);
+  }, [isOpen, contact, activeMember, initialSubject, initialBody]);
 
   const handleDraftGenerated = (draft: { subject: string; body: string }) => {
     setSubject(draft.subject);

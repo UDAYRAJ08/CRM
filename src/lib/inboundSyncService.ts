@@ -9,6 +9,63 @@ export interface InboundSyncResult {
   message: string;
 }
 
+function parseComposioResponse(rawText: string): any[] {
+  let messages: any[] = [];
+
+  // 1. If SSE stream, extract lines starting with "data: "
+  let jsonStr = rawText;
+  if (rawText.includes('data: ')) {
+    const dataLines = rawText
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => line.replace(/^data:\s*/, '').trim())
+      .filter(Boolean);
+    if (dataLines.length > 0) {
+      jsonStr = dataLines.join('');
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(jsonStr);
+
+    // Check if result has content array (MCP standard format with stringified json in content[0].text)
+    const contentList = parsed?.result?.content || [];
+    for (const c of contentList) {
+      if (c.type === 'text' && c.text) {
+        try {
+          const inner = JSON.parse(c.text);
+          const results = inner?.data?.results || inner?.results || [];
+          for (const r of results) {
+            const valList = r?.response?.data?.value;
+            if (Array.isArray(valList)) {
+              messages = valList;
+              break;
+            }
+          }
+        } catch (e) {
+          console.warn('Inner parse error', e);
+        }
+      }
+    }
+
+    // Direct result.results format
+    if (messages.length === 0) {
+      const results = parsed?.result?.results || parsed?.data?.results || [];
+      for (const r of results) {
+        const valList = r?.response?.data?.value;
+        if (Array.isArray(valList)) {
+          messages = valList;
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to parse Composio MCP JSON', err);
+  }
+
+  return messages;
+}
+
 export async function syncOutlookInbox(): Promise<InboundSyncResult> {
   const composioApiKey =
     localStorage.getItem('crm_composio_api_key') ||
@@ -54,7 +111,6 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
                 arguments: {
                   folder: 'inbox',
                   orderby: 'receivedDateTime desc',
-                  select: ['id', 'subject', 'from', 'receivedDateTime', 'bodyPreview'],
                   top: 30,
                 },
               },
@@ -65,30 +121,7 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
     });
 
     const resText = await composioRes.text();
-    let messages: any[] = [];
-
-    // Parse the Composio MCP response
-    try {
-      const parsed = JSON.parse(resText);
-      const results = parsed?.result?.results || parsed?.data?.results || [];
-      for (const r of results) {
-        const valueList = r?.response?.data?.value;
-        if (Array.isArray(valueList)) {
-          messages = valueList;
-          break;
-        }
-      }
-    } catch {
-      // Fallback regex extraction if raw stream response
-      const match = resText.match(/"value":\s*(\[.*?\])/s);
-      if (match) {
-        try {
-          messages = JSON.parse(match[1]);
-        } catch (e) {
-          console.warn('Could not parse fallback JSON', e);
-        }
-      }
-    }
+    const messages = parseComposioResponse(resText);
 
     if (!messages || messages.length === 0) {
       localStorage.setItem('crm_last_inbox_sync', new Date().toISOString());
@@ -97,7 +130,7 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
         totalChecked: 0,
         newRepliesCount: 0,
         matchedContacts: [],
-        message: 'Inbox checked: No new messages found.',
+        message: 'Inbox checked: No messages returned from Outlook.',
       };
     }
 
@@ -125,14 +158,14 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       const bodyPreview = msg?.bodyPreview || '';
       const receivedAt = msg?.receivedDateTime || new Date().toISOString();
       const messageId = msg?.id || '';
+      const senderName = msg?.from?.emailAddress?.name || matchedContact.name;
 
       // Check if this interaction / email was already logged for this contact
       const existingInteractions = await db.getInteractions(matchedContact.id);
       const alreadyLogged = existingInteractions.some(
         (i) =>
-          i.content.includes(subject) &&
-          (i.created_at.slice(0, 16) === receivedAt.slice(0, 16) ||
-           (messageId && i.content.includes(messageId.slice(0, 12))))
+          (messageId && i.content.includes(`[MsgID:${messageId}]`)) ||
+          (i.content.includes(subject) && i.created_at.slice(0, 16) === receivedAt.slice(0, 16))
       );
 
       if (alreadyLogged) continue;
@@ -143,7 +176,7 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
         recipient_email: 'udaysharma@ingversionsdigital.com',
         sender_email: fromEmail,
         is_inbound: true,
-        subject: `Re: ${subject.replace(/^re:\s*/i, '')}`,
+        subject: subject,
         body: bodyPreview,
         ai_generated: false,
         sent_at: receivedAt,
@@ -154,7 +187,7 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       await db.addInteraction({
         contact_id: matchedContact.id,
         type: 'email',
-        content: `📥 Inbound Email Reply Received\nFrom: ${msg?.from?.emailAddress?.name || fromEmail} <${fromEmail}>\nSubject: ${subject}\n\n${bodyPreview}`,
+        content: `📥 Inbound Email Reply Received\nFrom: ${senderName} <${fromEmail}>\nSubject: ${subject}\n\n${bodyPreview}\n[MsgID:${messageId}]`,
         created_at: receivedAt,
       });
 
