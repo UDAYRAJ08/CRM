@@ -67,7 +67,7 @@ export const TeamMemberModal: React.FC = () => {
               {activeMember ? 'Switch Active User' : 'Who is using CRM today?'}
             </h3>
             <p className="text-xs text-slate-500">
-              Pick your name to attribute actions, notes, emails & tasks. No password required.
+              Pick your active team profile to attribute actions, notes, emails & tasks.
             </p>
           </div>
         </div>
