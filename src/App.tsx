@@ -21,6 +21,7 @@ import { InboxView } from './components/inbox/InboxView';
 import { syncOutlookInbox } from './lib/inboundSyncService';
 import { LinkedInComposerModal } from './components/linkedin/LinkedInComposerModal';
 import { LoginPage } from './components/auth/LoginPage';
+import { InviteModal } from './components/team/InviteModal';
 import { Loader2 } from 'lucide-react';
 
 
@@ -58,6 +59,7 @@ const CRMMain: React.FC = () => {
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [reminderTargetContact, setReminderTargetContact] = useState<Contact | null>(null);
   const [isEmailSettingsOpen, setIsEmailSettingsOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
   const countInboundReplies = async (contactList: Contact[]) => {
     try {
@@ -209,6 +211,7 @@ const CRMMain: React.FC = () => {
           isSyncingInbox={isSyncingInbox}
           onOpenImport={() => setIsImportModalOpen(true)}
           onOpenEmailSettings={() => setIsEmailSettingsOpen(true)}
+          onOpenInvite={() => setIsInviteModalOpen(true)}
           onOpenAddContact={() => {
             setEditingContact(null);
             setIsContactFormOpen(true);
@@ -366,6 +369,11 @@ const CRMMain: React.FC = () => {
       <EmailSettingsModal
         isOpen={isEmailSettingsOpen}
         onClose={() => setIsEmailSettingsOpen(false)}
+      />
+
+      <InviteModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
       />
     </div>
   );

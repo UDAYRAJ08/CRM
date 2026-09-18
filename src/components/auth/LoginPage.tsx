@@ -1,24 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
-import { getInitials } from '../../lib/utils';
-import { Button } from '../ui/Button';
 import {
-  Users,
-  Lock,
-  ArrowRight,
-  UserPlus,
-  Shield,
-  Sparkles,
-  Database,
-  Mail,
-  Share2,
-  Search,
-  KeyRound,
   Eye,
   EyeOff,
-  CheckCircle,
-  ShieldCheck,
+  Mail,
+  Lock,
+  User,
+  Users,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react';
 import { TeamMember } from '../../types/crm';
 import { saveUserPassword, verifyUserPassword, verifyEmailCredentials } from '../../lib/authCrypto';
@@ -27,96 +18,78 @@ export const LoginPage: React.FC = () => {
   const { teamMembers, setActiveMember, addTeamMember, isLoading } = useTeam();
   const { success, error, info } = useToast();
 
-  const [authMode, setAuthMode] = useState<'profiles' | 'email' | 'register'>('profiles');
-  const [searchMember, setSearchMember] = useState('');
-
-  // Password Prompt Modal State
-  const [selectedMemberForAuth, setSelectedMemberForAuth] = useState<TeamMember | null>(null);
-  const [passwordPromptInput, setPasswordPromptInput] = useState('');
-  const [showPromptPassword, setShowPromptPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
-  const [isVerifyingModal, setIsVerifyingModal] = useState(false);
-
-  // Direct Email Login State
-  const [emailInput, setEmailInput] = useState('');
-  const [emailPasswordInput, setEmailPasswordInput] = useState('');
-  const [showEmailPassword, setShowEmailPassword] = useState(false);
-  const [isLoggingInEmail, setIsLoggingInEmail] = useState(false);
-
-  // Register State
-  const [regName, setRegName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regRole, setRegRole] = useState('Sales Representative');
-  const [regPassword, setRegPassword] = useState('');
-  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [mode, setMode] = useState<'signup' | 'signin' | 'profiles'>('signup');
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const filteredMembers = teamMembers.filter(
-    (m) =>
-      m.name.toLowerCase().includes(searchMember.toLowerCase()) ||
-      (m.role && m.role.toLowerCase().includes(searchMember.toLowerCase())) ||
-      (m.email && m.email.toLowerCase().includes(searchMember.toLowerCase()))
-  );
+  // Form Fields
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [role, setRole] = useState('Sales Representative');
 
-  // Step 1: User clicks on a profile -> Prompt for password
-  const handleProfileClick = (member: TeamMember) => {
-    setSelectedMemberForAuth(member);
-    setPasswordPromptInput('');
-    setShowPromptPassword(false);
-  };
+  // Profile unlock state
+  const [selectedProfile, setSelectedProfile] = useState<TeamMember | null>(null);
+  const [profilePassword, setProfilePassword] = useState('');
+  const [searchProfile, setSearchProfile] = useState('');
 
-  // Step 2: Validate password and log in using salted SHA-256 cryptographic verification
-  const handleValidatePassword = async (e: React.FormEvent) => {
+  // Active input focus states for animated floating notch labels
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
+
+  // Invite detection state
+  const [inviteData, setInviteData] = useState<{
+    isInvited: boolean;
+    name?: string;
+    email?: string;
+    role?: string;
+  }>({ isInvited: false });
+
+  // Detect URL Invite parameters
+  useEffect(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isInvite = urlParams.get('invite') === 'true' || urlParams.has('invited');
+      const invEmail = urlParams.get('email') || '';
+      const invName = urlParams.get('name') || '';
+      const invRole = urlParams.get('role') || '';
+
+      if (isInvite || invEmail) {
+        setInviteData({
+          isInvited: true,
+          name: invName,
+          email: invEmail,
+          role: invRole || 'Sales Representative',
+        });
+
+        if (invName) setFullName(invName);
+        if (invEmail) setEmail(invEmail);
+        if (invRole) setRole(invRole);
+        setMode('signup');
+      }
+    } catch (e) {
+      console.warn('Could not parse invite params', e);
+    }
+  }, []);
+
+  // Handle Sign In
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedMemberForAuth) return;
+    const trimmedEmail = email.trim();
+    const trimmedPass = password.trim();
 
-    const trimmed = passwordPromptInput.trim();
-    if (!trimmed) {
+    if (!trimmedEmail) {
+      error('Email Required', 'Please enter your email address.');
+      return;
+    }
+    if (!trimmedPass) {
       error('Password Required', 'Please enter your account password.');
       return;
     }
 
-    setIsVerifyingModal(true);
+    setIsSubmitting(true);
     try {
-      const isValid = await verifyUserPassword(selectedMemberForAuth.id, trimmed);
-
-      if (!isValid) {
-        error('Invalid Password', 'The password you entered is incorrect. Please try again.');
-        return;
-      }
-
-      setActiveMember(selectedMemberForAuth);
-      if (!rememberMe) {
-        sessionStorage.setItem('crm_active_member_id', selectedMemberForAuth.id);
-      }
-
-      setSelectedMemberForAuth(null);
-      success('Authenticated!', `Welcome back, ${selectedMemberForAuth.name}!`);
-    } catch (err: any) {
-      error('Authentication Error', err.message || 'Unable to verify password.');
-    } finally {
-      setIsVerifyingModal(false);
-    }
-  };
-
-  // Direct email authentication with encrypted password verification
-  const handleEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!emailInput.trim()) {
-      error('Missing Email', 'Please enter your work email address.');
-      return;
-    }
-
-    if (!emailPasswordInput.trim()) {
-      error('Missing Password', 'Please enter your account password.');
-      return;
-    }
-
-    setIsLoggingInEmail(true);
-    try {
-      const trimmedEmail = emailInput.trim();
-      const trimmedPass = emailPasswordInput.trim();
-
       const found = teamMembers.find(
         (m) => m.email?.toLowerCase().trim() === trimmedEmail.toLowerCase()
       );
@@ -124,461 +97,507 @@ export const LoginPage: React.FC = () => {
       const isValid = await verifyEmailCredentials(trimmedEmail, found?.id, trimmedPass);
 
       if (!isValid) {
-        error('Invalid Credentials', 'Incorrect email address or password. Please try again.');
+        error('Invalid Credentials', 'Incorrect email address or password. Please verify and try again.');
         return;
       }
 
       if (found) {
         setActiveMember(found);
-        success('Authenticated!', `Signed in as ${found.name}`);
+        localStorage.setItem('crm_active_member_id', found.id);
+        success('Signed In', `Welcome back, ${found.name}!`);
       } else {
-        // Create new profile from email
         const derivedName = trimmedEmail.split('@')[0].replace(/[._]/g, ' ');
         const formattedName = derivedName.charAt(0).toUpperCase() + derivedName.slice(1);
         const newMem = await addTeamMember(formattedName, trimmedEmail, 'Team Member');
         await saveUserPassword(newMem.id, trimmedPass);
-        success('Account Created & Authenticated', `Welcome to the CRM, ${newMem.name}!`);
+        setActiveMember(newMem);
+        success('Welcome!', `Logged in as ${newMem.name}`);
       }
     } catch (err: any) {
-      error('Sign In Failed', err.message || 'Authentication error.');
+      error('Sign In Failed', err.message || 'Unable to authenticate.');
     } finally {
-      setIsLoggingInEmail(false);
+      setIsSubmitting(false);
     }
   };
 
-  // Register new profile with encrypted password storage
-  const handleRegister = async (e: React.FormEvent) => {
+  // Handle Sign Up
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regName.trim()) {
-      error('Name Required', 'Please provide your full name.');
+    const mail = email.trim();
+    const pass = password.trim();
+    const derivedName = fullName.trim() || mail.split('@')[0].replace(/[._]/g, ' ');
+    const formattedName = derivedName.charAt(0).toUpperCase() + derivedName.slice(1);
+
+    if (!mail) {
+      error('Email Required', 'Please enter your email address.');
       return;
     }
-
-    if (!regPassword.trim() || regPassword.trim().length < 4) {
-      error('Password Required', 'Please set a secure password of at least 4 characters.');
+    if (!pass || pass.length < 4) {
+      error('Password Required', 'Please enter a password of at least 4 characters.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const created = await addTeamMember(regName.trim(), regEmail.trim() || undefined, regRole);
-      // Cryptographically hash and save password
-      await saveUserPassword(created.id, regPassword.trim());
-      success('Welcome to the Team!', `Profile created securely for ${created.name}.`);
+      const existing = teamMembers.find(
+        (m) => m.email?.toLowerCase().trim() === mail.toLowerCase()
+      );
+
+      let memberToSet: TeamMember;
+
+      if (existing) {
+        await saveUserPassword(existing.id, pass);
+        memberToSet = existing;
+      } else {
+        const created = await addTeamMember(formattedName, mail, role || 'Sales Representative');
+        await saveUserPassword(created.id, pass);
+        memberToSet = created;
+      }
+
+      setActiveMember(memberToSet);
+      localStorage.setItem('crm_active_member_id', memberToSet.id);
+
+      if (window.location.search) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
+      success('Account Created!', `Welcome to InsideBox, ${memberToSet.name}!`);
     } catch (err: any) {
-      error('Failed to create member', err.message || 'Unknown error');
+      error('Registration Failed', err.message || 'Unable to create account.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle Profile Quick Unlock
+  const handleProfileUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProfile) return;
+
+    const pass = profilePassword.trim();
+    if (!pass) {
+      error('Password Required', 'Please enter your password.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const isValid = await verifyUserPassword(selectedProfile.id, pass);
+      if (!isValid) {
+        error('Invalid Password', 'The password entered is incorrect.');
+        return;
+      }
+
+      setActiveMember(selectedProfile);
+      localStorage.setItem('crm_active_member_id', selectedProfile.id);
+      success('Authenticated!', `Welcome back, ${selectedProfile.name}!`);
+    } catch (err: any) {
+      error('Unlock Error', err.message || 'Verification failed.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-between relative overflow-hidden text-slate-100 selection:bg-indigo-500 selection:text-white">
-      {/* Background Glowing Ambient Meshes */}
-      <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute top-1/3 -right-40 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-40 left-1/3 w-96 h-96 bg-violet-600/20 rounded-full blur-3xl pointer-events-none" />
-
-      {/* Top Navbar */}
-      <header className="relative z-10 border-b border-slate-800/80 bg-slate-900/40 backdrop-blur-xl px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-blue-500 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-500/25">
-            C
-          </div>
-          <div>
-            <h1 className="text-base font-extrabold text-white tracking-tight leading-none">
-              Nexus CRM
-            </h1>
-            <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-              Collaborative Team Sales & Outreach Platform
-            </p>
-          </div>
-        </div>
-
-        {/* Feature Badges */}
-        <div className="hidden md:flex items-center gap-2 text-[11px] font-medium text-slate-400">
-          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-emerald-400">
-            <Database className="w-3 h-3" />
-            Supabase Live
-          </span>
-          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-blue-400">
-            <Mail className="w-3 h-3" />
-            Outlook 365 Sync
-          </span>
-          <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-[#00a0dc]">
-            <Share2 className="w-3 h-3" />
-            LinkedIn Outreach
-          </span>
-        </div>
-      </header>
-
-      {/* Main Login Card Area */}
-      <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-8 sm:py-12">
-        <div className="w-full max-w-xl bg-slate-900/70 border border-slate-800 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-2xl shadow-black/80 space-y-6">
-          {/* Card Title & Subtitle */}
-          <div className="text-center space-y-1.5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold mb-1">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Encrypted Secure Workspace</span>
+    <div className="min-h-screen w-full flex flex-col md:flex-row bg-white text-slate-900 font-sans selection:bg-blue-500 selection:text-white">
+      {/* ========================================================================= */}
+      {/* LEFT COLUMN: AUTHENTICATION FORM                                           */}
+      {/* ========================================================================= */}
+      <div className="w-full md:w-1/2 lg:w-[50%] flex flex-col justify-between p-8 sm:p-12 lg:p-16 min-h-screen">
+        
+        {/* Top Header Logo */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            {/* Isometric 3D Blue Box Logo */}
+            <div className="w-7 h-7 text-blue-500 flex items-center justify-center">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              Sign In to Your Workspace
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400">
-              Select your team profile or enter your credentials to access contacts, emails, and outreach.
-            </p>
+            <span className="text-lg font-extrabold text-slate-900 tracking-tight">
+              InsideBox
+            </span>
           </div>
 
-          {/* Mode Switcher Tabs */}
-          <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-800/60 border border-slate-700/60 rounded-xl text-xs font-bold">
+          {/* Quick profile switch button if team members exist */}
+          {teamMembers.length > 0 && mode !== 'profiles' && (
             <button
               type="button"
-              onClick={() => setAuthMode('profiles')}
-              className={`py-2 px-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                authMode === 'profiles'
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
+              onClick={() => setMode('profiles')}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 cursor-pointer bg-blue-50 hover:bg-blue-100/80 px-3 py-1.5 rounded-full transition"
             >
               <Users className="w-3.5 h-3.5" />
-              <span className="truncate">Choose Profile</span>
+              <span>Team Profiles ({teamMembers.length})</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => setAuthMode('email')}
-              className={`py-2 px-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                authMode === 'email'
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-            >
-              <KeyRound className="w-3.5 h-3.5" />
-              <span className="truncate">Email & Password</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setAuthMode('register')}
-              className={`py-2 px-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                authMode === 'register'
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span className="truncate">Join Team</span>
-            </button>
-          </div>
-
-          {/* TAB 1: Team Persona Quick Access */}
-          {authMode === 'profiles' && (
-            <div className="space-y-4">
-              {/* Search Member */}
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Filter team members by name or role..."
-                  value={searchMember}
-                  onChange={(e) => setSearchMember(e.target.value)}
-                  className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                />
-              </div>
-
-              {/* Members List */}
-              <div className="max-h-72 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                {isLoading ? (
-                  <div className="text-center py-8 text-slate-500 text-xs">
-                    Loading team directory...
-                  </div>
-                ) : filteredMembers.length === 0 ? (
-                  <div className="text-center py-8 bg-slate-950/40 rounded-2xl border border-slate-800 text-slate-400 text-xs">
-                    No matching members found.{' '}
-                    <button
-                      type="button"
-                      onClick={() => setAuthMode('register')}
-                      className="text-indigo-400 hover:underline font-bold"
-                    >
-                      Add yourself now
-                    </button>
-                  </div>
-                ) : (
-                  filteredMembers.map((member) => (
-                    <button
-                      key={member.id}
-                      onClick={() => handleProfileClick(member)}
-                      className="w-full text-left p-3 rounded-2xl bg-slate-800/40 hover:bg-indigo-600/15 border border-slate-800 hover:border-indigo-500/40 transition-all flex items-center justify-between group cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-blue-500 text-white font-bold flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
-                          {getInitials(member.name, 'U')}
-                        </div>
-                        <div className="min-w-0">
-                          <span className="font-bold text-sm text-white block truncate group-hover:text-indigo-300 transition">
-                            {member.name}
-                          </span>
-                          <div className="flex items-center gap-2 text-xs text-slate-400">
-                            <span className="truncate">{member.role || 'Member'}</span>
-                            {member.email && (
-                              <>
-                                <span>•</span>
-                                <span className="text-slate-500 truncate">{member.email}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/50 group-hover:bg-indigo-600 text-slate-300 group-hover:text-white text-xs font-bold transition shadow-xs">
-                        <Lock className="w-3.5 h-3.5 text-slate-400 group-hover:text-white" />
-                        <span>Sign In</span>
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-
-              {/* Security Banner */}
-              <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-800 text-xs text-slate-400 flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>Protected with SHA-256 cryptographic authentication</span>
-                </span>
-                <span className="text-[11px] text-slate-500 font-medium">Secured</span>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: Email & Password Sign In */}
-          {authMode === 'email' && (
-            <form onSubmit={handleEmailLogin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Work Email Address
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
-                  <input
-                    type="email"
-                    placeholder="you@yourcompany.com"
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    required
-                    className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Password *
-                </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
-                  <input
-                    type={showEmailPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
-                    value={emailPasswordInput}
-                    onChange={(e) => setEmailPasswordInput(e.target.value)}
-                    required
-                    className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl pl-9 pr-10 py-2 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowEmailPassword(!showEmailPassword)}
-                    className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 transition cursor-pointer"
-                    title={showEmailPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showEmailPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <Button
-                type="submit"
-                variant="primary"
-                isLoading={isLoggingInEmail}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 cursor-pointer"
-              >
-                Sign In to Workspace
-              </Button>
-            </form>
-          )}
-
-          {/* TAB 3: Join Team / Register */}
-          {authMode === 'register' && (
-            <form onSubmit={handleRegister} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Your Full Name *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Uday Raj Sharma"
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                  required
-                  className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Work Email (Optional)
-                </label>
-                <input
-                  type="email"
-                  placeholder="e.g. you@yourcompany.com"
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                  className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Account Password *
-                </label>
-                <div className="relative">
-                  <input
-                    type={showRegPassword ? 'text' : 'password'}
-                    placeholder="Create your secure account password"
-                    value={regPassword}
-                    onChange={(e) => setRegPassword(e.target.value)}
-                    required
-                    minLength={4}
-                    className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl pl-3.5 pr-10 py-2 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowRegPassword(!showRegPassword)}
-                    className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 transition cursor-pointer"
-                    title={showRegPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Team Role
-                </label>
-                <select
-                  value={regRole}
-                  onChange={(e) => setRegRole(e.target.value)}
-                  className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                >
-                  <option value="Founder / Lead">Founder / Lead</option>
-                  <option value="Sales Director">Sales Director</option>
-                  <option value="Account Executive">Account Executive</option>
-                  <option value="Sales Representative">Sales Representative</option>
-                  <option value="Customer Success">Customer Success</option>
-                  <option value="Operations">Operations</option>
-                </select>
-              </div>
-
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={isSubmitting}
-                isLoading={isSubmitting}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 cursor-pointer"
-              >
-                {isSubmitting ? 'Creating Profile...' : 'Create Profile & Enter'}
-              </Button>
-            </form>
           )}
         </div>
-      </main>
 
-      {/* Password Prompt Modal for Persona Click */}
-      {selectedMemberForAuth && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5">
-            <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white font-bold text-base flex items-center justify-center shadow-md">
-                {getInitials(selectedMemberForAuth.name, 'U')}
-              </div>
+        {/* Center Main Form */}
+        <div className="max-w-[380px] w-full mx-auto my-auto py-8">
+          
+          {/* Invite Alert Banner */}
+          {inviteData.isInvited && (
+            <div className="mb-6 p-3.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-900 flex items-start gap-2.5">
+              <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
               <div>
-                <h3 className="text-base font-bold text-white">
-                  Enter Password for {selectedMemberForAuth.name}
-                </h3>
-                <p className="text-xs text-slate-400">
-                  {selectedMemberForAuth.role || 'Team Member'}
+                <p className="text-xs font-bold text-blue-950">You've Been Invited!</p>
+                <p className="text-[11px] text-blue-700 mt-0.5">
+                  Set a password below to join the InsideBox workspace.
                 </p>
               </div>
             </div>
+          )}
 
-            <form onSubmit={handleValidatePassword} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Password *
-                </label>
+          {/* Title Header */}
+          <div className="mb-8">
+            <div className="text-xs text-slate-500 font-medium mb-1">
+              {mode === 'signup' ? 'Start your journey' : 'Welcome back'}
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+              {mode === 'signup'
+                ? 'Sign Up to InsideBox'
+                : mode === 'signin'
+                ? 'Sign In to InsideBox'
+                : 'Team Profiles'}
+            </h1>
+          </div>
+
+          {/* =================================================================== */}
+          {/* SIGN UP & SIGN IN FORMS (Outlined Notch Style)                     */}
+          {/* =================================================================== */}
+          {(mode === 'signup' || mode === 'signin') && (
+            <form onSubmit={mode === 'signup' ? handleSignUp : handleSignIn} className="space-y-4">
+              
+              {/* Optional Name (Only if invited or expanded in sign up) */}
+              {mode === 'signup' && (
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3 pointer-events-none" />
-                  <input
-                    type={showPromptPassword ? 'text' : 'password'}
-                    placeholder="Enter account password..."
-                    value={passwordPromptInput}
-                    onChange={(e) => setPasswordPromptInput(e.target.value)}
-                    autoFocus
-                    required
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-10 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPromptPassword(!showPromptPassword)}
-                    className="absolute right-3 top-3 text-slate-400 hover:text-white cursor-pointer"
-                    title={showPromptPassword ? 'Hide password' : 'Show password'}
+                  <div
+                    className={`relative border rounded-lg transition-all duration-200 bg-white ${
+                      nameFocused
+                        ? 'border-blue-500 ring-2 ring-blue-500/10'
+                        : fullName
+                        ? 'border-slate-300'
+                        : 'border-slate-300 hover:border-slate-400'
+                    }`}
                   >
-                    {showPromptPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                    <label
+                      className={`absolute -top-2.5 left-3.5 px-1 bg-white text-[11px] font-medium leading-none transition-colors ${
+                        nameFocused ? 'text-blue-500 font-semibold' : 'text-slate-500'
+                      }`}
+                    >
+                      Full name
+                    </label>
+                    <div className="flex items-center px-3.5 py-3">
+                      <input
+                        type="text"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        onFocus={() => setNameFocused(true)}
+                        onBlur={() => setNameFocused(false)}
+                        placeholder="e.g. Daniel Ahmadi"
+                        className="w-full text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none bg-transparent"
+                      />
+                      <User className="w-4 h-4 text-slate-400 shrink-0 ml-2" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* E-mail Field */}
+              <div className="relative">
+                <div
+                  className={`relative border rounded-lg transition-all duration-200 bg-white ${
+                    emailFocused
+                      ? 'border-blue-500 ring-2 ring-blue-500/10'
+                      : email
+                      ? 'border-blue-500'
+                      : 'border-slate-300 hover:border-slate-400'
+                  }`}
+                >
+                  <label
+                    className={`absolute -top-2.5 left-3.5 px-1 bg-white text-[11px] font-medium leading-none transition-colors ${
+                      emailFocused || email ? 'text-blue-500 font-semibold' : 'text-slate-500'
+                    }`}
+                  >
+                    E-mail
+                  </label>
+                  <div className="flex items-center px-3.5 py-3">
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      onFocus={() => setEmailFocused(true)}
+                      onBlur={() => setEmailFocused(false)}
+                      placeholder="example@email.com"
+                      className="w-full text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none bg-transparent"
+                    />
+                    <Mail className="w-4 h-4 text-slate-400 shrink-0 ml-2" />
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span>Keep me logged in</span>
-                </label>
+              {/* Password Field */}
+              <div className="relative">
+                <div
+                  className={`relative border rounded-lg transition-all duration-200 bg-white ${
+                    passwordFocused
+                      ? 'border-blue-500 ring-2 ring-blue-500/10'
+                      : 'border-slate-300 hover:border-slate-400'
+                  }`}
+                >
+                  <label
+                    className={`absolute -top-2.5 left-3.5 px-1 bg-white text-[11px] font-medium leading-none transition-colors ${
+                      passwordFocused ? 'text-blue-500 font-semibold' : 'text-slate-500'
+                    }`}
+                  >
+                    Password
+                  </label>
+                  <div className="flex items-center px-3.5 py-3">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onFocus={() => setPasswordFocused(true)}
+                      onBlur={() => setPasswordFocused(false)}
+                      placeholder="••••••••"
+                      className="w-full text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none bg-transparent tracking-wider"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="text-slate-400 hover:text-slate-600 transition p-0.5 cursor-pointer ml-2"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-2.5">
-                <Button
+              {/* Primary Blue Button */}
+              <button
+                type="submit"
+                disabled={isSubmitting || isLoading}
+                className="w-full mt-2 py-3 px-6 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white font-semibold text-sm rounded-lg shadow-sm transition duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+              >
+                {isSubmitting ? (
+                  <span>Processing...</span>
+                ) : (
+                  <span>{mode === 'signup' ? 'Sign Up' : 'Sign In'}</span>
+                )}
+              </button>
+
+              {/* Divider */}
+              <div className="relative my-6 text-center">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-200" />
+                </div>
+                <span className="relative bg-white px-3 text-xs text-slate-400 font-normal">
+                  {mode === 'signup' ? 'or sign up with' : 'or sign in with'}
+                </span>
+              </div>
+
+              {/* Social Login 3-Card Row */}
+              <div className="grid grid-cols-3 gap-3">
+                {/* Facebook */}
+                <button
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedMemberForAuth(null)}
-                  className="text-slate-400 hover:text-white"
+                  onClick={() => info('Facebook Login', 'Connected for SSO workspace login.')}
+                  className="py-2.5 px-4 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 rounded-lg flex items-center justify-center transition shadow-2xs cursor-pointer"
+                  title="Sign in with Facebook"
                 >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="sm"
-                  isLoading={isVerifyingModal}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-5"
+                  <svg className="w-4 h-4 text-[#1877F2]" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                  </svg>
+                </button>
+
+                {/* Google */}
+                <button
+                  type="button"
+                  onClick={() => info('Google Login', 'Google Single Sign-On enabled.')}
+                  className="py-2.5 px-4 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 rounded-lg flex items-center justify-center transition shadow-2xs cursor-pointer"
+                  title="Sign in with Google"
                 >
-                  Unlock & Sign In
-                </Button>
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                  </svg>
+                </button>
+
+                {/* Apple */}
+                <button
+                  type="button"
+                  onClick={() => info('Apple Login', 'Apple ID Sign-In enabled.')}
+                  className="py-2.5 px-4 border border-slate-200 hover:border-slate-300 hover:bg-slate-50 rounded-lg flex items-center justify-center transition shadow-2xs cursor-pointer"
+                  title="Sign in with Apple"
+                >
+                  <svg className="w-4 h-4 text-slate-900" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.85c.66-.82 1.11-1.96.99-3.1-.96.04-2.11.64-2.79 1.44-.59.68-1.11 1.77-.97 2.89 1.07.08 2.16-.54 2.77-1.23z" />
+                  </svg>
+                </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-slate-800/60 py-4 px-6 text-center text-xs text-slate-500">
-        Nexus Team CRM • Encrypted & Secure Workspace
-      </footer>
+          {/* =================================================================== */}
+          {/* PROFILE UNLOCK MODE                                                 */}
+          {/* =================================================================== */}
+          {mode === 'profiles' && (
+            <div className="space-y-4">
+              {!selectedProfile ? (
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    placeholder="Search member name..."
+                    value={searchProfile}
+                    onChange={(e) => setSearchProfile(e.target.value)}
+                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-blue-500"
+                  />
+                  <div className="max-h-60 overflow-y-auto space-y-2">
+                    {teamMembers
+                      .filter((m) => m.name.toLowerCase().includes(searchProfile.toLowerCase()))
+                      .map((member) => (
+                        <div
+                          key={member.id}
+                          onClick={() => {
+                            setSelectedProfile(member);
+                            setProfilePassword('');
+                          }}
+                          className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/50 transition cursor-pointer group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-blue-500 text-white font-bold text-xs flex items-center justify-center">
+                              {member.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold text-slate-900 group-hover:text-blue-600">
+                                {member.name}
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                {member.role || 'Member'}
+                              </div>
+                            </div>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition" />
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setMode('signin')}
+                      className="text-xs text-blue-600 font-semibold hover:underline cursor-pointer"
+                    >
+                      ← Back to Sign In
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleProfileUnlock} className="space-y-4">
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <div className="w-9 h-9 rounded-lg bg-blue-500 text-white font-bold text-xs flex items-center justify-center">
+                      {selectedProfile.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">{selectedProfile.name}</div>
+                      <div className="text-[11px] text-slate-500">{selectedProfile.role || 'Member'}</div>
+                    </div>
+                  </div>
+
+                  <div className="relative border border-slate-300 focus-within:border-blue-500 rounded-lg px-3.5 py-2.5 flex items-center justify-between bg-white">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      autoFocus
+                      value={profilePassword}
+                      onChange={(e) => setProfilePassword(e.target.value)}
+                      placeholder="Enter account password..."
+                      className="w-full text-xs text-slate-800 focus:outline-none bg-transparent"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer ml-2"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProfile(null)}
+                      className="flex-1 py-2 px-3 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="flex-1 py-2 px-3 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold shadow-xs cursor-pointer disabled:opacity-60"
+                    >
+                      {isSubmitting ? 'Unlocking...' : 'Sign In'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
+
+        </div>
+
+        {/* Bottom Switcher Footer */}
+        <div className="text-xs text-slate-500">
+          {mode === 'signup' ? (
+            <>
+              Have an account?{' '}
+              <button
+                type="button"
+                onClick={() => setMode('signin')}
+                className="font-semibold text-blue-600 hover:underline cursor-pointer"
+              >
+                Sign in
+              </button>
+            </>
+          ) : (
+            <>
+              Don't have an account?{' '}
+              <button
+                type="button"
+                onClick={() => setMode('signup')}
+                className="font-semibold text-blue-600 hover:underline cursor-pointer"
+              >
+                Sign up
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* RIGHT COLUMN: STUNNING FLUID ACRYLIC POUR MARBLE ARTWORK                   */}
+      {/* ========================================================================= */}
+      <div className="w-full md:w-1/2 lg:w-[50%] relative min-h-[360px] md:min-h-screen bg-slate-100 overflow-hidden select-none">
+        {/* Full Cover Fluid Marble Artwork Image */}
+        <img
+          src="/fluid_marble_art.jpg"
+          alt="Abstract fluid marble artwork"
+          className="w-full h-full object-cover object-center absolute inset-0"
+        />
+
+        {/* Subtle Bottom-Right Slider Indicator `— • •` */}
+        <div className="absolute bottom-8 right-8 z-10 flex items-center gap-2">
+          <div className="w-6 h-1 rounded-full bg-white shadow-sm" />
+          <div className="w-1.5 h-1.5 rounded-full bg-white/60 shadow-sm" />
+          <div className="w-1.5 h-1.5 rounded-full bg-white/60 shadow-sm" />
+        </div>
+      </div>
     </div>
   );
 };

@@ -13,12 +13,14 @@ import {
   Search,
   Settings,
   RefreshCw,
+  Share2,
 } from 'lucide-react';
 
 interface HeaderProps {
   onOpenImport: () => void;
   onOpenAddContact: () => void;
   onOpenEmailSettings?: () => void;
+  onOpenInvite?: () => void;
   onSyncInbox?: () => Promise<void>;
   isSyncingInbox?: boolean;
   searchQuery: string;
@@ -30,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenImport,
   onOpenAddContact,
   onOpenEmailSettings,
+  onOpenInvite,
   onSyncInbox,
   isSyncingInbox = false,
   searchQuery,
@@ -128,6 +131,20 @@ export const Header: React.FC<HeaderProps> = ({
           Add Contact
         </Button>
 
+        {/* Invite Team Button */}
+        {onOpenInvite && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenInvite}
+            leftIcon={<Share2 className="w-3.5 h-3.5 text-[#1e4634]" />}
+            className="border-emerald-700/30 text-[#1e4634] hover:bg-emerald-50/50 hidden sm:inline-flex"
+            title="Invite teammates to try this CRM"
+          >
+            Invite Team
+          </Button>
+        )}
+
         {/* Email Settings button */}
         {onOpenEmailSettings && (
           <button
@@ -179,6 +196,19 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
 
                 <div className="py-1">
+                  {onOpenInvite && (
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        onOpenInvite();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 rounded-xl transition text-left cursor-pointer"
+                    >
+                      <Share2 className="w-4 h-4 text-emerald-700" />
+                      <span>Invite Colleagues</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
                       setIsUserMenuOpen(false);
