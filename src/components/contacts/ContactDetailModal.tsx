@@ -4,9 +4,8 @@ import { useToast } from '../../context/ToastContext';
 import { Contact, Interaction, EmailRecord, Reminder, ContactStatus } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { getInitials } from '../../lib/utils';
-import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
-import { Badge, StatusBadge } from '../ui/Badge';
+import { Badge } from '../ui/Badge';
 import { InteractionLogger } from './InteractionLogger';
 import { InteractionTimeline } from './InteractionTimeline';
 import {
@@ -26,7 +25,11 @@ import {
   ChevronDown,
   Layers,
   Copy,
+  Check,
   Globe,
+  X,
+  AlertCircle,
+  FileText,
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 
@@ -46,7 +49,7 @@ const statusConfig: Record<
   { label: string; dot: string; bg: string; text: string; border: string }
 > = {
   new: {
-    label: 'New Lead',
+    label: 'Not Started',
     dot: 'bg-blue-500',
     bg: 'bg-blue-50/80',
     text: 'text-blue-700',
@@ -60,7 +63,7 @@ const statusConfig: Record<
     border: 'border-amber-200',
   },
   qualified: {
-    label: 'Qualified',
+    label: 'Replied & Qualified',
     dot: 'bg-purple-500',
     bg: 'bg-purple-50/80',
     text: 'text-purple-700',
@@ -77,8 +80,8 @@ const statusConfig: Record<
     label: 'Closed / Won',
     dot: 'bg-emerald-500',
     bg: 'bg-emerald-50/80',
-    text: 'text-emerald-700',
-    border: 'border-emerald-200',
+    text: 'text-emerald-700 font-bold',
+    border: 'border-emerald-300',
   },
   lost: {
     label: 'Closed / Lost',
@@ -114,6 +117,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   const [emails, setEmails] = useState<EmailRecord[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const fetchDetails = async () => {
     if (!contact) return;
@@ -141,7 +145,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
     }
   }, [isOpen, contact]);
 
-  if (!contact) return null;
+  if (!isOpen || !contact) return null;
 
   const handleStatusChange = async (newStatus: ContactStatus) => {
     try {
@@ -174,43 +178,95 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
     }
   };
 
-  const copyToClipboard = (text: string, label: string) => {
+  const copyToClipboard = (text: string, label: string, keyIdentifier: string) => {
     navigator.clipboard.writeText(text);
+    setCopiedKey(keyIdentifier);
+    setTimeout(() => setCopiedKey(null), 1500);
     info('Copied!', `${label} copied to clipboard`);
   };
 
   const statuses: ContactStatus[] = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost', 'inactive'];
   const currentStatus = statusConfig[contact.status] || statusConfig.new;
 
+  // Normalize company website url (check website field or if name itself contains a domain/url)
+  const rawWebsite = contact.company?.website?.trim() || (contact.company?.name?.trim().includes('.') ? contact.company?.name?.trim() : '') || '';
+  const normalizedUrl = rawWebsite
+    ? rawWebsite.startsWith('http://') || rawWebsite.startsWith('https://')
+      ? rawWebsite
+      : `https://${rawWebsite}`
+    : '';
+
+  // Calculate overdue status
+  const contactDate = new Date(contact.updated_at || contact.created_at).getTime();
+  const diffDays = Math.floor((Date.now() - contactDate) / (1000 * 60 * 60 * 24));
+  const isFollowUpOverdue = contact.status === 'contacted' && diffDays >= 3;
+
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      maxWidth="4xl"
-      showCloseButton={true}
-    >
-      <div className="space-y-6">
-        {/* Contact Hero Banner */}
-        <div className="relative rounded-2xl bg-gradient-to-b from-slate-50/80 to-white p-5 sm:p-6 border border-slate-200/90 shadow-xs">
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-            <div className="flex items-start gap-4">
-              {/* Avatar Squircle */}
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-600 to-violet-600 text-white font-extrabold text-xl flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/25 ring-4 ring-indigo-50">
+    <div className="fixed inset-0 z-50 overflow-hidden">
+      {/* Backdrop overlay */}
+      <div
+        className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+        onClick={onClose}
+      />
+
+      {/* Slide-over Drawer entering from Right */}
+      <div className="fixed inset-y-0 right-0 w-full max-w-xl bg-white shadow-2xl z-50 flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-250">
+        
+        {/* Drawer Header */}
+        <div className="p-5 border-b border-slate-200/80 bg-slate-50/70 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              Lead Details
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => onEditContact(contact)}
+              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+              title="Edit Contact"
+            >
+              <Edit className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleDeleteContact}
+              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+              title="Delete Contact"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 rounded-lg transition cursor-pointer ml-1"
+              title="Close Drawer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Drawer Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+          
+          {/* Hero Lead Card */}
+          <div className="rounded-2xl bg-gradient-to-b from-slate-50/90 to-white p-5 border border-slate-200/90 shadow-xs space-y-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white font-extrabold text-lg flex items-center justify-center shrink-0 shadow-md shadow-indigo-500/20">
                 {getInitials(contact.name, 'C')}
               </div>
 
-              <div className="min-w-0 space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-xl font-bold text-slate-900 tracking-tight">
                     {contact.name}
                   </h2>
 
-                  {/* Stage Status Selector Dropdown */}
+                  {/* Inline Stage Dropdown */}
                   <div className="relative inline-flex items-center">
                     <select
                       value={contact.status}
                       onChange={(e) => handleStatusChange(e.target.value as ContactStatus)}
-                      className={`text-xs font-bold pl-7 pr-7 py-1 rounded-full border shadow-2xs cursor-pointer appearance-none transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${currentStatus.bg} ${currentStatus.text} ${currentStatus.border}`}
+                      className={`text-xs font-bold pl-7 pr-6 py-1 rounded-full border shadow-2xs cursor-pointer appearance-none transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${currentStatus.bg} ${currentStatus.text} ${currentStatus.border}`}
                     >
                       {statuses.map((st) => (
                         <option key={st} value={st} className="bg-white text-slate-800">
@@ -225,442 +281,309 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                   </div>
                 </div>
 
-                {/* Subtitle / Company / Owner info */}
-                <div className="text-xs text-slate-600 flex flex-wrap items-center gap-3">
-                  {contact.title && (
-                    <span className="font-semibold text-slate-800">{contact.title}</span>
-                  )}
+                {/* Subtitle & Role & Clickable Company */}
+                <div className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
+                  {contact.title && <span className="font-semibold text-slate-700">{contact.title}</span>}
                   {contact.company && (
-                    <span className="inline-flex items-center gap-1 text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">
-                      <Building className="w-3 h-3" />
-                      {contact.company.name}
-                    </span>
-                  )}
-                  {contact.owner && (
-                    <span className="text-slate-500 inline-flex items-center gap-1 font-medium">
-                      <User className="w-3 h-3 text-slate-400" />
-                      Owner: <strong className="text-slate-700">{contact.owner.name}</strong>
+                    <span className="text-slate-400 inline-flex items-center gap-1">
+                      <span>• at</span>
+                      {normalizedUrl ? (
+                        <a
+                          href={normalizedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-bold text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center gap-1 transition-colors cursor-pointer"
+                          title={`Open ${normalizedUrl} in a new tab`}
+                        >
+                          <span>{contact.company.name}</span>
+                          <ExternalLink className="w-3 h-3 text-indigo-500 shrink-0" />
+                        </a>
+                      ) : (
+                        <strong className="text-slate-800">{contact.company.name}</strong>
+                      )}
                     </span>
                   )}
                 </div>
-
-                {/* Tags */}
-                {contact.tags && contact.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {contact.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white border border-slate-200 text-slate-700 px-2.5 py-0.5 rounded-md shadow-2xs"
-                      >
-                        <Tag className="w-3 h-3 text-slate-400" />
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Top Action Toolbar */}
-            <div className="flex flex-wrap items-center gap-2 shrink-0 sm:self-start">
-              {contact.phone && (
-                <a
-                  href={`tel:${contact.phone}`}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition shadow-xs"
-                  title="Click to dial"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>Call</span>
-                </a>
-              )}
-
-              {onOpenLinkedIn && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onOpenLinkedIn(contact)}
-                  className="bg-[#0077b5]/10 hover:bg-[#0077b5]/20 text-[#0077b5] border-[#0077b5]/30 font-bold"
-                  title="Send Direct Message or Connect on LinkedIn"
-                >
-                  💼 LinkedIn
-                </Button>
-              )}
-
-              <Button
-                variant="primary"
-                size="sm"
-                leftIcon={<Send className="w-3.5 h-3.5" />}
-                onClick={() => onOpenEmail(contact)}
-              >
-                Compose Email
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                leftIcon={<CalendarCheck2 className="w-3.5 h-3.5 text-amber-600" />}
-                onClick={() => onAddReminder(contact)}
-              >
-                Reminder
-              </Button>
-
-              <button
-                onClick={() => onEditContact(contact)}
-                className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl border border-slate-200 bg-white transition shadow-2xs cursor-pointer"
-                title="Edit Contact"
-              >
-                <Edit className="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                onClick={handleDeleteContact}
-                className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition cursor-pointer"
-                title="Delete Contact"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Contact Info Pills Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50/70 border border-slate-200/80 text-xs">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                <Mail className="w-3.5 h-3.5" />
-              </div>
-              <div className="min-w-0">
-                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Email</span>
-                <span className="font-semibold text-slate-800 truncate block text-xs" title={contact.email || ''}>
-                  {contact.email || '—'}
-                </span>
-              </div>
-            </div>
-            {contact.email && (
-              <button
-                onClick={() => copyToClipboard(contact.email || '', 'Email')}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded transition"
-                title="Copy Email"
-              >
-                <Copy className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50/70 border border-slate-200/80 text-xs">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                <Phone className="w-3.5 h-3.5" />
-              </div>
-              <div className="min-w-0">
-                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Phone</span>
-                <span className="font-semibold text-slate-800 truncate block text-xs">
-                  {contact.phone || '—'}
-                </span>
-              </div>
-            </div>
-            {contact.phone && (
-              <button
-                onClick={() => copyToClipboard(contact.phone || '', 'Phone')}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded transition"
-                title="Copy Phone"
-              >
-                <Copy className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50/70 border border-slate-200/80 text-xs">
-            <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
-              <Clock className="w-3.5 h-3.5" />
-            </div>
-            <div className="min-w-0">
-              <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Created</span>
-              <span className="font-semibold text-slate-800 truncate block text-xs">
-                {contact.created_at
-                  ? format(new Date(contact.created_at), 'MMM d, yyyy')
-                  : '—'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Custom fields - Sleek Notion/Linear Style Properties List */}
-        {contact.custom_fields && Object.keys(contact.custom_fields).length > 0 && (
-          <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-slate-400" />
-                Custom Attributes & Properties
-              </span>
-              <span className="text-[10px] font-semibold text-slate-400">
-                {Object.keys(contact.custom_fields).length} fields
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {Object.entries(contact.custom_fields).map(([key, val]) => {
-                const strVal = String(val || '');
-                const isUrl =
-                  strVal.startsWith('http://') ||
-                  strVal.startsWith('https://') ||
-                  strVal.startsWith('www.');
-                const href = strVal.startsWith('www.') ? `https://${strVal}` : strVal;
-
-                return (
-                  <div
-                    key={key}
-                    className="bg-white p-3 rounded-xl border border-slate-200/90 shadow-2xs hover:border-indigo-200 hover:shadow-xs transition"
-                  >
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider mb-1">
-                      {key}
-                    </span>
-                    {isUrl ? (
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-semibold text-xs text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 truncate"
-                        title={strVal}
-                      >
-                        <Globe className="w-3 h-3 shrink-0" />
-                        <span className="truncate">{strVal}</span>
-                        <ExternalLink className="w-2.5 h-2.5 shrink-0 ml-auto opacity-70" />
-                      </a>
-                    ) : (
-                      <span className="font-semibold text-xs text-slate-800 break-words line-clamp-2">
-                        {strVal || '—'}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Sub-tabs for Timeline, Emails, Reminders */}
-        <div className="space-y-4 pt-1">
-          {/* Segmented Tab Buttons */}
-          <div className="flex items-center gap-2 border-b border-slate-200">
-            <button
-              onClick={() => setActiveTab('timeline')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === 'timeline'
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Clock className="w-4 h-4" />
-              <span>Interactions</span>
-              <span
-                className={`text-[11px] px-2 py-0.2 rounded-full font-bold ${
-                  activeTab === 'timeline'
-                    ? 'bg-indigo-100 text-indigo-800'
-                    : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                {interactions.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('emails')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === 'emails'
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Mail className="w-4 h-4" />
-              <span>Emails & Replies</span>
-              <span
-                className={`text-[11px] px-2 py-0.2 rounded-full font-bold ${
-                  activeTab === 'emails'
-                    ? 'bg-indigo-100 text-indigo-800'
-                    : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                {emails.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('reminders')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === 'reminders'
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <CalendarCheck2 className="w-4 h-4" />
-              <span>Tasks & Reminders</span>
-              <span
-                className={`text-[11px] px-2 py-0.2 rounded-full font-bold ${
-                  activeTab === 'reminders'
-                    ? 'bg-indigo-100 text-indigo-800'
-                    : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                {reminders.length}
-              </span>
-            </button>
-          </div>
-
-          {activeTab === 'timeline' && (
-            <div className="space-y-4">
-              <InteractionLogger
-                contactId={contact.id}
-                onInteractionAdded={(newInt) => {
-                  setInteractions([newInt, ...interactions]);
-                  onContactUpdated();
-                }}
-              />
-              <InteractionTimeline interactions={interactions} />
-            </div>
-          )}
-
-          {activeTab === 'emails' && (
-            <div className="space-y-3">
-              {emails.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50/60 rounded-2xl border border-slate-200/80">
-                  <Mail className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-xs font-semibold text-slate-700">No email history for this contact</p>
+            {/* ACTION HIERARCHY BAR: Highlight Next Logical Action */}
+            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2">
+              {contact.status === 'new' ? (
+                /* Primary Outreach Highlight */
+                <>
                   <Button
-                    size="sm"
                     variant="primary"
-                    className="mt-3"
+                    size="sm"
+                    leftIcon={<Send className="w-3.5 h-3.5" />}
                     onClick={() => onOpenEmail(contact)}
-                    leftIcon={<Sparkles className="w-4 h-4" />}
+                    className="flex-1 shadow-md shadow-indigo-600/20"
                   >
-                    Compose Email with AI
+                    Compose 1st Outreach Email
                   </Button>
-                </div>
+                  {onOpenLinkedIn && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      leftIcon={<Send className="w-3.5 h-3.5 text-blue-600" />}
+                      onClick={() => onOpenLinkedIn(contact)}
+                    >
+                      LinkedIn
+                    </Button>
+                  )}
+                </>
+              ) : isFollowUpOverdue ? (
+                /* Overdue Follow-up Highlight */
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpenEmail(contact)}
+                    className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition shadow-md shadow-rose-600/25 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send Overdue Follow-up Message ({diffDays}d ago)</span>
+                  </button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<CalendarCheck2 className="w-3.5 h-3.5" />}
+                    onClick={() => onAddReminder(contact)}
+                  >
+                    Task
+                  </Button>
+                </>
               ) : (
-                emails.map((email) => {
-                  const isInbound =
-                    email.is_inbound ||
-                    email.status === 'received' ||
-                    email.subject.toLowerCase().startsWith('re:');
+                /* Standard Action Bar */
+                <>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<Mail className="w-3.5 h-3.5" />}
+                    onClick={() => onOpenEmail(contact)}
+                    className="flex-1"
+                  >
+                    Send Email
+                  </Button>
+                  {onOpenLinkedIn && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onOpenLinkedIn(contact)}
+                    >
+                      LinkedIn
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<CalendarCheck2 className="w-3.5 h-3.5" />}
+                    onClick={() => onAddReminder(contact)}
+                  >
+                    Set Reminder
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
 
+          {/* Contact Information & Channels */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs space-y-3">
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Communication Channels
+            </h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              {contact.email && (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                  <div className="flex items-center gap-2 truncate pr-2">
+                    <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span className="text-slate-800 truncate">{contact.email}</span>
+                  </div>
+                  <button
+                    onClick={() => copyToClipboard(contact.email!, 'Email', 'email')}
+                    className="p-1 text-slate-400 hover:text-indigo-600 rounded transition cursor-pointer"
+                    title="Copy Email"
+                  >
+                    {copiedKey === 'email' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              )}
+
+              {contact.phone && (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                  <div className="flex items-center gap-2 truncate pr-2">
+                    <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span className="text-slate-800">{contact.phone}</span>
+                  </div>
+                  <button
+                    onClick={() => copyToClipboard(contact.phone!, 'Phone', 'phone')}
+                    className="p-1 text-slate-400 hover:text-indigo-600 rounded transition cursor-pointer"
+                    title="Copy Phone"
+                  >
+                    {copiedKey === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Personalized Connection Note & Custom Fields with 1-Click Copy */}
+          {contact.custom_fields && Object.keys(contact.custom_fields).length > 0 && (
+            <div className="bg-amber-50/50 rounded-2xl p-4 border border-amber-200/80 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-950">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                  <span>Personalized Notes & AI Research</span>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                {Object.entries(contact.custom_fields).map(([key, val]) => {
+                  const strVal = String(val);
                   return (
                     <div
-                      key={email.id}
-                      className={`p-4 rounded-xl border shadow-2xs space-y-2 transition ${
-                        isInbound
-                          ? 'bg-emerald-50/40 border-emerald-200/90 hover:border-emerald-300'
-                          : 'bg-white border-slate-200/90 hover:border-slate-300'
-                      }`}
+                      key={key}
+                      className="p-3 bg-white rounded-xl border border-amber-200/60 shadow-2xs text-xs"
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-slate-900">
-                            {email.subject}
-                          </span>
-                          {isInbound ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
-                              📥 Received Reply
-                            </span>
+                      <div className="flex items-center justify-between text-slate-500 text-[11px] mb-1 font-semibold uppercase tracking-wider">
+                        <span>{key.replace(/_/g, ' ')}</span>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(strVal, key, key)}
+                          className="flex items-center gap-1 text-[11px] font-bold text-amber-800 hover:text-amber-950 px-2 py-0.5 rounded bg-amber-100/60 hover:bg-amber-100 transition cursor-pointer"
+                        >
+                          {copiedKey === key ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span className="text-emerald-700">Copied!</span>
+                            </>
                           ) : (
-                            email.ai_generated && (
-                              <span className="inline-flex items-center gap-1 text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-bold">
-                                <Sparkles className="w-3 h-3" /> AI Drafted
-                              </span>
-                            )
+                            <>
+                              <Copy className="w-3 h-3 text-amber-700" />
+                              <span>Copy</span>
+                            </>
                           )}
-                        </div>
-                        <span className="text-[11px] text-slate-400">
-                          {email.sent_at
-                            ? formatDistanceToNow(new Date(email.sent_at), { addSuffix: true })
-                            : '—'}
-                        </span>
+                        </button>
                       </div>
-
-                      <div className="text-xs text-slate-500">
-                        {isInbound ? (
-                          <>
-                            Received from: <strong className="text-slate-800">{email.sender_email || contact.name}</strong> to{' '}
-                            <strong className="text-slate-800">{email.recipient_email}</strong>
-                          </>
-                        ) : (
-                          <>
-                            Sent by: <strong className="text-slate-800">{email.sender?.name || 'Team Member'}</strong> to{' '}
-                            <strong className="text-slate-800">{email.recipient_email}</strong>
-                          </>
-                        )}
-                      </div>
-
-                      <div
-                        className={`p-3 rounded-lg text-xs whitespace-pre-wrap font-sans border leading-relaxed ${
-                          isInbound
-                            ? 'bg-white text-emerald-950 border-emerald-100'
-                            : 'bg-slate-50/80 text-slate-700 border-slate-100'
-                        }`}
-                      >
-                        {email.body}
-                      </div>
+                      <p className="text-slate-800 leading-relaxed whitespace-pre-wrap">{strVal}</p>
                     </div>
                   );
-                })
-              )}
+                })}
+              </div>
             </div>
           )}
 
-          {activeTab === 'reminders' && (
-            <div className="space-y-3">
-              <div className="flex justify-end">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  leftIcon={<CalendarCheck2 className="w-3.5 h-3.5" />}
-                  onClick={() => onAddReminder(contact)}
-                >
-                  Schedule Follow-up
-                </Button>
-              </div>
+          {/* Activity Tabs: Timeline / Emails / Reminders */}
+          <div className="space-y-3">
+            <div className="flex items-center border-b border-slate-200 gap-4 text-xs font-semibold">
+              <button
+                onClick={() => setActiveTab('timeline')}
+                className={`py-2.5 border-b-2 transition cursor-pointer ${
+                  activeTab === 'timeline'
+                    ? 'border-indigo-600 text-indigo-600 font-bold'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Timeline ({interactions.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('emails')}
+                className={`py-2.5 border-b-2 transition cursor-pointer ${
+                  activeTab === 'emails'
+                    ? 'border-indigo-600 text-indigo-600 font-bold'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Emails ({emails.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('reminders')}
+                className={`py-2.5 border-b-2 transition cursor-pointer ${
+                  activeTab === 'reminders'
+                    ? 'border-indigo-600 text-indigo-600 font-bold'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Tasks & Reminders ({reminders.length})
+              </button>
+            </div>
 
-              {reminders.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50/60 rounded-2xl border border-slate-200/80">
-                  <CalendarCheck2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-xs font-semibold text-slate-700">No reminders for this contact</p>
-                </div>
-              ) : (
-                reminders.map((rem) => (
-                  <div
-                    key={rem.id}
-                    className={`flex items-center justify-between p-3.5 rounded-xl border bg-white shadow-2xs ${
-                      rem.done ? 'opacity-60 bg-slate-50' : 'border-slate-200/90'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={rem.done}
-                        onChange={() => handleToggleReminder(rem)}
-                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                      />
-                      <div>
-                        <p
-                          className={`text-xs font-semibold ${
-                            rem.done ? 'line-through text-slate-400' : 'text-slate-900'
-                          }`}
-                        >
-                          {rem.note}
-                        </p>
-                        <span className="text-[11px] text-slate-500 block mt-0.5">
-                          Due: {format(new Date(rem.due_date), 'MMM d, yyyy • p')}
+            {/* Tab Contents */}
+            {activeTab === 'timeline' && (
+              <div className="space-y-4">
+                <InteractionLogger
+                  contactId={contact.id}
+                  onInteractionAdded={() => {
+                    fetchDetails();
+                    onContactUpdated();
+                  }}
+                />
+                <InteractionTimeline
+                  interactions={interactions}
+                />
+              </div>
+            )}
+
+            {activeTab === 'emails' && (
+              <div className="space-y-3">
+                {emails.length === 0 ? (
+                  <p className="text-center py-6 text-xs text-slate-400">No emails logged yet.</p>
+                ) : (
+                  emails.map((em) => (
+                    <div
+                      key={em.id}
+                      className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900">{em.subject}</span>
+                        <span className="text-[10px] text-slate-400">
+                          {format(new Date(em.sent_at || Date.now()), 'MMM d, h:mm a')}
                         </span>
                       </div>
+                      <p className="text-slate-600 line-clamp-3 whitespace-pre-wrap">{em.body}</p>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
+                  ))
+                )}
+              </div>
+            )}
+
+            {activeTab === 'reminders' && (
+              <div className="space-y-2.5">
+                {reminders.length === 0 ? (
+                  <p className="text-center py-6 text-xs text-slate-400">No scheduled tasks.</p>
+                ) : (
+                  reminders.map((rem) => (
+                    <div
+                      key={rem.id}
+                      className={`p-3 rounded-xl border flex items-center justify-between text-xs transition ${
+                        rem.done ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200 shadow-2xs'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={rem.done}
+                          onChange={() => handleToggleReminder(rem)}
+                          className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                        <div>
+                          <p className={`font-medium ${rem.done ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                            {rem.note}
+                          </p>
+                          <span className="text-[10px] text-slate-500">
+                            Due: {format(new Date(rem.due_date), 'MMM d, yyyy')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
-    </Modal>
+    </div>
   );
 };
-
