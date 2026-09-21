@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
-import { Contact, Interaction, EmailRecord, Reminder, ContactStatus } from '../../types/crm';
+import { Contact, Interaction, EmailRecord, Reminder, ContactStatus, Deal } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { getInitials } from '../../lib/utils';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { InteractionLogger } from './InteractionLogger';
 import { InteractionTimeline } from './InteractionTimeline';
+import { DealModal } from '../pipeline/DealModal';
 import {
   User,
   Building,
@@ -112,10 +113,13 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   const { activeMember } = useTeam();
   const { success, error, info } = useToast();
 
-  const [activeTab, setActiveTab] = useState<'timeline' | 'emails' | 'reminders'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'emails' | 'reminders' | 'deals'>('timeline');
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [emails, setEmails] = useState<EmailRecord[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [isDealModalOpen, setIsDealModalOpen] = useState(false);
+  const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -123,14 +127,16 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
     if (!contact) return;
     setIsLoadingDetails(true);
     try {
-      const [fetchedInteractions, fetchedEmails, allReminders] = await Promise.all([
+      const [fetchedInteractions, fetchedEmails, allReminders, fetchedDeals] = await Promise.all([
         db.getInteractions(contact.id),
         db.getEmails(contact.id),
         db.getReminders(),
+        db.getDeals(contact.id),
       ]);
       setInteractions(fetchedInteractions);
       setEmails(fetchedEmails);
       setReminders(allReminders.filter((r) => r.contact_id === contact.id));
+      setDeals(fetchedDeals);
     } catch (e) {
       console.error(e);
     } finally {
@@ -506,6 +512,16 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
               >
                 Tasks & Reminders ({reminders.length})
               </button>
+              <button
+                onClick={() => setActiveTab('deals')}
+                className={`py-2.5 border-b-2 transition cursor-pointer ${
+                  activeTab === 'deals'
+                    ? 'border-indigo-600 text-indigo-600 font-bold'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Deals & Pipeline ({deals.length})
+              </button>
             </div>
 
             {/* Tab Contents */}
@@ -580,10 +596,101 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                 )}
               </div>
             )}
+
+            {/* Deals Tab */}
+            {activeTab === 'deals' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">
+                    Opportunities with {contact.name}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                    onClick={() => {
+                      setEditingDeal(null);
+                      setIsDealModalOpen(true);
+                    }}
+                  >
+                    + Add Deal
+                  </Button>
+                </div>
+
+                {deals.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-6">
+                    <p className="font-semibold text-slate-600">No deals created for this contact yet.</p>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Track pipeline value, stage progression, and closing probability.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      className="mt-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                      onClick={() => {
+                        setEditingDeal(null);
+                        setIsDealModalOpen(true);
+                      }}
+                    >
+                      + Create First Deal
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {deals.map((deal) => (
+                      <div
+                        key={deal.id}
+                        onClick={() => {
+                          setEditingDeal(deal);
+                          setIsDealModalOpen(true);
+                        }}
+                        className="p-3 bg-white border border-slate-200 hover:border-emerald-300 rounded-xl transition shadow-2xs hover:shadow-xs cursor-pointer flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <h5 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                            {deal.title}
+                          </h5>
+                          <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500">
+                            <span className="capitalize font-semibold text-slate-700 px-2 py-0.5 rounded bg-slate-100 text-[10px]">
+                              {deal.stage}
+                            </span>
+                            <span>{deal.probability}% probability</span>
+                            {deal.expected_close_date && (
+                              <span>• Close: {format(new Date(deal.expected_close_date), 'MMM d, yyyy')}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <span className="text-sm font-black text-slate-900">
+                            ${deal.value.toLocaleString()}
+                          </span>
+                          <span className="block text-[10px] text-slate-400 uppercase font-bold">
+                            {deal.currency}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
         </div>
       </div>
+
+      {/* Deal Modal for Contact */}
+      <DealModal
+        isOpen={isDealModalOpen}
+        onClose={() => {
+          setIsDealModalOpen(false);
+          setEditingDeal(null);
+        }}
+        dealToEdit={editingDeal}
+        initialContact={contact}
+        onSuccess={fetchDetails}
+      />
     </div>
   );
 };

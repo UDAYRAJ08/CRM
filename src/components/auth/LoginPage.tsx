@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTeam } from '../../context/TeamContext';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import {
   Eye,
@@ -12,13 +13,13 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { TeamMember } from '../../types/crm';
-import { saveUserPassword, verifyUserPassword, verifyEmailCredentials } from '../../lib/authCrypto';
 
 export const LoginPage: React.FC = () => {
-  const { teamMembers, setActiveMember, addTeamMember, isLoading } = useTeam();
+  const { teamMembers } = useTeam();
+  const { signIn, signUp, isLoading: isAuthLoading } = useAuth();
   const { success, error, info } = useToast();
 
-  const [mode, setMode] = useState<'signup' | 'signin' | 'profiles'>('signup');
+  const [mode, setMode] = useState<'signup' | 'signin' | 'profiles'>('signin');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -90,31 +91,11 @@ export const LoginPage: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      const found = teamMembers.find(
-        (m) => m.email?.toLowerCase().trim() === trimmedEmail.toLowerCase()
-      );
-
-      const isValid = await verifyEmailCredentials(trimmedEmail, found?.id, trimmedPass);
-
-      if (!isValid) {
-        error('Invalid Credentials', 'Incorrect email address or password. Please verify and try again.');
-        return;
-      }
-
-      if (found) {
-        setActiveMember(found);
-        localStorage.setItem('crm_active_member_id', found.id);
-        success('Signed In', `Welcome back, ${found.name}!`);
-      } else {
-        const derivedName = trimmedEmail.split('@')[0].replace(/[._]/g, ' ');
-        const formattedName = derivedName.charAt(0).toUpperCase() + derivedName.slice(1);
-        const newMem = await addTeamMember(formattedName, trimmedEmail, 'Team Member');
-        await saveUserPassword(newMem.id, trimmedPass);
-        setActiveMember(newMem);
-        success('Welcome!', `Logged in as ${newMem.name}`);
-      }
+      await signIn(trimmedEmail, trimmedPass);
+      success('Signed In', `Welcome back to your workspace!`);
     } catch (err: any) {
-      error('Sign In Failed', err.message || 'Unable to authenticate.');
+      const msg = err.message || 'Unable to authenticate with Supabase Auth.';
+      error('Sign In Failed', msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -132,36 +113,27 @@ export const LoginPage: React.FC = () => {
       error('Email Required', 'Please enter your email address.');
       return;
     }
-    if (!pass || pass.length < 4) {
-      error('Password Required', 'Please enter a password of at least 4 characters.');
+    if (!pass || pass.length < 6) {
+      error('Password Too Short', 'Please enter a password of at least 6 characters.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const existing = teamMembers.find(
-        (m) => m.email?.toLowerCase().trim() === mail.toLowerCase()
-      );
-
-      let memberToSet: TeamMember;
-
-      if (existing) {
-        await saveUserPassword(existing.id, pass);
-        memberToSet = existing;
-      } else {
-        const created = await addTeamMember(formattedName, mail, role || 'Sales Representative');
-        await saveUserPassword(created.id, pass);
-        memberToSet = created;
-      }
-
-      setActiveMember(memberToSet);
-      localStorage.setItem('crm_active_member_id', memberToSet.id);
-
+      const result = await signUp(mail, pass, formattedName, role || 'Sales Representative');
       if (window.location.search) {
         window.history.replaceState({}, document.title, window.location.pathname);
       }
 
-      success('Account Created!', `Welcome to InsideBox, ${memberToSet.name}!`);
+      if (result.session) {
+        success('Account Created!', `Welcome to InsideBox, ${formattedName}!`);
+      } else {
+        info(
+          'Verification Required',
+          'A confirmation email may have been sent to complete your registration. Please check your inbox or sign in.'
+        );
+        setMode('signin');
+      }
     } catch (err: any) {
       error('Registration Failed', err.message || 'Unable to create account.');
     } finally {
@@ -180,16 +152,15 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
+    if (!selectedProfile.email) {
+      error('No Email Found', 'This profile has no associated email. Please sign in via the email form.');
+      setMode('signin');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const isValid = await verifyUserPassword(selectedProfile.id, pass);
-      if (!isValid) {
-        error('Invalid Password', 'The password entered is incorrect.');
-        return;
-      }
-
-      setActiveMember(selectedProfile);
-      localStorage.setItem('crm_active_member_id', selectedProfile.id);
+      await signIn(selectedProfile.email, pass);
       success('Authenticated!', `Welcome back, ${selectedProfile.name}!`);
     } catch (err: any) {
       error('Unlock Error', err.message || 'Verification failed.');
@@ -380,7 +351,7 @@ export const LoginPage: React.FC = () => {
               {/* Primary Blue Button */}
               <button
                 type="submit"
-                disabled={isSubmitting || isLoading}
+                disabled={isSubmitting || isAuthLoading}
                 className="w-full mt-2 py-3 px-6 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white font-semibold text-sm rounded-lg shadow-sm transition duration-150 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
               >
                 {isSubmitting ? (

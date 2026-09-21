@@ -7,6 +7,11 @@ import {
   EmailRecord,
   Reminder,
   ImportLog,
+  DashboardStats,
+  DashboardActivityItem,
+  DashboardDayBreakdown,
+  DayEmailRecord,
+  Deal,
 } from '../types/crm';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -33,6 +38,7 @@ const INITIAL_COMPANIES: Company[] = [];
 const INITIAL_CONTACTS: Contact[] = [];
 const INITIAL_INTERACTIONS: Interaction[] = [];
 const INITIAL_REMINDERS: Reminder[] = [];
+const INITIAL_DEALS: Deal[] = [];
 
 // Helper to load/save JSON from localStorage
 function getLocal<T>(key: string, defaultVal: T): T {
@@ -62,12 +68,40 @@ export const db = {
     return getLocal('team_members', INITIAL_TEAM);
   },
 
+  async getTeamMemberByAuthId(authUserId: string): Promise<TeamMember | null> {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('team_members')
+        .select('*')
+        .eq('auth_user_id', authUserId)
+        .maybeSingle();
+      if (!error && data) return data;
+    }
+    const members = getLocal('team_members', INITIAL_TEAM);
+    return members.find((m) => m.auth_user_id === authUserId) || null;
+  },
+
+  async linkTeamMemberAuth(memberId: string, authUserId: string): Promise<void> {
+    if (supabase) {
+      await supabase
+        .from('team_members')
+        .update({ auth_user_id: authUserId })
+        .eq('id', memberId);
+    }
+    const members = getLocal('team_members', INITIAL_TEAM);
+    const updated = members.map((m) =>
+      m.id === memberId ? { ...m, auth_user_id: authUserId } : m
+    );
+    setLocal('team_members', updated);
+  },
+
   async addTeamMember(member: Partial<TeamMember>): Promise<TeamMember> {
     const newMember: TeamMember = {
       id: member.id || crypto.randomUUID(),
       name: member.name || 'New Member',
       email: member.email || '',
       role: member.role || 'Member',
+      auth_user_id: member.auth_user_id,
       created_at: new Date().toISOString(),
     };
 
@@ -525,12 +559,546 @@ export const db = {
     }));
   },
 
+  async getDashboardStats(): Promise<DashboardStats> {
+    // ── Date boundary helpers (user local timezone → UTC ISO strings) ──────────
+    const now = new Date();
+
+    // Today: midnight local time
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(todayStart.getTime() + 86400000); // +1 day
+
+    // This week: Monday 00:00 local time → now
+    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
+    const daysSinceMonday = (dayOfWeek + 6) % 7; // Mon=0, Tue=1...
+    const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
+    const weekEnd = new Date(todayEnd);
+
+    // Last week: Mon–Sun prior to this week
+    const lastWeekStart = new Date(weekStart.getTime() - 7 * 86400000);
+    const lastWeekEnd = new Date(weekStart);
+
+    // Last 7 days for breakdown chart
+    const sevenDaysAgo = new Date(todayStart.getTime() - 6 * 86400000);
+
+    const todayStartISO = todayStart.toISOString();
+    const todayEndISO = todayEnd.toISOString();
+    const weekStartISO = weekStart.toISOString();
+    const weekEndISO = weekEnd.toISOString();
+    const lastWeekStartISO = lastWeekStart.toISOString();
+    const lastWeekEndISO = lastWeekEnd.toISOString();
+    const sevenDaysAgoISO = sevenDaysAgo.toISOString();
+
+    // ── Format date label ─────────────────────────────────────────────────────
+    const fmtDate = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    // Build 7-day date slots
+    const dateSlots: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(sevenDaysAgo.getTime() + i * 86400000);
+      dateSlots.push(fmtDate(d));
+    }
+
+    // ── Empty fallback ────────────────────────────────────────────────────────
+    const emptyStats: DashboardStats = {
+      emailsSentToday: 0,
+      contactsAddedToday: 0,
+      emailsThisWeek: 0,
+      emailsLastWeek: 0,
+      repliesReceivedToday: 0,
+      repliesReceivedThisWeek: 0,
+      replyRateToday: 0,
+      replyRateThisWeek: 0,
+      dailyBreakdown: dateSlots.map((date) => ({ date, sent: 0, replies: 0 })),
+      recentActivity: [],
+    };
+
+    if (supabase) {
+      try {
+        // ── Parallel queries ────────────────────────────────────────────────
+        const [sentEmailsRes, inboundRepliesRes, contactsRes, interactionsRes, teamMembersRes] =
+          await Promise.all([
+            // All sent emails in the last 7+ days (for breakdown + weekly metrics)
+            supabase
+              .from('emails')
+              .select('id, contact_id, sent_at, replied_at, reply_count, sent_by, status, subject')
+              .eq('status', 'sent')
+              .gte('sent_at', sevenDaysAgoISO)
+              .order('sent_at', { ascending: false }),
+
+            // Inbound reply emails in the last 7 days
+            supabase
+              .from('emails')
+              .select('id, contact_id, sent_at, sent_by, subject, status')
+              .eq('status', 'received')
+              .gte('sent_at', sevenDaysAgoISO)
+              .order('sent_at', { ascending: false }),
+
+            // All contacts created in last 7 days
+            supabase
+              .from('contacts')
+              .select('id, name, created_at, owner_id')
+              .gte('created_at', sevenDaysAgoISO)
+              .order('created_at', { ascending: false }),
+
+            // Recent interactions for activity feed
+            supabase
+              .from('interactions')
+              .select('id, contact_id, type, content, created_by, created_at')
+              .gte('created_at', sevenDaysAgoISO)
+              .order('created_at', { ascending: false })
+              .limit(30),
+
+            // Team members for name resolution
+            supabase.from('team_members').select('id, name'),
+          ]);
+
+        const sentEmails: any[] = sentEmailsRes.data || [];
+        const inboundReplies: any[] = inboundRepliesRes.data || [];
+        const contacts: any[] = contactsRes.data || [];
+        const interactions: any[] = interactionsRes.data || [];
+        const teamMembers: any[] = teamMembersRes.data || [];
+
+        const memberMap = new Map<string, string>(teamMembers.map((m) => [m.id, m.name]));
+
+        // ── Core metrics ───────────────────────────────────────────────────
+        const emailsSentToday = sentEmails.filter(
+          (e) => e.sent_at >= todayStartISO && e.sent_at < todayEndISO
+        ).length;
+
+        const emailsThisWeek = sentEmails.filter(
+          (e) => e.sent_at >= weekStartISO && e.sent_at < weekEndISO
+        ).length;
+
+        const emailsLastWeek = sentEmails.filter(
+          (e) => e.sent_at >= lastWeekStartISO && e.sent_at < lastWeekEndISO
+        ).length;
+
+        const contactsAddedToday = contacts.filter(
+          (c) => c.created_at >= todayStartISO && c.created_at < todayEndISO
+        ).length;
+
+        // Replies: count inbound received emails + outbound with replied_at set
+        const repliesReceivedToday =
+          inboundReplies.filter(
+            (e) => e.sent_at >= todayStartISO && e.sent_at < todayEndISO
+          ).length +
+          sentEmails.filter(
+            (e) =>
+              e.replied_at &&
+              e.replied_at >= todayStartISO &&
+              e.replied_at < todayEndISO
+          ).length;
+
+        const repliesReceivedThisWeek =
+          inboundReplies.filter(
+            (e) => e.sent_at >= weekStartISO && e.sent_at < weekEndISO
+          ).length +
+          sentEmails.filter(
+            (e) =>
+              e.replied_at &&
+              e.replied_at >= weekStartISO &&
+              e.replied_at < weekEndISO
+          ).length;
+
+        const replyRateToday =
+          emailsSentToday > 0
+            ? Math.round((repliesReceivedToday / emailsSentToday) * 100)
+            : 0;
+        const replyRateThisWeek =
+          emailsThisWeek > 0
+            ? Math.round((repliesReceivedThisWeek / emailsThisWeek) * 100)
+            : 0;
+
+        // ── Daily breakdown (7 days) ───────────────────────────────────────
+        const dailyBreakdown: DashboardDayBreakdown[] = dateSlots.map((date) => {
+          const dayStart = new Date(date + 'T00:00:00').toISOString();
+          const dayEnd = new Date(new Date(date + 'T00:00:00').getTime() + 86400000).toISOString();
+
+          const sent = sentEmails.filter(
+            (e) => e.sent_at >= dayStart && e.sent_at < dayEnd
+          ).length;
+
+          const replies =
+            inboundReplies.filter((e) => e.sent_at >= dayStart && e.sent_at < dayEnd).length +
+            sentEmails.filter(
+              (e) => e.replied_at && e.replied_at >= dayStart && e.replied_at < dayEnd
+            ).length;
+
+          return { date, sent, replies };
+        });
+
+        // ── Recent activity feed ───────────────────────────────────────────
+        const activityItems: DashboardActivityItem[] = [];
+
+        // Email sent events
+        sentEmails.slice(0, 20).forEach((e) => {
+          activityItems.push({
+            type: 'email_sent',
+            label: `Email sent: ${e.subject || '(no subject)'}`,
+            memberName: e.sent_by ? memberMap.get(e.sent_by) : undefined,
+            timestamp: e.sent_at,
+          });
+        });
+
+        // Reply received events
+        inboundReplies.slice(0, 10).forEach((e) => {
+          activityItems.push({
+            type: 'reply_received',
+            label: `Reply received: ${e.subject || '(no subject)'}`,
+            memberName: undefined,
+            timestamp: e.sent_at,
+          });
+        });
+
+        // Contact added events
+        contacts.slice(0, 10).forEach((c) => {
+          activityItems.push({
+            type: 'contact_added',
+            label: `New contact added: ${c.name}`,
+            memberName: c.owner_id ? memberMap.get(c.owner_id) : undefined,
+            timestamp: c.created_at,
+          });
+        });
+
+        // Interaction events (exclude inbound content, it's covered by reply_received)
+        interactions
+          .filter(
+            (i) =>
+              !i.content.includes('📥 Inbound Email Reply Received') &&
+              !i.content.includes('Inbound Email')
+          )
+          .slice(0, 10)
+          .forEach((i) => {
+            const typeLabel =
+              i.type === 'call'
+                ? 'Call logged'
+                : i.type === 'meeting'
+                ? 'Meeting logged'
+                : i.type === 'note'
+                ? 'Note added'
+                : 'Activity logged';
+            activityItems.push({
+              type: 'interaction',
+              label: `${typeLabel}: ${i.content.slice(0, 60)}${i.content.length > 60 ? '…' : ''}`,
+              memberName: i.created_by ? memberMap.get(i.created_by) : undefined,
+              timestamp: i.created_at,
+            });
+          });
+
+        // Sort all activity by timestamp descending, take top 10
+        const recentActivity = activityItems
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          .slice(0, 10);
+
+        return {
+          emailsSentToday,
+          contactsAddedToday,
+          emailsThisWeek,
+          emailsLastWeek,
+          repliesReceivedToday,
+          repliesReceivedThisWeek,
+          replyRateToday,
+          replyRateThisWeek,
+          dailyBreakdown,
+          recentActivity,
+        };
+      } catch (err) {
+        console.error('getDashboardStats error', err);
+        return emptyStats;
+      }
+    }
+
+    // ── LocalStorage fallback ─────────────────────────────────────────────────
+    const allEmails = getLocal<EmailRecord[]>('emails', []);
+    const allContacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
+    const allInteractions = getLocal<Interaction[]>('interactions', INITIAL_INTERACTIONS);
+    const allTeam = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
+    const memberMap = new Map<string, string>(allTeam.map((m) => [m.id, m.name]));
+
+    const sentEmails = allEmails.filter((e) => e.status === 'sent');
+    const inboundReplies = allEmails.filter((e) => e.status === 'received');
+
+    const emailsSentToday = sentEmails.filter(
+      (e) => (e.sent_at || '') >= todayStartISO && (e.sent_at || '') < todayEndISO
+    ).length;
+    const emailsThisWeek = sentEmails.filter(
+      (e) => (e.sent_at || '') >= weekStartISO && (e.sent_at || '') < weekEndISO
+    ).length;
+    const emailsLastWeek = sentEmails.filter(
+      (e) => (e.sent_at || '') >= lastWeekStartISO && (e.sent_at || '') < lastWeekEndISO
+    ).length;
+    const contactsAddedToday = allContacts.filter(
+      (c) => c.created_at >= todayStartISO && c.created_at < todayEndISO
+    ).length;
+    const repliesReceivedToday = inboundReplies.filter(
+      (e) => (e.sent_at || '') >= todayStartISO && (e.sent_at || '') < todayEndISO
+    ).length;
+    const repliesReceivedThisWeek = inboundReplies.filter(
+      (e) => (e.sent_at || '') >= weekStartISO && (e.sent_at || '') < weekEndISO
+    ).length;
+
+    const replyRateToday =
+      emailsSentToday > 0 ? Math.round((repliesReceivedToday / emailsSentToday) * 100) : 0;
+    const replyRateThisWeek =
+      emailsThisWeek > 0 ? Math.round((repliesReceivedThisWeek / emailsThisWeek) * 100) : 0;
+
+    const dailyBreakdown: DashboardDayBreakdown[] = dateSlots.map((date) => {
+      const dayStart = new Date(date + 'T00:00:00').toISOString();
+      const dayEnd = new Date(new Date(date + 'T00:00:00').getTime() + 86400000).toISOString();
+      return {
+        date,
+        sent: sentEmails.filter((e) => (e.sent_at || '') >= dayStart && (e.sent_at || '') < dayEnd).length,
+        replies: inboundReplies.filter((e) => (e.sent_at || '') >= dayStart && (e.sent_at || '') < dayEnd).length,
+      };
+    });
+
+    const activityItems: DashboardActivityItem[] = [
+      ...sentEmails.slice(0, 10).map((e) => ({
+        type: 'email_sent' as const,
+        label: `Email sent: ${e.subject || '(no subject)'}`,
+        memberName: e.sent_by ? memberMap.get(e.sent_by) : undefined,
+        timestamp: e.sent_at || e.created_at || '',
+      })),
+      ...inboundReplies.slice(0, 5).map((e) => ({
+        type: 'reply_received' as const,
+        label: `Reply received: ${e.subject || '(no subject)'}`,
+        timestamp: e.sent_at || e.created_at || '',
+      })),
+      ...allContacts.slice(0, 5).map((c) => ({
+        type: 'contact_added' as const,
+        label: `New contact added: ${c.name}`,
+        memberName: c.owner_id ? memberMap.get(c.owner_id) : undefined,
+        timestamp: c.created_at,
+      })),
+    ];
+
+    return {
+      emailsSentToday,
+      contactsAddedToday,
+      emailsThisWeek,
+      emailsLastWeek,
+      repliesReceivedToday,
+      repliesReceivedThisWeek,
+      replyRateToday,
+      replyRateThisWeek,
+      dailyBreakdown,
+      recentActivity: activityItems
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 10),
+    };
+  },
+
+  async getEmailsForDay(date: string): Promise<DayEmailRecord[]> {
+    // date is 'YYYY-MM-DD' in local time
+    const dayStart = new Date(date + 'T00:00:00').toISOString();
+    const dayEnd   = new Date(new Date(date + 'T00:00:00').getTime() + 86400000).toISOString();
+
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('emails')
+        .select('id, recipient_email, subject, sent_at, replied_at, reply_count, contact:contacts(id, name), sender:team_members(id, name)')
+        .eq('status', 'sent')
+        .gte('sent_at', dayStart)
+        .lt('sent_at', dayEnd)
+        .order('sent_at', { ascending: false });
+
+      if (!error && data) {
+        return data.map((e: any) => ({
+          id: e.id,
+          recipient_email: e.recipient_email,
+          subject: e.subject,
+          sent_at: e.sent_at,
+          replied_at: e.replied_at ?? null,
+          reply_count: e.reply_count ?? 0,
+          contact_name: e.contact?.name ?? null,
+          contact_id: e.contact?.id ?? null,
+          sender_name: e.sender?.name ?? null,
+        }));
+      }
+    }
+
+    // localStorage fallback
+    const allEmails = getLocal<EmailRecord[]>('emails', []);
+    const allContacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
+    const allTeam = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
+
+    return allEmails
+      .filter(
+        (e) =>
+          e.status === 'sent' &&
+          (e.sent_at || '') >= dayStart &&
+          (e.sent_at || '') < dayEnd
+      )
+      .map((e) => {
+        const contact = allContacts.find((c) => c.id === e.contact_id);
+        const sender  = allTeam.find((t) => t.id === e.sent_by);
+        return {
+          id: e.id,
+          recipient_email: e.recipient_email,
+          subject: e.subject,
+          sent_at: e.sent_at ?? '',
+          replied_at: e.replied_at ?? null,
+          reply_count: e.reply_count ?? 0,
+          contact_name: contact?.name ?? null,
+          contact_id: contact?.id ?? null,
+          sender_name: sender?.name ?? null,
+        };
+      });
+  },
+
+  async getDeals(contactId?: string, companyId?: string): Promise<Deal[]> {
+    if (supabase) {
+      let query = supabase
+        .from('deals')
+        .select(`
+          *,
+          contact:contacts(id, name),
+          company:companies(id, name),
+          owner:team_members(id, name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (contactId) {
+        query = query.eq('contact_id', contactId);
+      }
+      if (companyId) {
+        query = query.eq('company_id', companyId);
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        return data.map((d: any) => ({
+          ...d,
+          contact_name: d.contact?.name,
+          company_name: d.company?.name,
+          owner_name: d.owner?.name,
+        }));
+      }
+    }
+
+    // localStorage fallback
+    let list = getLocal<Deal[]>('deals', INITIAL_DEALS);
+    if (contactId) {
+      list = list.filter((d) => d.contact_id === contactId);
+    }
+    if (companyId) {
+      list = list.filter((d) => d.company_id === companyId);
+    }
+    const contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
+    const companies = getLocal<Company[]>('companies', INITIAL_COMPANIES);
+    const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
+    return list.map((d) => ({
+      ...d,
+      contact_name: contacts.find((c) => c.id === d.contact_id)?.name,
+      company_name: companies.find((c) => c.id === d.company_id)?.name,
+      owner_name: team.find((t) => t.id === d.owner_id)?.name,
+    }));
+  },
+
+  async addDeal(deal: Partial<Deal>): Promise<Deal> {
+    const newDeal: Deal = {
+      id: deal.id || crypto.randomUUID(),
+      title: deal.title || 'New Deal',
+      contact_id: deal.contact_id || null,
+      company_id: deal.company_id || null,
+      owner_id: deal.owner_id || null,
+      value: Number(deal.value) || 0,
+      currency: deal.currency || 'USD',
+      stage: deal.stage || 'discovery',
+      probability: deal.probability !== undefined ? deal.probability : 10,
+      expected_close_date: deal.expected_close_date || null,
+      actual_close_date: deal.actual_close_date || null,
+      notes: deal.notes || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    if (supabase) {
+      const { contact_name, company_name, owner_name, ...payload } = newDeal;
+      const { data, error } = await supabase
+        .from('deals')
+        .insert(payload)
+        .select(`
+          *,
+          contact:contacts(id, name),
+          company:companies(id, name),
+          owner:team_members(id, name)
+        `)
+        .single();
+      if (!error && data) {
+        return {
+          ...data,
+          contact_name: data.contact?.name,
+          company_name: data.company?.name,
+          owner_name: data.owner?.name,
+        };
+      }
+    }
+
+    const list = getLocal<Deal[]>('deals', INITIAL_DEALS);
+    const updated = [newDeal, ...list];
+    setLocal('deals', updated);
+    return newDeal;
+  },
+
+  async updateDeal(id: string, updates: Partial<Deal>): Promise<Deal> {
+    const patch = {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (supabase) {
+      const { contact_name, company_name, owner_name, ...payload } = patch;
+      const { data, error } = await supabase
+        .from('deals')
+        .update(payload)
+        .eq('id', id)
+        .select(`
+          *,
+          contact:contacts(id, name),
+          company:companies(id, name),
+          owner:team_members(id, name)
+        `)
+        .single();
+      if (!error && data) {
+        return {
+          ...data,
+          contact_name: data.contact?.name,
+          company_name: data.company?.name,
+          owner_name: data.owner?.name,
+        };
+      }
+    }
+
+    const list = getLocal<Deal[]>('deals', INITIAL_DEALS);
+    let updatedDeal: Deal = list.find((d) => d.id === id) || ({} as Deal);
+    const updated = list.map((d) => {
+      if (d.id === id) {
+        updatedDeal = { ...d, ...patch };
+        return updatedDeal;
+      }
+      return d;
+    });
+    setLocal('deals', updated);
+    return updatedDeal;
+  },
+
+  async deleteDeal(id: string): Promise<void> {
+    if (supabase) {
+      await supabase.from('deals').delete().eq('id', id);
+    }
+    const list = getLocal<Deal[]>('deals', INITIAL_DEALS);
+    setLocal('deals', list.filter((d) => d.id !== id));
+  },
+
   clearAllLocalData(): void {
     localStorage.removeItem('crm_contacts');
     localStorage.removeItem('crm_companies');
     localStorage.removeItem('crm_interactions');
     localStorage.removeItem('crm_reminders');
     localStorage.removeItem('crm_emails');
+    localStorage.removeItem('crm_deals');
     localStorage.removeItem('crm_import_logs');
     localStorage.removeItem('crm_team_members');
     localStorage.removeItem('crm_active_member_id');

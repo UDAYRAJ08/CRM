@@ -15,6 +15,7 @@ export interface TeamMember {
   email?: string;
   role?: string;
   avatar_url?: string;
+  auth_user_id?: string;
   created_at?: string;
 }
 
@@ -69,6 +70,8 @@ export interface EmailRecord {
   sent_at?: string;
   status: 'draft' | 'queued' | 'sent' | 'failed' | 'received';
   error_message?: string | null;
+  replied_at?: string | null;
+  reply_count?: number;
   created_at?: string;
 }
 
@@ -120,3 +123,71 @@ export interface ImportSummary {
   duplicateRows: ParsedContactRow[];
   invalidRows: ParsedContactRow[];
 }
+
+export interface DashboardActivityItem {
+  type: 'email_sent' | 'contact_added' | 'reply_received' | 'interaction';
+  label: string;
+  memberName?: string;
+  timestamp: string;
+}
+
+export interface DashboardDayBreakdown {
+  date: string; // 'YYYY-MM-DD'
+  sent: number;
+  replies: number;
+}
+
+export interface DashboardStats {
+  emailsSentToday: number;
+  contactsAddedToday: number;
+  emailsThisWeek: number;
+  emailsLastWeek: number;
+  repliesReceivedToday: number;
+  repliesReceivedThisWeek: number;
+  replyRateToday: number;    // percentage 0-100
+  replyRateThisWeek: number; // percentage 0-100
+  dailyBreakdown: DashboardDayBreakdown[];
+  recentActivity: DashboardActivityItem[];
+}
+
+export interface DayEmailRecord {
+  id: string;
+  recipient_email: string;
+  subject: string;
+  sent_at: string;
+  replied_at: string | null;
+  reply_count: number;
+  contact_name: string | null;
+  contact_id: string | null;
+  sender_name: string | null;
+}
+
+export type DealStage =
+  | 'discovery'
+  | 'qualified'
+  | 'proposal'
+  | 'negotiation'
+  | 'won'
+  | 'lost';
+
+export interface Deal {
+  id: string;
+  title: string;
+  contact_id?: string | null;
+  company_id?: string | null;
+  owner_id?: string | null;
+  value: number;
+  currency: string;
+  stage: DealStage;
+  probability: number;
+  expected_close_date?: string | null;
+  actual_close_date?: string | null;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // Joined / computed fields for UI convenience
+  contact_name?: string;
+  company_name?: string;
+  owner_name?: string;
+}
+

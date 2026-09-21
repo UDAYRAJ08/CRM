@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useTeam } from '../../context/TeamContext';
+import { useAuth } from '../../context/AuthContext';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { getInitials } from '../../lib/utils';
 import { Button } from '../ui/Button';
@@ -40,9 +41,10 @@ export const Header: React.FC<HeaderProps> = ({
   activeView,
 }) => {
   const { activeMember, setIsPickerOpen, logout } = useTeam();
+  const { user } = useAuth();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
-  const initials = getInitials(activeMember?.name, 'U');
+  const initials = getInitials(activeMember?.name || user?.email, 'U');
 
   return (
     <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
@@ -75,6 +77,8 @@ export const Header: React.FC<HeaderProps> = ({
               ? 'Follow-up & Reminders Center'
               : activeView === 'companies'
               ? 'Companies & Accounts'
+              : activeView === 'pipeline'
+              ? 'Sales Pipeline & Opportunities'
               : 'Excel Import History & Logs'}
           </div>
         )}
@@ -188,10 +192,10 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
                 <div className="p-2.5 border-b border-slate-100">
                   <p className="text-xs font-bold text-slate-900 truncate">
-                    {activeMember?.name}
+                    {activeMember?.name || user?.user_metadata?.full_name || 'Team Member'}
                   </p>
                   <p className="text-[11px] text-slate-500 truncate">
-                    {activeMember?.email || activeMember?.role || 'Active Member'}
+                    {user?.email || activeMember?.email || activeMember?.role || 'Authenticated User'}
                   </p>
                 </div>
 
@@ -221,9 +225,9 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
 
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       setIsUserMenuOpen(false);
-                      logout();
+                      await logout();
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition text-left cursor-pointer"
                   >

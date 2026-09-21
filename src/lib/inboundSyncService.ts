@@ -1,4 +1,4 @@
-import { db } from './supabase';
+import { db, supabase } from './supabase';
 import { Contact, EmailRecord, Interaction } from '../types/crm';
 
 export interface InboundSyncResult {
@@ -233,6 +233,35 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
         sent_at: receivedAt,
         status: 'received',
       });
+
+      // 1b. Mark replied_at on the most-recent outbound email to this contact
+      // (enables dashboard reply-rate metrics via replied_at column)
+      try {
+        if (supabase) {
+          // Find the most recent outbound sent email for this contact
+          const { data: outboundEmail } = await supabase
+            .from('emails')
+            .select('id, reply_count')
+            .eq('contact_id', matchedContact.id)
+            .eq('status', 'sent')
+            .is('replied_at', null)
+            .order('sent_at', { ascending: false })
+            .limit(1)
+            .single();
+
+          if (outboundEmail) {
+            await supabase
+              .from('emails')
+              .update({
+                replied_at: receivedAt,
+                reply_count: (outboundEmail.reply_count || 0) + 1,
+              })
+              .eq('id', outboundEmail.id);
+          }
+        }
+      } catch (replyErr) {
+        console.warn('Could not update replied_at on outbound email', replyErr);
+      }
 
       // 2. Log into interactions timeline
       await db.addInteraction({

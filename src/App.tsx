@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { TeamProvider, useTeam } from './context/TeamContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { Contact, Reminder } from './types/crm';
@@ -22,16 +23,20 @@ import { syncOutlookInbox } from './lib/inboundSyncService';
 import { LinkedInComposerModal } from './components/linkedin/LinkedInComposerModal';
 import { LoginPage } from './components/auth/LoginPage';
 import { InviteModal } from './components/team/InviteModal';
+import { DashboardView } from './components/dashboard/DashboardView';
+import { PipelineView } from './components/pipeline/PipelineView';
 import { Loader2 } from 'lucide-react';
 
 
 const CRMMain: React.FC = () => {
+  const { user, isLoading: isAuthLoading } = useAuth();
   const { activeMember, isLoading: isTeamLoading } = useTeam();
   const { success, info } = useToast();
 
-  const [activeView, setActiveView] = useState<'contacts' | 'inbox' | 'reminders' | 'companies' | 'imports'>('contacts');
+  const [activeView, setActiveView] = useState<'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'reminders' | 'companies' | 'imports'>('dashboard');
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [dealCount, setDealCount] = useState(0);
   const [inboxCount, setInboxCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -84,13 +89,16 @@ const CRMMain: React.FC = () => {
   };
 
   const refreshAllData = useCallback(async () => {
+    if (!user) return;
     try {
-      const [fetchedContacts, fetchedReminders] = await Promise.all([
+      const [fetchedContacts, fetchedReminders, fetchedDeals] = await Promise.all([
         db.getContacts(),
         db.getReminders(),
+        db.getDeals(),
       ]);
       setContacts(fetchedContacts);
       setReminders(fetchedReminders);
+      setDealCount(fetchedDeals.filter((d) => d.stage !== 'won' && d.stage !== 'lost').length);
       countInboundReplies(fetchedContacts);
 
       // Only update selectedContact if a contact is STILL selected (check ref)
@@ -105,7 +113,7 @@ const CRMMain: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     refreshAllData();
@@ -141,13 +149,14 @@ const CRMMain: React.FC = () => {
     }
   }, [isLoading]);
 
-  // Background inbox sync every 60 seconds
+  // Background inbox sync every 60 seconds (only when authenticated)
   useEffect(() => {
+    if (!user) return;
     const interval = setInterval(() => {
       handleSyncInbox(true);
     }, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user]);
 
   const handleOpenEmailComposer = (contact: Contact, replySubject?: string) => {
     setEmailTargetContact(contact);
@@ -172,7 +181,7 @@ const CRMMain: React.FC = () => {
 
   const activeRemindersCount = reminders.filter((r) => !r.done).length;
 
-  if (isTeamLoading) {
+  if (isAuthLoading || (user && isTeamLoading)) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-3 text-slate-400">
         <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold animate-pulse">
@@ -183,7 +192,7 @@ const CRMMain: React.FC = () => {
     );
   }
 
-  if (!activeMember) {
+  if (!user) {
     return <LoginPage />;
   }
 
@@ -199,6 +208,7 @@ const CRMMain: React.FC = () => {
         contactCount={contacts.length}
         reminderCount={activeRemindersCount}
         inboxCount={inboxCount}
+        dealCount={dealCount}
       />
 
       {/* Main Workspace Area */}
@@ -226,6 +236,14 @@ const CRMMain: React.FC = () => {
             </div>
           ) : (
             <>
+              {activeView === 'dashboard' && (
+                <DashboardView />
+              )}
+
+              {activeView === 'pipeline' && (
+                <PipelineView onOpenContact={(c) => setSelectedContact(c)} />
+              )}
+
               {activeView === 'contacts' && (
                 <ContactList
                   contacts={contacts}
@@ -382,9 +400,11 @@ const CRMMain: React.FC = () => {
 export function App() {
   return (
     <ToastProvider>
-      <TeamProvider>
-        <CRMMain />
-      </TeamProvider>
+      <AuthProvider>
+        <TeamProvider>
+          <CRMMain />
+        </TeamProvider>
+      </AuthProvider>
     </ToastProvider>
   );
 }

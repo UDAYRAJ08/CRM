@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Company, Contact } from '../../types/crm';
+import { Company, Contact, Deal } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Modal } from '../ui/Modal';
-import { Building2, Globe, Users, Plus, ExternalLink, RefreshCw } from 'lucide-react';
+import { Building2, Globe, Users, Plus, ExternalLink, RefreshCw, DollarSign } from 'lucide-react';
 
 interface CompaniesViewProps {
   contacts: Contact[];
@@ -18,6 +18,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
 }) => {
   const { success, error } = useToast();
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [deals, setDeals] = useState<Deal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [companyName, setCompanyName] = useState('');
@@ -28,8 +29,9 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
   const fetchCompanies = async () => {
     setIsLoading(true);
     try {
-      const data = await db.getCompanies();
-      setCompanies(data);
+      const [compData, dealsData] = await Promise.all([db.getCompanies(), db.getDeals()]);
+      setCompanies(compData);
+      setDeals(dealsData);
     } catch (e) {
       console.error(e);
     } finally {
@@ -91,6 +93,8 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {companies.map((comp) => {
           const associatedContacts = contacts.filter((c) => c.company_id === comp.id);
+          const compDeals = deals.filter((d) => d.company_id === comp.id);
+          const compDealValue = compDeals.reduce((sum, d) => sum + Number(d.value || 0), 0);
 
           return (
             <div
@@ -120,6 +124,17 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                   </a>
                 )}
               </div>
+
+              {/* Company Deals Banner if active */}
+              {compDeals.length > 0 && (
+                <div className="flex items-center justify-between text-xs px-3 py-2 rounded-xl bg-emerald-50/80 text-emerald-900 font-semibold border border-emerald-100">
+                  <div className="flex items-center gap-1.5">
+                    <DollarSign className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>{compDeals.length} {compDeals.length === 1 ? 'Opportunity' : 'Opportunities'}</span>
+                  </div>
+                  <span className="font-black text-emerald-700">${compDealValue.toLocaleString()}</span>
+                </div>
+              )}
 
               {/* Associated Contacts List */}
               <div className="pt-2 border-t border-slate-100">

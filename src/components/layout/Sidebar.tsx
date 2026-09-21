@@ -7,7 +7,8 @@ import {
   FileSpreadsheet,
   Layers,
   Sparkles,
-  HelpCircle,
+  LayoutDashboard,
+  DollarSign,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -16,6 +17,7 @@ interface SidebarProps {
   contactCount: number;
   reminderCount: number;
   inboxCount?: number;
+  dealCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -24,8 +26,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   contactCount,
   reminderCount,
   inboxCount = 0,
+  dealCount = 0,
 }) => {
   const navItems = [
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: <LayoutDashboard className="w-4 h-4" />,
+    },
+    {
+      id: 'pipeline',
+      label: 'Sales Pipeline',
+      icon: <DollarSign className="w-4 h-4" />,
+      badge: dealCount > 0 ? dealCount : undefined,
+      badgeColor: 'bg-emerald-100 text-emerald-800 font-bold',
+    },
     {
       id: 'contacts',
       label: 'Contacts',
