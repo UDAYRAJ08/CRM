@@ -4,7 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { Contact, ContactStatus } from '../../types/crm';
 import { db } from '../../lib/supabase';
-import { getInitials } from '../../lib/utils';
+import { getInitials, formatDate } from '../../lib/utils';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import {
@@ -26,6 +26,7 @@ import {
   Tag,
   CheckSquare,
   Clock,
+  Calendar,
   AlertTriangle,
   Reply,
   CheckCircle2,
@@ -120,55 +121,159 @@ export function getCompanyUrl(company?: { name?: string; website?: string } | nu
 }
 
 function getFollowUpInfo(contact: Contact) {
+  const createdDate = new Date(contact.created_at);
+  const createdShort = isNaN(createdDate.getTime())
+    ? ''
+    : createdDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const createdDateStr = isNaN(createdDate.getTime())
+    ? 'N/A'
+    : createdDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+  // Custom follow-up due date if set via dropdown timer
+  const customDueDateStr = contact.custom_fields?.follow_up_due_date;
+  const customDueDate = customDueDateStr ? new Date(customDueDateStr) : null;
+  const hasValidCustomDue = customDueDate && !isNaN(customDueDate.getTime());
+
   if (contact.status === 'new') {
+    if (hasValidCustomDue && customDueDate) {
+      const now = Date.now();
+      const diffDays = Math.ceil((customDueDate.getTime() - now) / (1000 * 60 * 60 * 24));
+      const dueShort = customDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const dueStr = customDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      const isOverdue = diffDays < 0;
+
+      return {
+        label: isOverdue
+          ? `🚨 Overdue • Was Due ${dueShort} (${Math.abs(diffDays)}d ago)`
+          : `⏳ Due ${dueShort} (in ${diffDays}d)`,
+        badgeClass: isOverdue
+          ? 'bg-rose-50 text-rose-800 border-rose-300 font-semibold shadow-2xs'
+          : 'bg-amber-50 text-amber-800 border-amber-200 font-semibold shadow-2xs',
+        actionText: 'Send 1st Email',
+        isOverdue,
+        stage: 'new',
+        createdDateStr,
+        dueDateStr: dueStr,
+        dueDate: customDueDate,
+        daysDiff: diffDays,
+      };
+    }
+
     return {
-      label: 'Not Started',
-      badgeClass: 'bg-blue-50/90 text-blue-700 border-blue-200/80 font-medium',
+      label: createdShort ? `Not Started • Added ${createdShort}` : 'Not Started',
+      badgeClass: 'bg-blue-50/90 text-blue-700 border-blue-200/80 font-medium shadow-2xs',
       actionText: 'Send 1st Email',
       isOverdue: false,
       stage: 'new',
+      createdDateStr,
+      dueDateStr: createdDateStr,
+      dueDate: createdDate,
+      daysDiff: 0,
     };
   }
+
   if (contact.status === 'qualified') {
+    const qualDate = new Date(contact.updated_at || contact.created_at);
+    const qualShort = isNaN(qualDate.getTime())
+      ? ''
+      : qualDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const qualStr = isNaN(qualDate.getTime())
+      ? 'N/A'
+      : qualDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
     return {
-      label: 'Replied & Qualified',
-      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold',
+      label: qualShort ? `Replied & Qualified • ${qualShort}` : 'Replied & Qualified',
+      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold shadow-2xs',
       actionText: 'View Details',
       isOverdue: false,
       stage: 'qualified',
+      createdDateStr,
+      dueDateStr: qualStr,
+      dueDate: qualDate,
+      daysDiff: 0,
     };
   }
+
   if (contact.status === 'contacted') {
+    if (hasValidCustomDue && customDueDate) {
+      const now = Date.now();
+      const diffDays = Math.ceil((customDueDate.getTime() - now) / (1000 * 60 * 60 * 24));
+      const dueShort = customDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const dueStr = customDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      const isOverdue = diffDays < 0;
+
+      return {
+        label: isOverdue
+          ? `🚨 Overdue • Was Due ${dueShort} (${Math.abs(diffDays)}d ago)`
+          : `⏳ Due ${dueShort} (in ${diffDays}d)`,
+        badgeClass: isOverdue
+          ? 'bg-rose-50 text-rose-800 border-rose-300 font-semibold shadow-2xs'
+          : 'bg-amber-50 text-amber-800 border-amber-200 font-semibold shadow-2xs',
+        actionText: 'Send Follow-up Message',
+        isOverdue,
+        stage: isOverdue ? 'overdue' : 'contacted',
+        createdDateStr,
+        dueDateStr: dueStr,
+        dueDate: customDueDate,
+        daysDiff: diffDays,
+      };
+    }
+
     const contactDate = new Date(contact.updated_at || contact.created_at).getTime();
     const diffHours = (Date.now() - contactDate) / (1000 * 60 * 60);
     const diffDays = Math.floor(diffHours / 24);
 
+    const targetDueDate = new Date(contactDate + 3 * 24 * 60 * 60 * 1000);
+    const dueShort = targetDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const dueStr = targetDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
     if (diffDays >= 3) {
       return {
-        label: `🚨 3-Day Follow-up Due (${diffDays}d ago)`,
+        label: `🚨 3-Day Due • ${dueShort} (${diffDays}d ago)`,
         badgeClass: 'bg-rose-50 text-rose-800 border-rose-300 font-semibold shadow-2xs',
         actionText: 'Send Follow-up Message',
         isOverdue: true,
         stage: 'overdue',
+        createdDateStr,
+        dueDateStr: dueStr,
+        dueDate: targetDueDate,
+        daysDiff: -diffDays,
       };
     } else {
       const remainingDays = Math.max(1, 3 - diffDays);
       return {
-        label: `⏳ Waiting (Follow-up in ${remainingDays}d)`,
-        badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-semibold',
+        label: `⏳ Waiting • Due ${dueShort} (${remainingDays}d)`,
+        badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-semibold shadow-2xs',
         actionText: 'Follow-up Email',
         isOverdue: false,
         stage: 'contacted',
+        createdDateStr,
+        dueDateStr: dueStr,
+        dueDate: targetDueDate,
+        daysDiff: remainingDays,
       };
     }
   }
+
   const conf = STATUS_CONFIG[contact.status] || STATUS_CONFIG.new;
+  const updateDate = new Date(contact.updated_at || contact.created_at);
+  const updateShort = isNaN(updateDate.getTime())
+    ? ''
+    : updateDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const updateStr = isNaN(updateDate.getTime())
+    ? 'N/A'
+    : updateDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
   return {
-    label: conf.label,
-    badgeClass: `${conf.bg} ${conf.text} ${conf.border} font-medium`,
+    label: updateShort ? `${conf.label} • ${updateShort}` : conf.label,
+    badgeClass: `${conf.bg} ${conf.text} ${conf.border} font-medium shadow-2xs`,
     actionText: 'Contact',
     isOverdue: false,
     stage: contact.status,
+    createdDateStr,
+    dueDateStr: updateStr,
+    dueDate: updateDate,
+    daysDiff: 0,
   };
 }
 
@@ -210,6 +315,12 @@ export const ContactList: React.FC<ContactListProps> = ({
 
   // Active open inline status dropdown contactId
   const [activeStatusDropdownId, setActiveStatusDropdownId] = useState<string | null>(null);
+
+  // Active open inline lifecycle & dates dropdown contactId
+  const [activeLifecycleDropdownId, setActiveLifecycleDropdownId] = useState<string | null>(null);
+
+  // Date Filter State
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'due_today' | 'overdue'>('all');
 
   // Save density preference
   const toggleDensity = () => {
@@ -284,6 +395,27 @@ export const ContactList: React.FC<ContactListProps> = ({
           if (diffDays < 3) return false;
         }
 
+        // Date filter
+        if (dateFilter !== 'all') {
+          const now = Date.now();
+          const createdTime = new Date(c.created_at).getTime();
+          const diffDays = Math.floor((now - createdTime) / (1000 * 60 * 60 * 24));
+
+          if (dateFilter === 'today') {
+            if (diffDays > 0) return false;
+          } else if (dateFilter === 'this_week') {
+            if (diffDays > 7) return false;
+          } else if (dateFilter === 'this_month') {
+            if (diffDays > 30) return false;
+          } else if (dateFilter === 'due_today') {
+            const fu = getFollowUpInfo(c);
+            if (fu.daysDiff !== 0) return false;
+          } else if (dateFilter === 'overdue') {
+            const fu = getFollowUpInfo(c);
+            if (!fu.isOverdue) return false;
+          }
+        }
+
         // Owner filter
         if (ownerFilter !== 'all') {
           if (ownerFilter === 'unassigned' && c.owner_id) return false;
@@ -310,7 +442,7 @@ export const ContactList: React.FC<ContactListProps> = ({
         }
         return sortOrder === 'asc' ? -comparison : comparison;
       });
-  }, [contacts, searchQuery, pipelineTab, ownerFilter, tagFilter, sortBy, sortOrder]);
+  }, [contacts, searchQuery, pipelineTab, dateFilter, ownerFilter, tagFilter, sortBy, sortOrder]);
 
   // Handle Sort Column Click
   const handleSort = (field: 'name' | 'created_at' | 'company' | 'status') => {
@@ -319,6 +451,70 @@ export const ContactList: React.FC<ContactListProps> = ({
     } else {
       setSortBy(field);
       setSortOrder('asc');
+    }
+  };
+
+  // Reschedule / Set Follow-up Due Date
+  const handleUpdateDueDate = async (contact: Contact, addDays: number) => {
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + addDays);
+    targetDate.setHours(10, 0, 0, 0);
+
+    const isoDate = targetDate.toISOString();
+    try {
+      const updatedCustomFields = {
+        ...(contact.custom_fields || {}),
+        follow_up_due_date: isoDate,
+      };
+      await db.saveContact({
+        id: contact.id,
+        custom_fields: updatedCustomFields,
+      });
+      await db.saveReminder({
+        contact_id: contact.id,
+        due_date: isoDate,
+        note: `Follow-up with ${contact.name}`,
+        done: false,
+      });
+      success(
+        'Due Date Updated',
+        `Follow-up scheduled for ${targetDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+      );
+      setActiveLifecycleDropdownId(null);
+      onRefresh();
+    } catch (err: any) {
+      error('Update Failed', err.message || 'Could not reschedule follow-up.');
+    }
+  };
+
+  const handleSetCustomDueDate = async (contact: Contact, dateVal: string) => {
+    if (!dateVal) return;
+    const targetDate = new Date(dateVal);
+    targetDate.setHours(10, 0, 0, 0);
+    const isoDate = targetDate.toISOString();
+    try {
+      const updatedCustomFields = {
+        ...(contact.custom_fields || {}),
+        follow_up_due_date: isoDate,
+      };
+      await db.saveContact({
+        id: contact.id,
+        custom_fields: updatedCustomFields,
+      });
+      await db.saveReminder({
+        contact_id: contact.id,
+        due_date: isoDate,
+        note: `Follow-up with ${contact.name}`,
+        done: false,
+      });
+      success(
+        'Custom Due Date Set',
+        `Follow-up scheduled for ${targetDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+      );
+      setActiveLifecycleDropdownId(null);
+      onRefresh();
+    } catch (err: any) {
+      error('Update Failed', err.message || 'Could not set due date.');
     }
   };
 
@@ -544,6 +740,21 @@ export const ContactList: React.FC<ContactListProps> = ({
             ))}
           </select>
 
+          {/* Date Filter */}
+          <select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value as any)}
+            className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer"
+            title="Filter by Activity / Creation / Due Date"
+          >
+            <option value="all">📅 All Dates</option>
+            <option value="today">Added Today</option>
+            <option value="this_week">Added This Week</option>
+            <option value="this_month">Added This Month</option>
+            <option value="due_today">Follow-up Due Today</option>
+            <option value="overdue">Overdue Follow-ups</option>
+          </select>
+
           {/* Density Toggle (Compact vs Comfortable) */}
           <button
             onClick={toggleDensity}
@@ -684,7 +895,20 @@ export const ContactList: React.FC<ContactListProps> = ({
                     </div>
                   </th>
 
-                  <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} whitespace-nowrap`}>Lifecycle & Due Timer</th>
+                  <th
+                    onClick={() => handleSort('created_at')}
+                    className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} cursor-pointer hover:text-slate-900 transition-colors whitespace-nowrap`}
+                    title="Sort by Date Added / Due"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Lifecycle & Due Timer</span>
+                      {sortBy === 'created_at' ? (
+                        sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
+                      ) : (
+                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                      )}
+                    </div>
+                  </th>
                   <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} whitespace-nowrap`}>Owner</th>
                   <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} whitespace-nowrap`}>Tags</th>
                   <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} text-right whitespace-nowrap`}>Actions</th>
@@ -698,6 +922,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                   const followUp = getFollowUpInfo(contact);
                   const statusConf = STATUS_CONFIG[contact.status] || STATUS_CONFIG.new;
                   const isDropdownOpen = activeStatusDropdownId === contact.id;
+                  const isLifecycleDropdownOpen = activeLifecycleDropdownId === contact.id;
                   const companyUrl = getCompanyUrl(contact.company);
 
                   return (
@@ -848,13 +1073,174 @@ export const ContactList: React.FC<ContactListProps> = ({
                         </div>
                       </td>
 
-                      {/* Follow-up / Overdue Badge */}
-                      <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} whitespace-nowrap`}>
-                        <span
-                          className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border whitespace-nowrap shadow-2xs ${followUp.badgeClass}`}
-                        >
-                          {followUp.label}
-                        </span>
+                      {/* Lifecycle & Due Timer Dropdown */}
+                      <td
+                        className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} relative whitespace-nowrap`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="relative inline-block text-left">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveStatusDropdownId(null);
+                              setActiveLifecycleDropdownId(isLifecycleDropdownOpen ? null : contact.id);
+                            }}
+                            className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition cursor-pointer hover:shadow-xs whitespace-nowrap shadow-2xs ${followUp.badgeClass}`}
+                            title="Click to view dates, timeline, and manage follow-up timer"
+                          >
+                            <span>{followUp.label}</span>
+                            <ChevronDown className="w-3 h-3 opacity-60 ml-0.5 shrink-0" />
+                          </button>
+
+                          {/* Lifecycle Details & Dates Dropdown Popover */}
+                          {isLifecycleDropdownOpen && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-30"
+                                onClick={() => setActiveLifecycleDropdownId(null)}
+                              />
+                              <div className="absolute left-0 mt-1.5 w-80 bg-white rounded-2xl shadow-xl border border-slate-200 z-40 p-3.5 text-slate-800 animate-in fade-in zoom-in-95 duration-100">
+                                {/* Header */}
+                                <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-100">
+                                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                                    <Calendar className="w-4 h-4 text-indigo-600" />
+                                    <span>Lifecycle & Timeline Dates</span>
+                                  </div>
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${followUp.badgeClass}`}>
+                                    {contact.status}
+                                  </span>
+                                </div>
+
+                                {/* Dates Breakdown */}
+                                <div className="space-y-2 text-xs">
+                                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
+                                    <span className="text-slate-500 flex items-center gap-1.5">
+                                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                      Added to CRM:
+                                    </span>
+                                    <span className="font-semibold text-slate-800">
+                                      {formatDate(contact.created_at)}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
+                                    <span className="text-slate-500 flex items-center gap-1.5">
+                                      <Mail className="w-3.5 h-3.5 text-slate-400" />
+                                      Last Activity:
+                                    </span>
+                                    <span className="font-semibold text-slate-800">
+                                      {contact.status === 'new'
+                                        ? 'Not Contacted Yet'
+                                        : formatDate(contact.updated_at || contact.created_at)}
+                                    </span>
+                                  </div>
+
+                                  <div className={`flex items-center justify-between p-2 rounded-xl border ${
+                                    followUp.isOverdue
+                                      ? 'bg-rose-50/80 border-rose-200 text-rose-900'
+                                      : 'bg-indigo-50/70 border-indigo-100 text-indigo-900'
+                                  }`}>
+                                    <span className="font-medium flex items-center gap-1.5">
+                                      <Calendar className="w-3.5 h-3.5 shrink-0" />
+                                      Next Due Date:
+                                    </span>
+                                    <div className="text-right">
+                                      <span className="font-bold block">
+                                        {followUp.dueDateStr}
+                                      </span>
+                                      <span className="text-[10px] opacity-80 block font-medium">
+                                        {followUp.isOverdue
+                                          ? `🚨 ${Math.abs(followUp.daysDiff)}d overdue`
+                                          : followUp.daysDiff > 0
+                                          ? `in ${followUp.daysDiff} days`
+                                          : 'Due Today'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Reschedule Section */}
+                                <div className="mt-3 pt-2.5 border-t border-slate-100">
+                                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center justify-between">
+                                    <span>Set / Reschedule Due Date</span>
+                                    <span className="text-[10px] text-indigo-600 font-bold">Quick Timer</span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-1 mb-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateDueDate(contact, 1)}
+                                      className="py-1 px-1.5 text-center bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 rounded-lg text-[11px] font-semibold transition cursor-pointer"
+                                    >
+                                      Tomorrow
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateDueDate(contact, 3)}
+                                      className="py-1 px-1.5 text-center bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 rounded-lg text-[11px] font-semibold transition cursor-pointer"
+                                    >
+                                      +3 Days
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateDueDate(contact, 7)}
+                                      className="py-1 px-1.5 text-center bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 rounded-lg text-[11px] font-semibold transition cursor-pointer"
+                                    >
+                                      +1 Week
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] text-slate-400 font-medium shrink-0">Custom:</span>
+                                    <input
+                                      type="date"
+                                      min={new Date().toISOString().split('T')[0]}
+                                      onChange={(e) => {
+                                        if (e.target.value) {
+                                          handleSetCustomDueDate(contact, e.target.value);
+                                        }
+                                      }}
+                                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-1.5">
+                                  {contact.email && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveLifecycleDropdownId(null);
+                                        onOpenEmailComposer(contact);
+                                      }}
+                                      className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
+                                    >
+                                      <Mail className="w-3.5 h-3.5" />
+                                      <span>Send Email</span>
+                                    </button>
+                                  )}
+                                  {contact.status === 'new' ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleInlineStatusUpdate(contact.id, 'contacted', e)}
+                                      className="flex-1 py-1.5 px-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition cursor-pointer text-center shadow-xs"
+                                    >
+                                      Mark Contacted
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleInlineStatusUpdate(contact.id, 'qualified', e)}
+                                      className="flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer text-center shadow-xs"
+                                    >
+                                      Mark Qualified
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </td>
 
                       {/* Owner */}
