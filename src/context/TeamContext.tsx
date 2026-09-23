@@ -9,6 +9,7 @@ interface TeamContextValue {
   setActiveMember: (member: TeamMember) => void;
   logout: () => Promise<void>;
   addTeamMember: (name: string, email?: string, role?: string, authUserId?: string) => Promise<TeamMember>;
+  updateMemberRole: (memberId: string, role: string) => Promise<void>;
   isPickerOpen: boolean;
   setIsPickerOpen: (open: boolean) => void;
   refreshTeam: () => Promise<void>;
@@ -58,7 +59,10 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const formattedName =
           metadataName ||
           fallbackName.charAt(0).toUpperCase() + fallbackName.slice(1).replace(/[._]/g, ' ');
-        const role = (user.user_metadata?.role as string) || 'Sales Representative';
+        const isFirstUser = members.length === 0;
+        const role =
+          (user.user_metadata?.role as string) ||
+          (isFirstUser ? 'Admin' : 'Sales Representative');
 
         matched = await db.addTeamMember({
           name: formattedName,
@@ -110,6 +114,16 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return created;
   };
 
+  const updateMemberRole = async (memberId: string, newRole: string) => {
+    await db.updateTeamMember(memberId, { role: newRole });
+    setTeamMembers((prev) =>
+      prev.map((m) => (m.id === memberId ? { ...m, role: newRole } : m))
+    );
+    if (activeMember?.id === memberId) {
+      setActiveMemberState((prev) => (prev ? { ...prev, role: newRole } : null));
+    }
+  };
+
   return (
     <TeamContext.Provider
       value={{
@@ -118,6 +132,7 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setActiveMember,
         logout,
         addTeamMember,
+        updateMemberRole,
         isPickerOpen,
         setIsPickerOpen,
         refreshTeam,

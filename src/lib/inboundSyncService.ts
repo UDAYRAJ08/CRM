@@ -224,7 +224,7 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       // 1. Log into emails table as an Inbound email
       await db.saveEmail({
         contact_id: matchedContact.id,
-        recipient_email: 'udaysharma@ingversionsdigital.com',
+        recipient_email: localStorage.getItem('crm_active_user_email') || 'team@workspace.crm',
         sender_email: fromEmail,
         is_inbound: true,
         subject: subject,

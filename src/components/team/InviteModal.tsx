@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useTeam } from '../../context/TeamContext';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { usePermissions } from '../../hooks/usePermissions';
 import { sendEmailDirectly } from '../../lib/emailService';
 import {
   X,
@@ -35,7 +37,12 @@ const STORAGE_INVITES_KEY = 'crm_sent_invitations';
 
 export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => {
   const { activeMember } = useTeam();
+  const { user } = useAuth();
   const { success, error, info } = useToast();
+  const { canManageTeam, isAdmin } = usePermissions();
+
+  const activeSenderEmail = (activeMember?.email || user?.email || '').trim();
+  const activeSenderName = (activeMember?.name || user?.user_metadata?.full_name || 'Administrator').trim();
 
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
@@ -111,6 +118,10 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
   // Send Direct Email Invitation
   const handleSendEmailInvite = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageTeam) {
+      error('Access Restricted', 'Only Administrators have permission to invite new team members.');
+      return;
+    }
     const email = inviteEmail.trim();
     const name = inviteName.trim();
 
@@ -120,7 +131,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
     }
 
     const inviteLink = generateInviteUrl(name || 'Colleague', email, inviteRole);
-    const senderName = activeMember?.name || 'A team member';
+    const senderName = activeSenderName || 'A team member';
 
     const emailSubject = `Invitation: Join ${senderName} on ${orgName}`;
     const emailBody = `Hi ${name || 'there'},\n\n${senderName} has invited you to collaborate on ${orgName} as a ${inviteRole}.\n\nClick the link below to accept your invitation and activate your CRM workspace account:\n${inviteLink}\n\n${customNote ? `Note from ${senderName}:\n"${customNote}"\n\n` : ''}Best regards,\nThe ${orgName} Team`;
@@ -132,6 +143,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
         recipientName: name || 'Colleague',
         subject: emailSubject,
         body: emailBody,
+        senderEmail: activeSenderEmail || undefined,
         senderName: senderName,
         senderId: activeMember?.id,
       });
@@ -220,6 +232,12 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
         <div className="p-6">
           {activeTab === 'invite' ? (
             <form onSubmit={handleSendEmailInvite} className="space-y-4">
+              {!canManageTeam && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Only Workspace Administrators can invite new members and manage workspace roles.</span>
+                </div>
+              )}
               {/* Recipient Details */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -324,8 +342,8 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
                   </Button>
                   <button
                     type="submit"
-                    disabled={isSending || !inviteEmail.trim()}
-                    className="py-2 px-4 bg-[#1e4634] hover:bg-[#163829] active:bg-[#122e22] text-white text-xs font-semibold rounded-lg shadow-sm transition flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                    disabled={isSending || !inviteEmail.trim() || !canManageTeam}
+                    className="py-2 px-4 bg-[#1e4634] hover:bg-[#163829] active:bg-[#122e22] text-white text-xs font-semibold rounded-lg shadow-sm transition flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSending ? (
                       <span>Sending Email...</span>

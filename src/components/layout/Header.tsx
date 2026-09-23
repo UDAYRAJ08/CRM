@@ -3,6 +3,7 @@ import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { getInitials } from '../../lib/utils';
+import { usePermissions } from '../../hooks/usePermissions';
 import { Button } from '../ui/Button';
 import {
   User,
@@ -15,6 +16,9 @@ import {
   Settings,
   RefreshCw,
   Share2,
+  Crown,
+  Zap,
+  Shield,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -42,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { activeMember, setIsPickerOpen, logout } = useTeam();
   const { user } = useAuth();
+  const { roleTitle, isAdmin, isManager, isEmployee } = usePermissions();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const initials = getInitials(activeMember?.name || user?.email, 'U');
@@ -176,8 +181,22 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="text-xs font-bold text-slate-900 leading-tight">
                 {activeMember?.name || 'Pick Name'}
               </div>
-              <div className="text-[10px] text-slate-500 font-medium">
-                {activeMember?.role || 'Team Member'}
+              <div className="flex items-center gap-1 mt-0.5">
+                {isAdmin ? (
+                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.2 rounded-md">
+                    <Crown className="w-2.5 h-2.5 text-indigo-600" />
+                    <span>Admin</span>
+                  </span>
+                ) : isManager ? (
+                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.2 rounded-md">
+                    <Zap className="w-2.5 h-2.5 text-emerald-600" />
+                    <span>Manager</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[9px] font-medium text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded-md">
+                    <span>{roleTitle}</span>
+                  </span>
+                )}
               </div>
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -189,13 +208,21 @@ export const Header: React.FC<HeaderProps> = ({
                 className="fixed inset-0 z-40"
                 onClick={() => setIsUserMenuOpen(false)}
               />
-              <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="absolute right-0 mt-2 w-60 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
                 <div className="p-2.5 border-b border-slate-100">
-                  <p className="text-xs font-bold text-slate-900 truncate">
-                    {activeMember?.name || user?.user_metadata?.full_name || 'Team Member'}
-                  </p>
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <p className="text-xs font-bold text-slate-900 truncate">
+                      {activeMember?.name || user?.user_metadata?.full_name || 'Team Member'}
+                    </p>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isAdmin ? 'bg-indigo-100 text-indigo-800' : isManager ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+                      {roleTitle}
+                    </span>
+                  </div>
                   <p className="text-[11px] text-slate-500 truncate">
-                    {user?.email || activeMember?.email || activeMember?.role || 'Authenticated User'}
+                    {user?.email || activeMember?.email || 'Authenticated User'}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1 font-medium">
+                    {isAdmin ? '👑 Full Administrator permissions' : isManager ? '⚡ Manager (Edit, Create & Outreach)' : '👤 Standard access (Outreach & Create only)'}
                   </p>
                 </div>
 

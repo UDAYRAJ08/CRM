@@ -27,12 +27,12 @@ interface DealModalProps {
 }
 
 const STAGES: { id: DealStage; label: string; defaultProbability: number; color: string }[] = [
-  { id: 'discovery', label: 'Discovery', defaultProbability: 10, color: 'bg-slate-100 text-slate-700' },
-  { id: 'qualified', label: 'Qualified', defaultProbability: 25, color: 'bg-blue-100 text-blue-800' },
-  { id: 'proposal', label: 'Proposal Sent', defaultProbability: 50, color: 'bg-indigo-100 text-indigo-800' },
-  { id: 'negotiation', label: 'Negotiation', defaultProbability: 75, color: 'bg-amber-100 text-amber-800' },
-  { id: 'won', label: 'Closed Won', defaultProbability: 100, color: 'bg-emerald-100 text-emerald-800' },
-  { id: 'lost', label: 'Closed Lost', defaultProbability: 0, color: 'bg-rose-100 text-rose-800' },
+  { id: 'discovery', label: 'Needs Analysis', defaultProbability: 10, color: 'bg-rose-500 text-white' },
+  { id: 'qualified', label: 'Qualification', defaultProbability: 25, color: 'bg-blue-500 text-white' },
+  { id: 'proposal', label: 'Proposal Sent', defaultProbability: 50, color: 'bg-amber-500 text-white' },
+  { id: 'negotiation', label: 'Negotiation/Review', defaultProbability: 75, color: 'bg-indigo-600 text-white' },
+  { id: 'won', label: 'Closed Won', defaultProbability: 100, color: 'bg-emerald-600 text-white' },
+  { id: 'lost', label: 'Closed Lost', defaultProbability: 0, color: 'bg-slate-400 text-white' },
 ];
 
 export const DealModal: React.FC<DealModalProps> = ({

@@ -9,6 +9,8 @@ export interface SendEmailParams {
   body: string;
   senderId?: string;
   senderName?: string;
+  senderEmail?: string;
+  replyTo?: string;
   aiGenerated?: boolean;
   logOnly?: boolean;
 }
@@ -17,160 +19,314 @@ export interface SendEmailResult {
   success: boolean;
   message: string;
   record: EmailRecord;
+  provider?: string;
   warning?: string;
   isSandboxRestricted?: boolean;
   verifiedEmail?: string;
 }
 
-export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEmailResult> {
-  const edgeFunctionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL;
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Helper: Dispatch via Composio (supports both Gmail & Outlook)
+async function sendViaComposio(
+  apiKey: string,
+  recipient: string,
+  subject: string,
+  body: string,
+  userEmail?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const endpoint =
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? '/api/composio'
+        : 'https://connect.composio.dev/mcp';
 
+    const isGmailSender = userEmail && /@(gmail\.com|googlemail\.com)$/i.test(userEmail);
+    const toolsToAttempt = isGmailSender
+      ? [
+          {
+            tool_slug: 'GMAIL_SEND_EMAIL',
+            arguments: {
+              recipient_email: recipient.trim(),
+              subject: subject.trim(),
+              body: body.trim(),
+            },
+          },
+          {
+            tool_slug: 'OUTLOOK_SEND_EMAIL',
+            arguments: {
+              to: recipient.trim(),
+              subject: subject.trim(),
+              body: body.trim(),
+            },
+          },
+        ]
+      : [
+          {
+            tool_slug: 'OUTLOOK_SEND_EMAIL',
+            arguments: {
+              to: recipient.trim(),
+              subject: subject.trim(),
+              body: body.trim(),
+            },
+          },
+        ];
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'x-consumer-api-key': apiKey.trim(),
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method: 'tools/call',
+        params: {
+          name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
+          arguments: {
+            current_step: 'SENDING_EMAIL',
+            sync_response_to_workbench: false,
+            tools: toolsToAttempt,
+          },
+        },
+      }),
+    });
+
+    const resText = await res.text();
+    if (
+      resText.includes('"successful":true') ||
+      resText.includes('"status_code":202') ||
+      resText.includes('202')
+    ) {
+      return { success: true };
+    }
+    return { success: false, error: `Composio error: ${resText.slice(0, 180)}` };
+  } catch (err: any) {
+    return { success: false, error: `Composio network error: ${err.message}` };
+  }
+}
+
+// Helper: Dispatch via Resend REST API
+async function sendViaResend(
+  apiKey: string,
+  from: string,
+  to: string,
+  replyTo: string,
+  subject: string,
+  body: string
+): Promise<{
+  success: boolean;
+  data?: any;
+  error?: string;
+  status?: number;
+  isDomainUnverified?: boolean;
+  isSandboxRestricted?: boolean;
+}> {
+  try {
+    const endpoint =
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? '/api/resend/emails'
+        : 'https://api.resend.com/emails';
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: from.trim(),
+        to: [to.trim()],
+        reply_to: replyTo.trim(),
+        subject: subject.trim(),
+        text: body.trim(),
+        html: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; white-space: pre-wrap; font-size: 14px;">${body}</div>`,
+      }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.id) {
+      return { success: true, data };
+    }
+
+    const errMsg = data.message || data.error || 'Email delivery failed';
+    const isDomainUnverified = Boolean(
+      errMsg &&
+        (errMsg.includes('not verified') ||
+          errMsg.includes('resend.com/domains') ||
+          errMsg.includes('validation_error') ||
+          res.status === 403)
+    );
+    const isSandboxRestricted = Boolean(
+      errMsg &&
+        (errMsg.includes('only send testing emails to your own email address') ||
+          res.status === 422)
+    );
+
+    return {
+      success: false,
+      data,
+      error: errMsg,
+      status: res.status,
+      isDomainUnverified,
+      isSandboxRestricted,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `Delivery network error: ${err.message}`,
+    };
+  }
+}
+
+export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEmailResult> {
+  // Configuration options
   const composioApiKey =
     localStorage.getItem('crm_composio_api_key') ||
-    import.meta.env.VITE_COMPOSIO_API_KEY ||
-    'ck_SDOn08y-f0-B3wSCswR7';
+    import.meta.env.VITE_COMPOSIO_API_KEY;
 
   const resendApiKey =
     localStorage.getItem('crm_resend_api_key') ||
     import.meta.env.VITE_RESEND_API_KEY;
 
-  const senderEmail =
+  // Check Composio preference: defaults to true if VITE_EMAIL_PROVIDER === 'composio' or if enabled in settings
+  const localUseComposio = localStorage.getItem('crm_use_composio');
+  const shouldUseComposio =
+    localUseComposio !== null
+      ? localUseComposio === 'true'
+      : (import.meta.env.VITE_EMAIL_PROVIDER === 'composio' || Boolean(composioApiKey));
+
+  // Dynamic user and workspace sender resolution
+  const workspaceSender =
     localStorage.getItem('crm_sender_email') ||
     import.meta.env.VITE_RESEND_FROM_EMAIL ||
-    'udaysharma@ingversionsdigital.com';
+    'CRM Team <onboarding@resend.dev>';
+
+  const companyDomain = (localStorage.getItem('crm_company_domain') || '').trim();
+
+  // Active user's personal sender details
+  const activeUserEmail = (params.senderEmail || localStorage.getItem('crm_active_user_email') || '').trim();
+  const activeUserName = (params.senderName || 'Team Member').trim();
+
+  // Determine effective From header and Reply-To
+  let effectiveFrom: string;
+  let effectiveReplyTo: string = (params.replyTo || activeUserEmail || workspaceSender).trim();
+
+  const isPublicWebmail = /@(gmail\.com|googlemail\.com|yahoo\.com|outlook\.com|hotmail\.com|icloud\.com|aol\.com)$/i.test(activeUserEmail);
+
+  if (activeUserEmail && isPublicWebmail) {
+    // Public webmail domains cannot be placed directly into third-party SMTP 'From' headers due to SPF/DMARC rejection.
+    // They are dispatched via the verified gateway with the user's name, and direct Reply-To pointing straight to their personal inbox.
+    const baseGatewayEmail = workspaceSender.includes('<') && workspaceSender.includes('>')
+      ? workspaceSender.substring(workspaceSender.indexOf('<') + 1, workspaceSender.indexOf('>'))
+      : workspaceSender.trim();
+    effectiveFrom = `"${activeUserName}" <${baseGatewayEmail}>`;
+    effectiveReplyTo = activeUserEmail;
+  } else if (activeUserEmail && companyDomain && activeUserEmail.toLowerCase().endsWith(companyDomain.toLowerCase())) {
+    // 1. Direct Company Domain delivery: from "Jane Doe <jane@company.com>"
+    effectiveFrom = `"${activeUserName}" <${activeUserEmail}>`;
+    effectiveReplyTo = activeUserEmail;
+  } else if (activeUserEmail && workspaceSender && !workspaceSender.toLowerCase().includes(activeUserEmail.toLowerCase())) {
+    // 2. Gateway Domain delivery: "Jane Doe via CRM <team@domain.com>" with reply-to going directly to Jane
+    const baseGatewayEmail = workspaceSender.includes('<') && workspaceSender.includes('>')
+      ? workspaceSender.substring(workspaceSender.indexOf('<') + 1, workspaceSender.indexOf('>'))
+      : workspaceSender.trim();
+    effectiveFrom = `"${activeUserName}" <${baseGatewayEmail}>`;
+    effectiveReplyTo = activeUserEmail;
+  } else if (activeUserEmail) {
+    // 3. User specified from
+    effectiveFrom = `"${activeUserName}" <${activeUserEmail}>`;
+    effectiveReplyTo = activeUserEmail;
+  } else {
+    // 4. Default fallback
+    effectiveFrom = workspaceSender;
+  }
 
   let remoteSuccess = false;
   let remoteError: string | null = null;
-  let providerUsed = 'crm';
+  let providerUsed = 'CRM Engine';
   let isSandboxRestricted = false;
   let warningMessage: string | undefined = undefined;
 
   // If user explicitly chose log-only mode
   if (!params.logOnly) {
-    // 1. Try Composio (Outlook / Company Account: udaysharma@ingversionsdigital.com) First
-    if (composioApiKey) {
-      try {
-        const endpoint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-          ? '/api/composio'
-          : 'https://connect.composio.dev/mcp';
-
-        const composioRes = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'x-consumer-api-key': composioApiKey.trim(),
-            'Content-Type': 'application/json',
-            'Accept': 'application/json, text/event-stream',
-          },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: Date.now(),
-            method: 'tools/call',
-            params: {
-              name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
-              arguments: {
-                current_step: 'SENDING_EMAIL',
-                sync_response_to_workbench: false,
-                tools: [
-                  {
-                    tool_slug: 'OUTLOOK_SEND_EMAIL',
-                    arguments: {
-                      to: params.recipientEmail.trim(),
-                      subject: params.subject.trim(),
-                      body: params.body.trim(),
-                    },
-                  },
-                ],
-              },
-            },
-          }),
-        });
-
-        const resText = await composioRes.text();
-        if (
-          resText.includes('"successful":true') ||
-          resText.includes('"status_code":202') ||
-          resText.includes('202')
-        ) {
-          remoteSuccess = true;
-          providerUsed = 'Composio (udaysharma@ingversionsdigital.com)';
-        } else {
-          remoteError = `Composio error: ${resText.slice(0, 180)}`;
-        }
-      } catch (err: any) {
-        remoteError = `Composio network error: ${err.message}`;
+    // 1. If Composio is preferred, try Composio first
+    if (shouldUseComposio && composioApiKey) {
+      const cRes = await sendViaComposio(composioApiKey, params.recipientEmail, params.subject, params.body, activeUserEmail);
+      if (cRes.success) {
+        remoteSuccess = true;
+        providerUsed = isPublicWebmail ? 'Composio Gmail' : 'Composio Outlook';
+      } else {
+        remoteError = cRes.error || null;
       }
     }
 
-    // 2. Try Supabase Edge Function if configured
-    if (!remoteSuccess && edgeFunctionsUrl && anonKey && !edgeFunctionsUrl.includes('your-project-ref')) {
-      try {
-        const res = await fetch(`${edgeFunctionsUrl}/send-email`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${anonKey}`,
-            'apikey': anonKey,
-          },
-          body: JSON.stringify(params),
-        });
-        const data = await res.json();
-        if (res.ok && data.success) {
-          remoteSuccess = true;
-          providerUsed = 'Supabase Edge Function';
-        } else {
-          remoteError = data.error;
-        }
-      } catch (e: any) {
-        remoteError = e.message;
-      }
-    }
-
-    // 3. Fallback to Resend API if Composio was not used and Resend key is provided
+    // 2. Try Resend Delivery (if not already sent via Composio)
     if (!remoteSuccess && resendApiKey) {
-      try {
-        const endpoint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-          ? '/api/resend/emails'
-          : 'https://api.resend.com/emails';
+      let resendRes = await sendViaResend(
+        resendApiKey,
+        effectiveFrom,
+        params.recipientEmail,
+        effectiveReplyTo,
+        params.subject,
+        params.body
+      );
 
-        const cleanSender = senderEmail.includes('<') && senderEmail.includes('>')
-          ? senderEmail
-          : senderEmail.trim();
+      // If failed due to unverified custom domain (e.g. ingversionsdigital.com not verified on resend.com/domains)
+      if (!resendRes.success && resendRes.isDomainUnverified) {
+        console.warn(`Resend domain in '${effectiveFrom}' is unverified on resend.com/domains.`);
 
-        const resendRes = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${resendApiKey.trim()}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: cleanSender,
-            to: [params.recipientEmail.trim()],
-            subject: params.subject.trim(),
-            text: params.body.trim(),
-            html: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; white-space: pre-wrap; font-size: 14px;">${params.body}</div>`,
-          }),
-        });
-
-        const resendData = await resendRes.json();
-        if (resendRes.ok && resendData.id) {
-          remoteSuccess = true;
-          providerUsed = 'Resend';
-        } else {
-          remoteError = resendData.message || resendData.error || 'Resend delivery failed';
-          if (
-            remoteError &&
-            (remoteError.includes('only send testing emails to your own email address') ||
-             remoteError.includes('resend.com/domains') ||
-             resendRes.status === 403 ||
-             resendRes.status === 422)
-          ) {
-            isSandboxRestricted = true;
+        // Seamless failover to Composio if key is present
+        if (composioApiKey) {
+          console.info('Auto-failover to Composio for verified inbox delivery...');
+          const cRes = await sendViaComposio(composioApiKey, params.recipientEmail, params.subject, params.body, activeUserEmail);
+          if (cRes.success) {
+            remoteSuccess = true;
+            providerUsed = isPublicWebmail ? 'Composio Gmail (Failover)' : 'Composio Outlook (Failover)';
+          } else {
+            remoteError = cRes.error || null;
           }
-          console.error('Resend delivery error:', resendData);
         }
-      } catch (e: any) {
-        remoteError = `Resend network error: ${e.message}`;
+
+        // If still not sent, retry via Resend default sandbox domain
+        if (!remoteSuccess) {
+          const sandboxFrom = `"${activeUserName}" <onboarding@resend.dev>`;
+          console.info(`Retrying via Resend Sandbox (${sandboxFrom})...`);
+          resendRes = await sendViaResend(
+            resendApiKey,
+            sandboxFrom,
+            params.recipientEmail,
+            effectiveReplyTo,
+            params.subject,
+            params.body
+          );
+          if (resendRes.success) {
+            remoteSuccess = true;
+            providerUsed = `Resend Sandbox (${activeUserName})`;
+          }
+        }
+      }
+
+      if (resendRes.success) {
+        remoteSuccess = true;
+        if (!providerUsed || providerUsed === 'CRM Engine') {
+          providerUsed = `Resend (${activeUserName})`;
+        }
+      } else if (!remoteSuccess) {
+        remoteError = resendRes.error || remoteError;
+        if (resendRes.isSandboxRestricted || resendRes.isDomainUnverified) {
+          isSandboxRestricted = true;
+        }
+      }
+    }
+
+    // 3. Fallback to Composio if Resend failed and Composio wasn't attempted
+    if (!remoteSuccess && composioApiKey && !shouldUseComposio) {
+      console.info('Attempting fallback delivery via Composio...');
+      const cRes = await sendViaComposio(composioApiKey, params.recipientEmail, params.subject, params.body, activeUserEmail);
+      if (cRes.success) {
+        remoteSuccess = true;
+        providerUsed = isPublicWebmail ? 'Composio Gmail (Fallback)' : 'Composio Outlook (Fallback)';
       }
     }
   }
@@ -179,10 +335,11 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
     warningMessage = 'Logged to CRM history. (To deliver to real inboxes, configure your email provider in Settings)';
   }
 
-  // Record into CRM database & contact interaction log
+  // Record into CRM database & contact interaction log with accurate sender_email
   const record = await db.saveEmail({
     contact_id: params.contactId || null,
     recipient_email: params.recipientEmail,
+    sender_email: activeUserEmail || effectiveReplyTo,
     subject: params.subject,
     body: params.body,
     ai_generated: params.aiGenerated || false,
@@ -232,6 +389,7 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
       ? `Email delivered to ${params.recipientEmail} via ${providerUsed}!`
       : `Email saved to CRM history.`,
     record,
+    provider: providerUsed,
     warning: warningMessage,
     isSandboxRestricted,
   };

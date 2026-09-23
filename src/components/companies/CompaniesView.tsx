@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Company, Contact, Deal } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
+import { usePermissions } from '../../hooks/usePermissions';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Modal } from '../ui/Modal';
@@ -17,6 +18,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
   onSelectContact,
 }) => {
   const { success, error } = useToast();
+  const { canManageCompanies } = usePermissions();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,6 +47,10 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
 
   const handleAddCompany = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageCompanies) {
+      error('Access Restricted', 'Only Administrators and Managers have permission to add company accounts.');
+      return;
+    }
     if (!companyName.trim()) {
       error('Name required', 'Please provide a company name.');
       return;
@@ -80,14 +86,16 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
           </p>
         </div>
 
-        <Button
-          size="sm"
-          variant="primary"
-          leftIcon={<Plus className="w-4 h-4" />}
-          onClick={() => setIsAddModalOpen(true)}
-        >
-          Add Company
-        </Button>
+        {canManageCompanies && (
+          <Button
+            size="sm"
+            variant="primary"
+            leftIcon={<Plus className="w-4 h-4" />}
+            onClick={() => setIsAddModalOpen(true)}
+          >
+            Add Company
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

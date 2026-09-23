@@ -348,6 +348,52 @@ export const LoginPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* Role Selection when Signing Up */}
+              {mode === 'signup' && (
+                <div className="space-y-1.5 pt-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Workspace Role
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRole('Admin')}
+                      className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                        role === 'Admin'
+                          ? 'border-blue-500 bg-blue-50/60 text-blue-900 ring-1 ring-blue-500 shadow-xs'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold text-xs">
+                        <span>👑</span>
+                        <span>Administrator</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Full control (edit, delete, settings)
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRole('Sales Representative')}
+                      className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                        role === 'Sales Representative'
+                          ? 'border-blue-500 bg-blue-50/60 text-blue-900 ring-1 ring-blue-500 shadow-xs'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-bold text-xs">
+                        <span>👤</span>
+                        <span>Sales Rep</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Lead creation & outreach
+                      </p>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Primary Blue Button */}
               <button
                 type="submit"

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTeam } from '../../context/TeamContext';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Contact, Interaction } from '../../types/crm';
 import { sendEmailDirectly } from '../../lib/emailService';
@@ -28,7 +29,11 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
   onEmailSent,
 }) => {
   const { activeMember } = useTeam();
+  const { user } = useAuth();
   const { success, error, info } = useToast();
+
+  const activeSenderEmail = (activeMember?.email || user?.email || '').trim();
+  const activeSenderName = (activeMember?.name || user?.user_metadata?.full_name || 'Team Member').trim();
 
   const [recipientEmail, setRecipientEmail] = useState('');
   const [subject, setSubject] = useState('');
@@ -39,7 +44,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [sandboxError, setSandboxError] = useState<string | null>(null);
 
-  const ownerEmail = 'udayrajsharma08@gmail.com';
+  const ownerEmail = activeSenderEmail || 'my-email@company.com';
   const configuredSender = localStorage.getItem('crm_sender_email') || import.meta.env.VITE_RESEND_FROM_EMAIL || 'onboarding@resend.dev';
   const isSandboxSender = configuredSender.includes('onboarding@resend.dev');
 
@@ -85,7 +90,8 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
         subject: subject.trim(),
         body: body.trim(),
         senderId: activeMember?.id,
-        senderName: activeMember?.name,
+        senderName: activeSenderName,
+        senderEmail: activeSenderEmail,
         aiGenerated: isAiGenerated,
         logOnly,
       });
@@ -94,10 +100,16 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
       if (onEmailSent) onEmailSent();
       onClose();
     } catch (err: any) {
-      if (err.isSandboxRestricted || (err.message && err.message.includes('only send testing emails to your own email address'))) {
-        setSandboxError(err.message);
+      const msg = err.message || '';
+      if (
+        err.isSandboxRestricted ||
+        msg.includes('only send testing emails') ||
+        msg.includes('not verified') ||
+        msg.includes('resend.com/domains')
+      ) {
+        setSandboxError(msg);
       } else {
-        error('Failed to send email', err.message);
+        error('Failed to send email', msg);
       }
     } finally {
       setIsSending(false);
@@ -132,21 +144,27 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
 
           <span className="text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-xs">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>udaysharma@ingversionsdigital.com</span>
+            <span>{activeSenderEmail || 'Dynamic Sender'}</span>
           </span>
         </div>
       }
     >
       <form onSubmit={handleSend} className="space-y-4">
-        {/* Sandbox Restriction Warning Panel if triggered */}
+        {/* Sandbox & Domain Restriction Warning Panel if triggered */}
         {sandboxError && (
           <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl space-y-2.5 text-xs text-amber-900 animate-in fade-in duration-200">
             <div className="flex items-start gap-2 font-bold text-amber-950">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <span>Resend Free Sandbox Limitation</span>
+              <span>
+                {sandboxError.includes('not verified')
+                  ? 'Domain Verification Notice'
+                  : 'Resend Free Sandbox Limitation'}
+              </span>
             </div>
             <p className="text-amber-800 text-[11px] leading-relaxed">
-              When using the free Resend test address (<code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono">onboarding@resend.dev</code>), Resend only permits live delivery to your registered account owner email (<strong className="font-semibold">{ownerEmail}</strong>).
+              {sandboxError.includes('not verified')
+                ? sandboxError
+                : `When using the free Resend test address (onboarding@resend.dev), Resend only permits live delivery to your registered account owner email (${ownerEmail}).`}
             </p>
             <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/60">
               <button
@@ -248,6 +266,22 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
 
         {/* Email Fields */}
         <div className="space-y-3">
+          {/* Dynamic Active Sender Banner */}
+          <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 font-medium">From:</span>
+              <span className="font-semibold text-slate-800">
+                {activeSenderName}
+              </span>
+              <span className="text-slate-500 font-mono text-[11px]">
+                &lt;{activeSenderEmail || 'Configure in Settings'}&gt;
+              </span>
+            </div>
+            <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md font-medium">
+              Dynamic Sender Active
+            </span>
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-semibold text-slate-700">
@@ -259,7 +293,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
                   onClick={() => setRecipientEmail(ownerEmail)}
                   className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1"
                 >
-                  <span>Test to my Gmail ({ownerEmail})</span>
+                  <span>Test to my inbox ({ownerEmail})</span>
                 </button>
               </div>
             </div>
@@ -342,7 +376,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
 
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
           <div className="text-xs text-slate-500">
-            Sending from: <strong className="text-slate-800 font-semibold">udaysharma@ingversionsdigital.com</strong>
+            Sending as: <strong className="text-slate-800 font-semibold">{activeSenderName} &lt;{activeSenderEmail || 'Configured Gateway'}&gt;</strong>
           </div>
 
           <div className="flex items-center gap-2">
@@ -350,7 +384,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
               Discard
             </Button>
             
-            {/* 1-Click Send via Gmail Web */}
+            {/* 1-Click Send via Gmail Web (Sends directly from logged in user's Gmail account) */}
             <Button
               type="button"
               variant="secondary"
@@ -364,14 +398,15 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
                 // 1. Log to CRM database & interaction history
                 await executeSend(true);
 
-                // 2. Open Gmail Web Compose with pre-filled fields
-                const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(targetEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                // 2. Open Gmail Web Compose with active user's account pre-selected
+                const userParam = activeSenderEmail ? `u/${encodeURIComponent(activeSenderEmail)}/` : '';
+                const gmailUrl = `https://mail.google.com/mail/${userParam}?view=cm&fs=1&to=${encodeURIComponent(targetEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
                 window.open(gmailUrl, '_blank', 'noopener,noreferrer');
-                success('Opened in Gmail', 'Email logged to CRM and opened in Gmail compose tab.');
+                success('Opened in Gmail', `Dispatched under ${activeSenderEmail || 'your Google account'}`);
               }}
               className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200 font-semibold"
             >
-              ✉️ Open in Gmail
+              ✉️ Send via Gmail {activeSenderEmail ? `(${activeSenderEmail.split('@')[0]})` : ''}
             </Button>
 
             <Button

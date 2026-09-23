@@ -6,11 +6,13 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { db } from '../../lib/supabase';
 import { getInitials } from '../../lib/utils';
+import { usePermissions } from '../../hooks/usePermissions';
 import { UserCheck, Plus, Sparkles, Shield } from 'lucide-react';
 
 export const TeamMemberModal: React.FC = () => {
-  const { teamMembers, activeMember, setActiveMember, addTeamMember, isPickerOpen, setIsPickerOpen } = useTeam();
+  const { teamMembers, activeMember, setActiveMember, addTeamMember, updateMemberRole, isPickerOpen, setIsPickerOpen } = useTeam();
   const { success, error } = useToast();
+  const { canManageTeam, isAdmin } = usePermissions();
 
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [newName, setNewName] = useState('');
@@ -26,8 +28,22 @@ export const TeamMemberModal: React.FC = () => {
     }
   };
 
+  const handlePromoteToAdmin = async (e: React.MouseEvent, memberId: string) => {
+    e.stopPropagation();
+    try {
+      await updateMemberRole(memberId, 'Admin');
+      success('Role Promoted', 'Account is now a Workspace Administrator (Admin).');
+    } catch (err: any) {
+      error('Failed to update role', err.message);
+    }
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageTeam) {
+      error('Access Restricted', 'Only Administrators have permission to add new team members.');
+      return;
+    }
     if (!newName.trim()) {
       error('Name required', 'Please enter your full name.');
       return;
@@ -123,35 +139,62 @@ export const TeamMemberModal: React.FC = () => {
                     </div>
                   </div>
 
-                  {isSelected && (
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 shrink-0 ml-2" />
-                  )}
+                  {isSelected ? (
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      {member.role?.toLowerCase() !== 'admin' && (
+                        <button
+                          type="button"
+                          onClick={(e) => handlePromoteToAdmin(e, member.id)}
+                          className="text-[11px] font-semibold text-indigo-700 hover:text-indigo-900 bg-indigo-100/70 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-md transition cursor-pointer"
+                          title="Promote this account to Administrator"
+                        >
+                          Promote to Admin 👑
+                        </button>
+                      )}
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 shrink-0" />
+                    </div>
+                  ) : member.role?.toLowerCase() !== 'admin' ? (
+                    <button
+                      type="button"
+                      onClick={(e) => handlePromoteToAdmin(e, member.id)}
+                      className="text-[10px] text-slate-400 hover:text-indigo-600 font-medium px-2 py-0.5 rounded transition cursor-pointer"
+                      title="Set as Admin"
+                    >
+                      Make Admin
+                    </button>
+                  ) : null}
                 </button>
               );
             })}
           </div>
 
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm('Reset all local data and start fresh?')) {
-                  db.clearAllLocalData();
-                  window.location.reload();
-                }
-              }}
-              className="text-xs text-rose-500 hover:text-rose-700 font-medium hover:underline"
-            >
-              Clear Local Data
-            </button>
-            <Button
-              variant="outline"
-              size="sm"
-              leftIcon={<Plus className="w-4 h-4" />}
-              onClick={() => setIsCreatingNew(true)}
-            >
-              Add New Person
-            </Button>
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Reset all local data and start fresh?')) {
+                    db.clearAllLocalData();
+                    window.location.reload();
+                  }
+                }}
+                className="text-xs text-rose-500 hover:text-rose-700 font-medium hover:underline"
+              >
+                Clear Local Data
+              </button>
+            ) : (
+              <span className="text-[11px] text-slate-400">Team directory</span>
+            )}
+            {canManageTeam && (
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Plus className="w-4 h-4" />}
+                onClick={() => setIsCreatingNew(true)}
+              >
+                Add New Person
+              </Button>
+            )}
           </div>
         </div>
       ) : (

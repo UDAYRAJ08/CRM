@@ -95,6 +95,17 @@ export const db = {
     setLocal('team_members', updated);
   },
 
+  async updateTeamMember(memberId: string, updates: Partial<TeamMember>): Promise<TeamMember | null> {
+    if (supabase) {
+      const { data, error } = await supabase.from('team_members').update(updates).eq('id', memberId).select().single();
+      if (!error && data) return data;
+    }
+    const members = getLocal('team_members', INITIAL_TEAM);
+    const updated = members.map((m) => (m.id === memberId ? { ...m, ...updates } : m));
+    setLocal('team_members', updated);
+    return updated.find((m) => m.id === memberId) || null;
+  },
+
   async addTeamMember(member: Partial<TeamMember>): Promise<TeamMember> {
     const newMember: TeamMember = {
       id: member.id || crypto.randomUUID(),
@@ -444,12 +455,22 @@ export const db = {
 
   async getEmails(contactId?: string): Promise<EmailRecord[]> {
     if (supabase) {
-      let query = supabase.from('emails').select('*, sender:team_members(*)').order('created_at', { ascending: false });
-      if (contactId) {
-        query = query.eq('contact_id', contactId);
+      try {
+        let query = supabase.from('emails').select('*').order('created_at', { ascending: false });
+        if (contactId) {
+          query = query.eq('contact_id', contactId);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
+          return data.map((e: any) => ({
+            ...e,
+            sender: team.find((t) => t.id === e.sent_by) || null,
+          }));
+        }
+      } catch (err) {
+        console.warn('Supabase getEmails fallback to local:', err);
       }
-      const { data, error } = await query;
-      if (!error && data) return data;
     }
 
     const emails = getLocal<EmailRecord[]>('emails', []);
@@ -469,6 +490,7 @@ export const db = {
       id: email.id || crypto.randomUUID(),
       contact_id: email.contact_id || null,
       recipient_email: email.recipient_email || '',
+      sender_email: email.sender_email || null,
       subject: email.subject || '',
       body: email.body || '',
       ai_generated: email.ai_generated || false,
@@ -480,17 +502,37 @@ export const db = {
     };
 
     if (supabase) {
-      const { data, error } = await supabase
-        .from('emails')
-        .insert(payload)
-        .select('*, sender:team_members(*)')
-        .single();
-      if (!error && data) {
-        return {
-          ...data,
-          is_inbound: email.is_inbound,
-          sender_email: email.sender_email,
-        };
+      const dbPayload = {
+        id: payload.id,
+        contact_id: payload.contact_id,
+        recipient_email: payload.recipient_email,
+        subject: payload.subject,
+        body: payload.body,
+        ai_generated: payload.ai_generated,
+        sent_by: payload.sent_by,
+        sent_at: payload.sent_at,
+        status: payload.status,
+        error_message: payload.error_message,
+        created_at: payload.created_at,
+      };
+
+      try {
+        const { data, error } = await supabase
+          .from('emails')
+          .insert(dbPayload)
+          .select('*')
+          .single();
+        if (!error && data) {
+          const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
+          return {
+            ...data,
+            sender: team.find((t) => t.id === data.sent_by) || null,
+            is_inbound: email.is_inbound,
+            sender_email: email.sender_email,
+          };
+        }
+      } catch (err) {
+        console.warn('Supabase saveEmail fallback to local:', err);
       }
     }
 

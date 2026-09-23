@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
+import { usePermissions } from '../../hooks/usePermissions';
 import { Contact, Company, ContactStatus } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { Modal } from '../ui/Modal';
@@ -23,6 +24,7 @@ export const ContactFormModal: React.FC<ContactFormModalProps> = ({
 }) => {
   const { teamMembers, activeMember } = useTeam();
   const { success, error } = useToast();
+  const { canEditContacts } = usePermissions();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -78,6 +80,10 @@ export const ContactFormModal: React.FC<ContactFormModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (contact && !canEditContacts) {
+      error('Access Restricted', 'Only Administrators and Managers have permission to modify existing contacts.');
+      return;
+    }
     if (!name.trim()) {
       error('Name required', 'Please enter a contact name.');
       return;

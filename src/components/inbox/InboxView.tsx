@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTeam } from '../../context/TeamContext';
+import { useAuth } from '../../context/AuthContext';
 import { Contact, EmailRecord, Interaction } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { formatDate, formatRelativeTime, getInitials, getStatusColor } from '../../lib/utils';
@@ -57,6 +59,10 @@ export const InboxView: React.FC<InboxViewProps> = ({
   isSyncing,
   onRefresh,
 }) => {
+  const { activeMember } = useTeam();
+  const { user } = useAuth();
+  const activeUserEmail = (activeMember?.email || user?.email || localStorage.getItem('crm_active_user_email') || 'workspace inbox').trim();
+
   const [messages, setMessages] = useState<InboundMessageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -213,14 +219,14 @@ export const InboxView: React.FC<InboxViewProps> = ({
               </span>
             </h1>
             <p className="text-indigo-200/90 text-sm mt-2 max-w-xl leading-relaxed">
-              When leads reply to your emails sent from <strong className="text-white">udaysharma@ingversionsdigital.com</strong>, they automatically sync here and update lead stage.
+              When leads reply to your emails sent from <strong className="text-white">{activeUserEmail}</strong>, they automatically sync here and update lead stage.
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
             <div className="text-right hidden md:block mr-2">
-              <div className="text-xs text-indigo-200 font-medium">Mailbox Account</div>
-              <div className="text-xs font-bold text-white">udaysharma@ingversionsdigital.com</div>
+              <div className="text-xs text-indigo-200 font-medium">Active Mailbox Account</div>
+              <div className="text-xs font-bold text-white">{activeUserEmail}</div>
               {lastSyncTime && (
                 <div className="text-[10px] text-indigo-300 flex items-center justify-end gap-1 mt-0.5">
                   <Clock className="w-2.5 h-2.5" />
@@ -230,7 +236,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
             </div>
 
             <Button
-              variant="secondary"
+              variant="white"
               size="md"
               onClick={async () => {
                 await onSyncInbox();
@@ -238,7 +244,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
               }}
               disabled={isSyncing}
               leftIcon={<RefreshCw className={`w-4 h-4 text-indigo-600 ${isSyncing ? 'animate-spin' : ''}`} />}
-              className="bg-white text-indigo-950 hover:bg-indigo-50 border-0 shadow-lg font-bold"
+              className="border-0 shadow-lg font-bold"
             >
               {isSyncing ? 'Checking Outlook...' : 'Sync Outlook Now'}
             </Button>

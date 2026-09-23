@@ -59,7 +59,11 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 const ClickableBar = (props: any) => {
   const { x, y, width, height, fill, onClick, radius } = props;
   if (!height || height <= 0) return null;
-  const r = radius ?? 4;
+  const r = typeof radius === 'number'
+    ? radius
+    : Array.isArray(radius)
+    ? (Number(radius[0]) || 4)
+    : 4;
   return (
     <rect
       x={x}

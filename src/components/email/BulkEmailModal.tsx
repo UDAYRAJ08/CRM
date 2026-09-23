@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useTeam } from '../../context/TeamContext';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Contact } from '../../types/crm';
 import { sendEmailDirectly, substituteMergeFields } from '../../lib/emailService';
@@ -22,7 +23,11 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
   onComplete,
 }) => {
   const { activeMember } = useTeam();
+  const { user } = useAuth();
   const { success, error, info } = useToast();
+
+  const activeSenderEmail = (activeMember?.email || user?.email || '').trim();
+  const activeSenderName = (activeMember?.name || user?.user_metadata?.full_name || 'Team Member').trim();
 
   const [subjectTemplate, setSubjectTemplate] = useState('Need help meeting upcoming deadlines for {{company}}?');
   const [bodyTemplate, setBodyTemplate] = useState(
@@ -68,8 +73,9 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
           recipientName: contact.name,
           subject: customSub,
           body: customBody,
+          senderEmail: activeSenderEmail || undefined,
           senderId: activeMember?.id,
-          senderName: activeMember?.name,
+          senderName: activeSenderName,
           aiGenerated: false,
         });
         sentCount++;
@@ -117,6 +123,19 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
       }
     >
       <div className="space-y-4">
+        {/* Dynamic Sender Identity Indicator */}
+        <div className="flex items-center justify-between text-xs px-3 py-2 bg-indigo-50/70 border border-indigo-100 rounded-lg text-indigo-900">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-500">From:</span>
+            <span className="font-medium text-indigo-950">
+              {activeSenderName} &lt;{activeSenderEmail || 'active-user@company.com'}&gt;
+            </span>
+          </div>
+          <span className="text-[11px] text-indigo-600 bg-white px-2 py-0.5 rounded border border-indigo-200">
+            Dynamic sender
+          </span>
+        </div>
+
         {/* Merge tag toolbar */}
         <div className="flex flex-wrap items-center gap-1.5 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
           <span className="text-slate-500 font-semibold flex items-center gap-1 mr-1">

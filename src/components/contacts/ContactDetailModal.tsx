@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
+import { usePermissions } from '../../hooks/usePermissions';
 import { Contact, Interaction, EmailRecord, Reminder, ContactStatus, Deal } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { getInitials } from '../../lib/utils';
@@ -112,6 +113,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
 }) => {
   const { activeMember } = useTeam();
   const { success, error, info } = useToast();
+  const { canDeleteContacts, canEditContacts, isEmployee } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<'timeline' | 'emails' | 'reminders' | 'deals'>('timeline');
   const [interactions, setInteractions] = useState<Interaction[]>([]);
@@ -176,6 +178,10 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   };
 
   const handleDeleteContact = async () => {
+    if (!canDeleteContacts) {
+      error('Access Restricted', 'Only Administrators have permission to delete contacts from the CRM.');
+      return;
+    }
     if (window.confirm(`Are you sure you want to delete ${contact.name}?`)) {
       await db.deleteContact(contact.id);
       success('Contact Deleted', `${contact.name} was removed.`);
@@ -224,23 +230,32 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
               Lead Details
             </span>
+            {!canEditContacts && (
+              <span className="text-[10px] font-semibold text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded-md">
+                Read-Only
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => onEditContact(contact)}
-              className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
-              title="Edit Contact"
-            >
-              <Edit className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleDeleteContact}
-              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-              title="Delete Contact"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {canEditContacts && (
+              <button
+                onClick={() => onEditContact(contact)}
+                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                title="Edit Contact"
+              >
+                <Edit className="w-4 h-4" />
+              </button>
+            )}
+            {canDeleteContacts && (
+              <button
+                onClick={handleDeleteContact}
+                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                title="Delete Contact (Admin Only)"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 rounded-lg transition cursor-pointer ml-1"

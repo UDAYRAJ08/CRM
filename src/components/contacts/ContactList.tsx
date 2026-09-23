@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
+import { usePermissions } from '../../hooks/usePermissions';
 import { Contact, ContactStatus } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { getInitials } from '../../lib/utils';
@@ -122,7 +123,7 @@ function getFollowUpInfo(contact: Contact) {
   if (contact.status === 'new') {
     return {
       label: 'Not Started',
-      badgeClass: 'bg-blue-50 text-blue-700 border-blue-200/80',
+      badgeClass: 'bg-blue-50/90 text-blue-700 border-blue-200/80 font-medium',
       actionText: 'Send 1st Email',
       isOverdue: false,
       stage: 'new',
@@ -131,7 +132,7 @@ function getFollowUpInfo(contact: Contact) {
   if (contact.status === 'qualified') {
     return {
       label: 'Replied & Qualified',
-      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold',
+      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold',
       actionText: 'View Details',
       isOverdue: false,
       stage: 'qualified',
@@ -145,7 +146,7 @@ function getFollowUpInfo(contact: Contact) {
     if (diffDays >= 3) {
       return {
         label: `🚨 3-Day Follow-up Due (${diffDays}d ago)`,
-        badgeClass: 'bg-rose-100 text-rose-800 border-rose-300 font-extrabold shadow-xs',
+        badgeClass: 'bg-rose-50 text-rose-800 border-rose-300 font-semibold shadow-2xs',
         actionText: 'Send Follow-up Message',
         isOverdue: true,
         stage: 'overdue',
@@ -164,7 +165,7 @@ function getFollowUpInfo(contact: Contact) {
   const conf = STATUS_CONFIG[contact.status] || STATUS_CONFIG.new;
   return {
     label: conf.label,
-    badgeClass: `${conf.bg} ${conf.text} ${conf.border}`,
+    badgeClass: `${conf.bg} ${conf.text} ${conf.border} font-medium`,
     actionText: 'Contact',
     isOverdue: false,
     stage: contact.status,
@@ -184,6 +185,7 @@ export const ContactList: React.FC<ContactListProps> = ({
 }) => {
   const { teamMembers } = useTeam();
   const { success, error, info } = useToast();
+  const { canDeleteContacts, canBulkDelete, canEditContacts, canChangeStatus, isAdmin } = usePermissions();
 
   // Filter States
   const [pipelineTab, setPipelineTab] = useState<'all' | 'uncontacted' | 'due' | 'replied'>('all');
@@ -401,6 +403,10 @@ export const ContactList: React.FC<ContactListProps> = ({
 
   // Bulk Delete
   const handleBulkDelete = async () => {
+    if (!canBulkDelete) {
+      error('Access Restricted', 'Only Administrators have permission to delete contacts from the CRM.');
+      return;
+    }
     if (window.confirm(`Delete ${selectedContacts.length} selected contacts?`)) {
       for (const c of selectedContacts) {
         await db.deleteContact(c.id);
@@ -618,10 +624,10 @@ export const ContactList: React.FC<ContactListProps> = ({
       ) : viewMode === 'table' ? (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs min-w-[960px]">
               <thead className="bg-slate-50/90 text-slate-600 font-semibold border-b border-slate-200 sticky top-0 z-10 select-none">
                 <tr>
-                  <th className={`${density === 'compact' ? 'p-2 w-8' : 'p-3.5 w-10'} text-center`}>
+                  <th className={`${density === 'compact' ? 'p-2 w-8' : 'p-3.5 w-10'} text-center whitespace-nowrap`}>
                     <input
                       type="checkbox"
                       checked={
@@ -636,7 +642,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                   {/* Sortable: Contact Name */}
                   <th
                     onClick={() => handleSort('name')}
-                    className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} cursor-pointer hover:text-slate-900 transition-colors`}
+                    className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} cursor-pointer hover:text-slate-900 transition-colors whitespace-nowrap`}
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Contact</span>
@@ -651,7 +657,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                   {/* Sortable: Company */}
                   <th
                     onClick={() => handleSort('company')}
-                    className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} cursor-pointer hover:text-slate-900 transition-colors`}
+                    className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} cursor-pointer hover:text-slate-900 transition-colors whitespace-nowrap`}
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Company</span>
@@ -666,7 +672,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                   {/* Sortable: Status */}
                   <th
                     onClick={() => handleSort('status')}
-                    className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} cursor-pointer hover:text-slate-900 transition-colors`}
+                    className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} cursor-pointer hover:text-slate-900 transition-colors whitespace-nowrap`}
                   >
                     <div className="flex items-center gap-1.5">
                       <span>Status / Inline Editor</span>
@@ -678,10 +684,10 @@ export const ContactList: React.FC<ContactListProps> = ({
                     </div>
                   </th>
 
-                  <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'}`}>Lifecycle & Due Timer</th>
-                  <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'}`}>Owner</th>
-                  <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'}`}>Tags</th>
-                  <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} text-right`}>Actions</th>
+                  <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} whitespace-nowrap`}>Lifecycle & Due Timer</th>
+                  <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} whitespace-nowrap`}>Owner</th>
+                  <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} whitespace-nowrap`}>Tags</th>
+                  <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} text-right whitespace-nowrap`}>Actions</th>
                 </tr>
               </thead>
 
@@ -711,7 +717,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                     >
                       {/* Checkbox */}
                       <td
-                        className={`${density === 'compact' ? 'py-1.5 px-2' : 'p-3.5'} text-center`}
+                        className={`${density === 'compact' ? 'py-1.5 px-2' : 'p-3.5'} text-center whitespace-nowrap`}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
@@ -723,7 +729,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                       </td>
 
                       {/* Contact Info */}
-                      <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'}`}>
+                      <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} whitespace-nowrap`}>
                         <div className="flex items-center gap-2.5">
                           <div
                             className={`${
@@ -754,7 +760,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                       </td>
 
                       {/* Company (Clickable URL) */}
-                      <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} text-slate-800`}>
+                      <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} text-slate-800 whitespace-nowrap`}>
                         {contact.company ? (
                           <div className="flex items-center gap-1.5 font-semibold text-slate-800">
                             <Building className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -786,7 +792,7 @@ export const ContactList: React.FC<ContactListProps> = ({
 
                       {/* INLINE STATUS EDITOR DROPDOWN */}
                       <td
-                        className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} relative`}
+                        className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} relative whitespace-nowrap`}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="relative inline-block text-left">
@@ -796,11 +802,11 @@ export const ContactList: React.FC<ContactListProps> = ({
                               e.stopPropagation();
                               setActiveStatusDropdownId(isDropdownOpen ? null : contact.id);
                             }}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition cursor-pointer hover:shadow-xs ${statusConf.bg} ${statusConf.text} ${statusConf.border}`}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition cursor-pointer hover:shadow-xs whitespace-nowrap shrink-0 ${statusConf.bg} ${statusConf.text} ${statusConf.border}`}
                           >
-                            <span className={`w-2 h-2 rounded-full ${statusConf.dot}`} />
+                            <span className={`w-2 h-2 rounded-full ${statusConf.dot} shrink-0`} />
                             <span>{statusConf.label}</span>
-                            <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
+                            <ChevronDown className="w-3 h-3 opacity-60 ml-0.5 shrink-0" />
                           </button>
 
                           {/* Inline Dropdown Menu */}
@@ -843,16 +849,16 @@ export const ContactList: React.FC<ContactListProps> = ({
                       </td>
 
                       {/* Follow-up / Overdue Badge */}
-                      <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'}`}>
+                      <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} whitespace-nowrap`}>
                         <span
-                          className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border ${followUp.badgeClass}`}
+                          className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border whitespace-nowrap shadow-2xs ${followUp.badgeClass}`}
                         >
                           {followUp.label}
                         </span>
                       </td>
 
                       {/* Owner */}
-                      <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} text-slate-600`}>
+                      <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} text-slate-600 whitespace-nowrap`}>
                         {contact.owner?.name ? (
                           <div className="flex items-center gap-1.5">
                             <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center">
@@ -887,7 +893,7 @@ export const ContactList: React.FC<ContactListProps> = ({
 
                       {/* Actions */}
                       <td
-                        className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} text-right`}
+                        className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} text-right whitespace-nowrap`}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="flex items-center justify-end gap-1.5">
@@ -1056,15 +1062,17 @@ export const ContactList: React.FC<ContactListProps> = ({
                 <span>Send 1st Email / Sequence</span>
               </button>
 
-              {/* Bulk Delete */}
-              <button
-                type="button"
-                onClick={handleBulkDelete}
-                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-xl transition cursor-pointer"
-                title="Delete selected contacts"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              {/* Bulk Delete (Admin Only) */}
+              {canBulkDelete && (
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                  title="Delete selected contacts (Admin Only)"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
 
               <div className="h-4 w-px bg-slate-700 mx-1" />
 

@@ -1,9 +1,24 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
-import { Mail, Key, Shield, ExternalLink, CheckCircle2, AlertCircle, Send, Globe } from 'lucide-react';
+import {
+  Mail,
+  Key,
+  Shield,
+  ExternalLink,
+  CheckCircle2,
+  AlertCircle,
+  Send,
+  Globe,
+  Building,
+  User,
+  Radio,
+  Sliders,
+} from 'lucide-react';
 import { sendEmailDirectly } from '../../lib/emailService';
 
 interface EmailSettingsModalProps {
@@ -15,15 +30,22 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { user } = useAuth();
+  const { activeMember } = useTeam();
   const { success, error, info } = useToast();
+
+  const activeUserEmail = (activeMember?.email || user?.email || '').trim();
+  const activeUserName = (activeMember?.name || user?.user_metadata?.full_name || 'Team Member').trim();
 
   const [resendApiKey, setResendApiKey] = useState('');
   const [senderEmail, setSenderEmail] = useState('');
+  const [companyDomain, setCompanyDomain] = useState('');
+  const [useComposio, setUseComposio] = useState(false);
+  const [composioApiKey, setComposioApiKey] = useState('');
   const [anthropicApiKey, setAnthropicApiKey] = useState('');
+  const [testRecipient, setTestRecipient] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
-
-  const ownerEmail = 'udayrajsharma08@gmail.com';
 
   useEffect(() => {
     if (isOpen) {
@@ -37,13 +59,22 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
         import.meta.env.VITE_RESEND_FROM_EMAIL ||
         'CRM Team <onboarding@resend.dev>'
       );
+      setCompanyDomain(localStorage.getItem('crm_company_domain') || '');
+      setUseComposio(localStorage.getItem('crm_use_composio') === 'true');
+      setComposioApiKey(
+        localStorage.getItem('crm_composio_api_key') ||
+        import.meta.env.VITE_COMPOSIO_API_KEY ||
+        ''
+      );
       setAnthropicApiKey(localStorage.getItem('crm_anthropic_api_key') || '');
+      setTestRecipient(activeUserEmail || 'udayrajsharma08@gmail.com');
       setTestResult(null);
     }
-  }, [isOpen]);
+  }, [isOpen, activeUserEmail]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+
     if (resendApiKey.trim()) {
       localStorage.setItem('crm_resend_api_key', resendApiKey.trim());
     } else {
@@ -54,40 +85,63 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
       localStorage.setItem('crm_sender_email', senderEmail.trim());
     }
 
+    if (companyDomain.trim()) {
+      localStorage.setItem('crm_company_domain', companyDomain.trim().toLowerCase());
+    } else {
+      localStorage.removeItem('crm_company_domain');
+    }
+
+    localStorage.setItem('crm_use_composio', useComposio ? 'true' : 'false');
+
+    if (composioApiKey.trim()) {
+      localStorage.setItem('crm_composio_api_key', composioApiKey.trim());
+    } else {
+      localStorage.removeItem('crm_composio_api_key');
+    }
+
     if (anthropicApiKey.trim()) {
       localStorage.setItem('crm_anthropic_api_key', anthropicApiKey.trim());
     } else {
       localStorage.removeItem('crm_anthropic_api_key');
     }
 
-    success('Settings Saved', 'Email and AI configuration updated successfully.');
+    success('Settings Saved', 'Dynamic multi-user email & API settings saved successfully.');
     onClose();
   };
 
   const handleTestEmail = async () => {
-    if (!resendApiKey.trim()) {
-      error('API Key Missing', 'Please enter a Resend API key first.');
+    const targetEmail = testRecipient.trim();
+    if (!targetEmail) {
+      error('Recipient Missing', 'Please enter an email to deliver the test message to.');
       return;
     }
 
     setIsTesting(true);
     setTestResult(null);
 
-    // Save key temporarily to ensure sendEmailDirectly picks it up
-    localStorage.setItem('crm_resend_api_key', resendApiKey.trim());
-    if (senderEmail.trim()) {
-      localStorage.setItem('crm_sender_email', senderEmail.trim());
-    }
+    // Save temporary settings so sendEmailDirectly picks them up
+    if (resendApiKey.trim()) localStorage.setItem('crm_resend_api_key', resendApiKey.trim());
+    if (senderEmail.trim()) localStorage.setItem('crm_sender_email', senderEmail.trim());
+    if (companyDomain.trim()) localStorage.setItem('crm_company_domain', companyDomain.trim().toLowerCase());
+    localStorage.setItem('crm_use_composio', useComposio ? 'true' : 'false');
 
     try {
       const res = await sendEmailDirectly({
-        recipientEmail: ownerEmail,
-        subject: '🎉 Resend Email Test from CRM',
-        body: `Hello Uday!\n\nThis is a test email sent directly from your CRM application using Resend.\n\nEverything is connected and operational!`,
+        recipientEmail: targetEmail,
+        subject: `🎉 CRM Multi-User Email Test from ${activeUserName}`,
+        body: `Hello!\n\nThis is a dynamic test email sent from the CRM workspace.\n\nSender Identity:\n• Name: ${activeUserName}\n• Email: ${activeUserEmail || 'Not specified'}\n• Mode: ${useComposio ? 'Composio Outlook' : 'Direct Transactional Engine'}\n\nReplies to this message will be routed directly to ${activeUserEmail || 'the sender'}.`,
+        senderEmail: activeUserEmail || undefined,
+        senderName: activeUserName,
+        senderId: activeMember?.id,
       });
 
-      setTestResult(`Success! Test email delivered to ${ownerEmail}.`);
-      success('Email Delivered!', `Test email sent to ${ownerEmail}. Check your inbox!`);
+      if (res.success) {
+        setTestResult(`Success! Dispatched via ${res.provider || 'CRM Engine'} to ${targetEmail}`);
+        success('Email Dispatched!', `Test email sent to ${targetEmail}`);
+      } else {
+        setTestResult(`Notice: ${res.message || 'Logged in CRM'}`);
+        info('Email Recorded', res.message || 'Logged in CRM history');
+      }
     } catch (err: any) {
       setTestResult(`Error: ${err.message}`);
       error('Test Failed', err.message);
@@ -103,23 +157,49 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      maxWidth="md"
+      maxWidth="xl"
       title={
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
             <Mail className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-900">Email Delivery & API Settings</h3>
+            <h3 className="text-base font-bold text-slate-900">Email Delivery & Multi-User Engine</h3>
             <p className="text-xs text-slate-500">
-              Connect Resend to send emails directly to real inboxes.
+              Configure dynamic sender routing so each team member sends emails from their own account.
             </p>
           </div>
         </div>
       }
     >
-      <form onSubmit={handleSave} className="space-y-4">
-        {/* Status card */}
+      <form onSubmit={handleSave} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+        {/* Active Logged-In User Identity Card */}
+        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs">
+              {activeUserName.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                <span>{activeUserName}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-medium">
+                  {activeMember?.role || 'Current User'}
+                </span>
+              </div>
+              <div className="text-slate-500 text-[11px] font-mono">
+                {activeUserEmail || 'No email registered on profile'}
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+              <CheckCircle2 className="w-3 h-3" />
+              Dynamic Sender Enabled
+            </span>
+          </div>
+        </div>
+
+        {/* Status Mode Banner */}
         <div
           className={`p-3 rounded-xl border flex items-start gap-2.5 text-xs ${
             isResendConfigured
@@ -136,22 +216,40 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
             <span className="font-bold block">
               {isResendConfigured
                 ? isSandbox
-                  ? 'Sandbox Mode Active (Delivers to your verified inbox)'
-                  : 'Custom Domain Active (Delivers to all recipients)'
-                : 'Demo / CRM Logging Mode'}
+                  ? 'Sandbox Mode Active (Sends to test recipient)'
+                  : companyDomain
+                  ? `Production Domain Active (@${companyDomain})`
+                  : 'Transactional Gateway Active'
+                : 'Demo / CRM Database Logging Mode'}
             </span>
             <span className="text-[11px] opacity-90 leading-relaxed block mt-0.5">
               {isResendConfigured
-                ? isSandbox
-                  ? `With onboarding@resend.dev, Resend delivers live test emails exclusively to ${ownerEmail}.`
-                  : 'Using your custom domain, emails are delivered to all external client addresses.'
-                : 'Without a Resend API key, emails are recorded in your CRM interaction history for testing but not dispatched to real inboxes.'}
+                ? companyDomain
+                  ? `Emails sent by any team member with @${companyDomain} will be delivered directly under their individual name and email address.`
+                  : 'Emails will be sent via your gateway with dynamic reply-to directing all replies straight to the logged-in user.'
+                : 'Without an email API key, emails are safely tracked in your CRM interaction feed without reaching real inboxes.'}
             </span>
           </div>
         </div>
 
-        {/* Resend API Key */}
-        <div className="space-y-1.5">
+        {/* Core Transactional Email Provider (Resend) */}
+        <div className="p-3.5 bg-white border border-slate-200 rounded-xl space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <Globe className="w-3.5 h-3.5 text-indigo-600" />
+              Email Dispatch Gateway (Resend)
+            </h4>
+            <a
+              href="https://resend.com/api-keys"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1"
+            >
+              <span>Get API Key</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+
           <Input
             label="Resend API Key"
             placeholder="re_123456789..."
@@ -159,61 +257,89 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
             value={resendApiKey}
             onChange={(e) => setResendApiKey(e.target.value)}
             leftIcon={<Key className="w-4 h-4" />}
-            helperText="Your Resend API key (starts with re_)"
+            helperText="Provides high-throughput multi-user email delivery without account lockout."
           />
 
-          <div className="flex justify-end">
-            <a
-              href="https://resend.com/api-keys"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1"
-            >
-              <span>Get Resend API Key</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Company Domain (e.g. yourcompany.com)"
+              placeholder="e.g. acmecorp.com"
+              value={companyDomain}
+              onChange={(e) => setCompanyDomain(e.target.value)}
+              leftIcon={<Building className="w-4 h-4" />}
+              helperText="Enables direct 'Jane Doe <jane@acmecorp.com>' sender addressing."
+            />
+
+            <Input
+              label="Gateway Sender Fallback"
+              placeholder="CRM Team <onboarding@resend.dev>"
+              value={senderEmail}
+              onChange={(e) => setSenderEmail(e.target.value)}
+              helperText="Fallback From address for team members outside the company domain."
+            />
           </div>
         </div>
 
-        {/* From Email */}
-        <div className="space-y-1.5">
-          <Input
-            label="Sender 'From' Email Address"
-            placeholder="CRM Team <onboarding@resend.dev>"
-            value={senderEmail}
-            onChange={(e) => setSenderEmail(e.target.value)}
-            helperText="Use 'onboarding@resend.dev' for sandbox, or your verified domain (e.g. sales@yourcompany.com)."
-          />
-
-          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-600 space-y-1">
-            <div className="font-semibold text-slate-800 flex items-center gap-1">
-              <Globe className="w-3.5 h-3.5 text-indigo-600" /> How Resend Deliverability Works:
+        {/* Composio Mode Toggle (Legacy/Personal Integration) */}
+        <div className="p-3.5 bg-white border border-slate-200 rounded-xl space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-indigo-600" />
+                Composio Personal Outlook Integration
+              </h4>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Sends via a single personal Outlook OAuth connection. Turn OFF for multi-user scalable sending.
+              </p>
             </div>
-            <p>
-              • <strong>Free Sandbox (<code className="font-mono">onboarding@resend.dev</code>):</strong> Resend sends live test emails only to <strong className="text-slate-800">{ownerEmail}</strong>.
-            </p>
-            <p>
-              • <strong>Send to Any Client / Lead:</strong> Go to{' '}
-              <a
-                href="https://resend.com/domains"
-                target="_blank"
-                rel="noreferrer"
-                className="text-indigo-600 hover:underline font-semibold"
-              >
-                resend.com/domains
-              </a>
-              , add your domain DNS records, and change the sender to <code className="font-mono">hello@yourcompany.com</code>.
-            </p>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useComposio}
+                onChange={(e) => setUseComposio(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
           </div>
+
+          {useComposio && (
+            <div className="pt-2 border-t border-slate-100 space-y-2">
+              <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900">
+                ⚠️ <strong>Note:</strong> When Composio is enabled, all emails will be dispatched via your single connected personal Outlook account rather than each user's separate address.
+              </div>
+              <Input
+                label="Composio API Key"
+                placeholder="cmp_..."
+                type="password"
+                value={composioApiKey}
+                onChange={(e) => setComposioApiKey(e.target.value)}
+                leftIcon={<Key className="w-4 h-4" />}
+                helperText="Required only if Composio routing is switched on."
+              />
+            </div>
+          )}
         </div>
 
-        {/* Quick Test Trigger */}
-        {isResendConfigured && (
-          <div className="p-3 bg-indigo-50/60 border border-indigo-100 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-indigo-950">
-                Verify Connection Now:
-              </span>
+        {/* Quick Multi-User Test Trigger */}
+        <div className="p-3.5 bg-indigo-50/60 border border-indigo-100 rounded-xl space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+              <Send className="w-3.5 h-3.5 text-indigo-600" />
+              Send Live Test Email as {activeUserName}:
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <Input
+                value={testRecipient}
+                onChange={(e) => setTestRecipient(e.target.value)}
+                placeholder="recipient@example.com"
+                helperText="Enter any recipient email to verify live delivery and sender headers."
+              />
+            </div>
+            <div className="pb-4">
               <Button
                 type="button"
                 variant="primary"
@@ -222,24 +348,25 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
                 onClick={handleTestEmail}
                 leftIcon={<Send className="w-3.5 h-3.5" />}
               >
-                Send Test to {ownerEmail}
+                Send Test
               </Button>
             </div>
-            {testResult && (
-              <p
-                className={`text-[11px] font-semibold ${
-                  testResult.startsWith('Success')
-                    ? 'text-emerald-700'
-                    : 'text-rose-600'
-                }`}
-              >
-                {testResult}
-              </p>
-            )}
           </div>
-        )}
 
-        {/* Anthropic API Key */}
+          {testResult && (
+            <p
+              className={`text-[11px] font-semibold ${
+                testResult.startsWith('Success')
+                  ? 'text-emerald-700'
+                  : 'text-amber-700'
+              }`}
+            >
+              {testResult}
+            </p>
+          )}
+        </div>
+
+        {/* Optional AI Assistant API Key */}
         <div className="pt-2 border-t border-slate-100">
           <Input
             label="Anthropic Claude API Key (Optional)"
@@ -248,10 +375,11 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
             value={anthropicApiKey}
             onChange={(e) => setAnthropicApiKey(e.target.value)}
             leftIcon={<Key className="w-4 h-4" />}
-            helperText="Optional: If you want live Anthropic server calls instead of local Claude simulation"
+            helperText="Optional: If you want live Anthropic Claude generation in the Email Composer"
           />
         </div>
 
+        {/* Footer */}
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1 text-slate-400 text-[11px]">
             <Shield className="w-3.5 h-3.5" />
@@ -271,4 +399,3 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
     </Modal>
   );
 };
-
