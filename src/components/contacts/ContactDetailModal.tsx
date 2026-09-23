@@ -415,12 +415,19 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               {contact.email && (
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 hover:border-indigo-200 transition">
                   <div className="flex items-center gap-2 truncate pr-2">
-                    <Mail className="w-4 h-4 text-slate-400 shrink-0" />
-                    <span className="text-slate-800 truncate">{contact.email}</span>
+                    <Mail className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <a
+                      href={`mailto:${contact.email}`}
+                      className="text-slate-800 hover:text-indigo-600 hover:underline truncate font-medium"
+                      title="Send email via mail client"
+                    >
+                      {contact.email}
+                    </a>
                   </div>
                   <button
+                    type="button"
                     onClick={() => copyToClipboard(contact.email!, 'Email', 'email')}
                     className="p-1 text-slate-400 hover:text-indigo-600 rounded transition cursor-pointer"
                     title="Copy Email"
@@ -431,12 +438,19 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
               )}
 
               {contact.phone && (
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/70">
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 hover:border-indigo-200 transition">
                   <div className="flex items-center gap-2 truncate pr-2">
-                    <Phone className="w-4 h-4 text-slate-400 shrink-0" />
-                    <span className="text-slate-800">{contact.phone}</span>
+                    <Phone className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <a
+                      href={`tel:${contact.phone}`}
+                      className="text-slate-800 hover:text-indigo-600 hover:underline font-medium"
+                      title="Call phone number"
+                    >
+                      {contact.phone}
+                    </a>
                   </div>
                   <button
+                    type="button"
                     onClick={() => copyToClipboard(contact.phone!, 'Phone', 'phone')}
                     className="p-1 text-slate-400 hover:text-indigo-600 rounded transition cursor-pointer"
                     title="Copy Phone"

@@ -395,13 +395,101 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
   };
 }
 
+const GENERIC_EMAIL_DOMAINS = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'yahoo.co.uk',
+  'hotmail.com',
+  'outlook.com',
+  'live.com',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'aol.com',
+  'proton.me',
+  'protonmail.com',
+  'zoho.com',
+  'mail.com',
+  'yandex.com',
+  'gmx.com',
+  'fastmail.com',
+  'tutanota.com',
+]);
+
+/**
+ * Resolves the company name for a contact intelligently:
+ * 1. Checks explicit contact.company.name
+ * 2. Checks contact.custom_fields (company, Company, company_name, organization, etc.)
+ * 3. Infers company from business email domain (e.g. hello@convertibles.dev -> Convertibles)
+ */
+export function resolveContactCompany(contact: Contact): string {
+  if (contact.company?.name && contact.company.name.trim()) {
+    return contact.company.name.trim();
+  }
+
+  if (contact.custom_fields) {
+    const cf =
+      contact.custom_fields.company ||
+      contact.custom_fields.Company ||
+      contact.custom_fields.company_name ||
+      contact.custom_fields['Company Name'] ||
+      contact.custom_fields.organization ||
+      contact.custom_fields.business;
+    if (typeof cf === 'string' && cf.trim()) {
+      return cf.trim();
+    }
+  }
+
+  if (contact.email && contact.email.includes('@')) {
+    const domain = contact.email.split('@')[1]?.toLowerCase().trim();
+    if (domain && !GENERIC_EMAIL_DOMAINS.has(domain)) {
+      const domainWithoutCcTld = domain.replace(/\.(co|com|org|net|gov|edu|ac)\.[a-z]{2,3}$/i, '');
+      const parts = domainWithoutCcTld.split('.');
+      let nameToken = parts.length > 1 ? parts[parts.length - 2] : parts[0];
+      if (
+        ['mail', 'email', 'app', 'portal', 'crm', 'cloud', 'support', 'contact', 'hello'].includes(
+          nameToken.toLowerCase()
+        ) &&
+        parts.length > 2
+      ) {
+        nameToken = parts[parts.length - 2];
+      }
+      if (nameToken && nameToken.length >= 2) {
+        return nameToken
+          .split(/[-_]/)
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ');
+      }
+    }
+  }
+
+  return '';
+}
+
 export function substituteMergeFields(template: string, contact: Contact): string {
   const firstName = contact.name.split(' ')[0] || contact.name;
-  return template
+  const company = resolveContactCompany(contact);
+
+  let res = template
     .replace(/\{\{\s*name\s*\}\}/gi, contact.name)
     .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
-    .replace(/\{\{\s*company\s*\}\}/gi, contact.company?.name || 'your company')
     .replace(/\{\{\s*title\s*\}\}/gi, contact.title || 'team member')
     .replace(/\{\{\s*email\s*\}\}/gi, contact.email || '')
     .replace(/\{\{\s*phone\s*\}\}/gi, contact.phone || '');
+
+  if (company) {
+    res = res.replace(/\{\{\s*company\s*\}\}/gi, company);
+  } else {
+    // If no company name can be detected at all:
+    res = res
+      .replace(/Following up\s*[-–—]\s*\{\{\s*company\s*\}\}/gi, `Following up - ${firstName}`)
+      .replace(/for\s*\{\{\s*company\s*\}\}/gi, `for your team`)
+      .replace(/at\s*\{\{\s*company\s*\}\}/gi, `at your company`)
+      .replace(/\{\{\s*company\s*\}\}/gi, 'your team');
+  }
+
+  return res;
 }
+

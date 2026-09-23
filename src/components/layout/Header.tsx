@@ -19,6 +19,8 @@ import {
   Crown,
   Zap,
   Shield,
+  Menu,
+  Layers,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -31,6 +33,8 @@ interface HeaderProps {
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   activeView: string;
+  onOpenMobileMenu?: () => void;
+  onNavigateHome?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -43,6 +47,8 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   setSearchQuery,
   activeView,
+  onOpenMobileMenu,
+  onNavigateHome,
 }) => {
   const { activeMember, setIsPickerOpen, logout } = useTeam();
   const { user } = useAuth();
@@ -52,12 +58,38 @@ export const Header: React.FC<HeaderProps> = ({
   const initials = getInitials(activeMember?.name || user?.email, 'U');
 
   return (
-    <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-      {/* Search Input for Contacts */}
-      <div className="flex-1 max-w-md">
+    <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
+      {/* Mobile Hamburger Menu & Mobile Clickable Logo */}
+      <div className="flex items-center gap-1.5 md:hidden">
+        {onOpenMobileMenu && (
+          <button
+            type="button"
+            onClick={onOpenMobileMenu}
+            className="p-1.5 sm:p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition cursor-pointer"
+            aria-label="Open navigation menu"
+            title="Open Menu"
+          >
+            <Menu className="w-5 h-5 text-slate-700" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onNavigateHome}
+          className="flex items-center gap-1.5 cursor-pointer focus:outline-none hover:opacity-85 transition"
+          title="Return to Dashboard"
+        >
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-xs">
+            <Layers className="w-4 h-4" />
+          </div>
+          <span className="font-extrabold text-sm text-slate-900 tracking-tight hidden xs:inline">CRM</span>
+        </button>
+      </div>
+
+      {/* Search Input for Contacts or Section Header Title */}
+      <div className="flex-1 max-w-md min-w-0">
         {activeView === 'contacts' ? (
           <div className="relative flex items-center">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-2.5 sm:left-3 pointer-events-none" />
             <input
               type="text"
               placeholder="Search by name, email, company, tag..."

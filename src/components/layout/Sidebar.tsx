@@ -76,13 +76,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside className="w-64 border-r border-slate-200/80 bg-white flex flex-col justify-between shrink-0 h-screen sticky top-0 hidden md:flex">
       <div>
-        {/* Brand Header */}
-        <div className="p-5 border-b border-slate-100 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/25">
+        {/* Brand Header (Clickable Logo) */}
+        <button
+          type="button"
+          onClick={() => setActiveView('dashboard')}
+          title="Return to CRM Dashboard"
+          className="w-full text-left p-5 border-b border-slate-100 flex items-center gap-3 hover:bg-slate-50/80 transition group cursor-pointer focus:outline-none focus:bg-slate-50"
+        >
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/25 group-hover:scale-105 transition-transform">
             <Layers className="w-5 h-5" />
           </div>
           <div>
-            <div className="font-extrabold text-base tracking-tight text-slate-900 flex items-center gap-1.5">
+            <div className="font-extrabold text-base tracking-tight text-slate-900 flex items-center gap-1.5 group-hover:text-indigo-600 transition-colors">
               <span>Team CRM</span>
               <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200/60">
                 v1.0
@@ -90,7 +95,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <div className="text-[11px] text-slate-500 font-medium">Internal Workspace</div>
           </div>
-        </div>
+        </button>
 
         {/* Navigation Items */}
         <nav className="p-3 space-y-1">

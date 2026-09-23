@@ -11,10 +11,18 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   @apply bg-slate-50 text-slate-900 antialiased min-h-screen selection:bg-indigo-600 selection:text-white;
   background-image: radial-gradient(rgba(226, 232, 240, 0.4) 1px, transparent 1px);
   background-size: 24px 24px;
+  max-width: 100%;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Modern smooth scrollbar */
@@ -51,4 +59,14 @@ body {
   border: 1px solid rgba(226, 232, 240, 0.9);
   box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.08), 0 8px 16px -4px rgba(0, 0, 0, 0.04);
 }
+
+/* Hide scrollbar for tabs and horizontal carousels while maintaining scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 

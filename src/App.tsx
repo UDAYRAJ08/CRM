@@ -13,7 +13,7 @@ import { ContactDetailModal } from './components/contacts/ContactDetailModal';
 import { ExcelImportModal } from './components/import/ExcelImportModal';
 import { ImportHistoryView } from './components/import/ImportHistoryView';
 import { EmailComposerModal } from './components/email/EmailComposerModal';
-import { BulkEmailModal } from './components/email/BulkEmailModal';
+import { BulkEmailModal, BulkTemplateKey } from './components/email/BulkEmailModal';
 import { EmailSettingsModal } from './components/email/EmailSettingsModal';
 import { RemindersDashboard } from './components/reminders/RemindersDashboard';
 import { ReminderFormModal } from './components/reminders/ReminderFormModal';
@@ -25,15 +25,20 @@ import { LoginPage } from './components/auth/LoginPage';
 import { InviteModal } from './components/team/InviteModal';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { PipelineView } from './components/pipeline/PipelineView';
+import { MobileNavDrawer } from './components/layout/MobileNavDrawer';
+import { Footer } from './components/layout/Footer';
+import { NotFoundView } from './components/common/NotFoundView';
 import { Loader2 } from 'lucide-react';
 
+export type ViewType = 'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'reminders' | 'companies' | 'imports' | '404';
 
 const CRMMain: React.FC = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
   const { activeMember, isLoading: isTeamLoading } = useTeam();
   const { success, info } = useToast();
 
-  const [activeView, setActiveView] = useState<'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'reminders' | 'companies' | 'imports'>('dashboard');
+  const [activeView, setActiveView] = useState<ViewType>('dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [dealCount, setDealCount] = useState(0);
@@ -61,6 +66,7 @@ const CRMMain: React.FC = () => {
   const [linkedInTargetContact, setLinkedInTargetContact] = useState<Contact | null>(null);
   const [isBulkEmailOpen, setIsBulkEmailOpen] = useState(false);
   const [bulkEmailContacts, setBulkEmailContacts] = useState<Contact[]>([]);
+  const [bulkEmailInitialTemplate, setBulkEmailInitialTemplate] = useState<BulkTemplateKey>('followup');
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [reminderTargetContact, setReminderTargetContact] = useState<Contact | null>(null);
   const [isEmailSettingsOpen, setIsEmailSettingsOpen] = useState(false);
@@ -158,6 +164,47 @@ const CRMMain: React.FC = () => {
     return () => clearInterval(interval);
   }, [user]);
 
+  // Hash-based routing synchronization & 404 detection
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace(/^#\/?/, '').trim();
+      const validViews: ViewType[] = ['dashboard', 'pipeline', 'contacts', 'inbox', 'reminders', 'companies', 'imports'];
+      if (!hash) {
+        setActiveView('dashboard');
+      } else if (validViews.includes(hash as ViewType)) {
+        setActiveView(hash as ViewType);
+      } else {
+        setActiveView('404');
+      }
+    };
+
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const handleNavigate = (view: ViewType | string) => {
+    window.location.hash = view;
+    setActiveView(view as ViewType);
+  };
+
+  const activeRemindersCount = reminders.filter((r) => !r.done).length;
+
+  // Dynamic document title updates
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      dashboard: 'Dashboard | Team CRM',
+      pipeline: `Sales Pipeline (${dealCount} Deals) | Team CRM`,
+      contacts: `Contacts (${contacts.length}) | Team CRM`,
+      inbox: inboxCount > 0 ? `Inbox (${inboxCount} New) | Team CRM` : 'Inbox & Replies | Team CRM',
+      reminders: activeRemindersCount > 0 ? `Tasks (${activeRemindersCount} Due) | Team CRM` : 'Tasks & Reminders | Team CRM',
+      companies: 'Companies & Accounts | Team CRM',
+      imports: 'Import History | Team CRM',
+      '404': '404 Not Found | Team CRM',
+    };
+    document.title = titles[activeView] || 'Team CRM - Collaborative Workspace';
+  }, [activeView, contacts.length, dealCount, inboxCount, activeRemindersCount]);
+
   const handleOpenEmailComposer = (contact: Contact, replySubject?: string) => {
     setEmailTargetContact(contact);
     setEmailReplySubject(replySubject);
@@ -169,8 +216,9 @@ const CRMMain: React.FC = () => {
     setIsLinkedInComposerOpen(true);
   };
 
-  const handleOpenBulkEmail = (targetList: Contact[]) => {
+  const handleOpenBulkEmail = (targetList: Contact[], initialTemplate: BulkTemplateKey = 'followup') => {
     setBulkEmailContacts(targetList);
+    setBulkEmailInitialTemplate(initialTemplate);
     setIsBulkEmailOpen(true);
   };
 
@@ -178,8 +226,6 @@ const CRMMain: React.FC = () => {
     setReminderTargetContact(contact || null);
     setIsReminderModalOpen(true);
   };
-
-  const activeRemindersCount = reminders.filter((r) => !r.done).length;
 
   if (isAuthLoading || (user && isTeamLoading)) {
     return (
@@ -197,14 +243,26 @@ const CRMMain: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50/80">
+    <div className="flex min-h-screen bg-slate-50/80 overflow-x-hidden w-full">
       {/* Name Picker Modal (triggered on load or manually) */}
       <TeamMemberModal />
 
-      {/* Sidebar */}
+      {/* Slide-in Mobile Navigation Drawer */}
+      <MobileNavDrawer
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        activeView={activeView}
+        setActiveView={(v) => handleNavigate(v)}
+        contactCount={contacts.length}
+        reminderCount={activeRemindersCount}
+        inboxCount={inboxCount}
+        dealCount={dealCount}
+      />
+
+      {/* Sidebar for Desktop */}
       <Sidebar
         activeView={activeView}
-        setActiveView={(v) => setActiveView(v as any)}
+        setActiveView={(v) => handleNavigate(v)}
         contactCount={contacts.length}
         reminderCount={activeRemindersCount}
         inboxCount={inboxCount}
@@ -222,13 +280,15 @@ const CRMMain: React.FC = () => {
           onOpenImport={() => setIsImportModalOpen(true)}
           onOpenEmailSettings={() => setIsEmailSettingsOpen(true)}
           onOpenInvite={() => setIsInviteModalOpen(true)}
+          onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+          onNavigateHome={() => handleNavigate('dashboard')}
           onOpenAddContact={() => {
             setEditingContact(null);
             setIsContactFormOpen(true);
           }}
         />
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400">
               <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
@@ -283,6 +343,7 @@ const CRMMain: React.FC = () => {
                   onRefresh={refreshAllData}
                   onOpenContact={(c) => setSelectedContact(c)}
                   onOpenEmailComposer={(c) => handleOpenEmailComposer(c)}
+                  onOpenBulkEmail={(contacts) => handleOpenBulkEmail(contacts, 'followup')}
                   onAddNewReminder={() => handleOpenAddReminder()}
                 />
               )}
@@ -297,9 +358,19 @@ const CRMMain: React.FC = () => {
               {activeView === 'imports' && (
                 <ImportHistoryView onRefreshNeeded={refreshAllData} />
               )}
+
+              {activeView === '404' && (
+                <NotFoundView
+                  onNavigate={(v) => handleNavigate(v)}
+                  requestedView={window.location.hash}
+                />
+              )}
             </>
           )}
         </main>
+
+        {/* Global Workspace Footer */}
+        <Footer />
       </div>
 
       {/* Modals */}
@@ -370,6 +441,7 @@ const CRMMain: React.FC = () => {
             setBulkEmailContacts([]);
           }}
           selectedContacts={bulkEmailContacts}
+          initialTemplate={bulkEmailInitialTemplate}
           onComplete={refreshAllData}
         />
       )}

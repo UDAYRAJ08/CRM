@@ -331,7 +331,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
                     const firstName = contact.name.split(' ')[0] || contact.name;
                     const compName = contact.company?.name || 'your organization';
                     setSubject(`Team Capabilities & Task Execution Details for ${compName}`);
-                    setBody(`Hyy ${firstName},\n\nIf you are looking for a dedicated team to help you execute your tasks and ensure you hit your upcoming project deadlines on time, here are the core details of how we can support you:\n\n1. What We Handle:\n- End-to-end task execution and deliverable management\n- Rapid sprint turnaround to meet tight deadlines\n- Ongoing technical and operational workflow support\n\n2. How We Work:\n- Dedicated point of contact and daily/weekly progress updates\n- Transparent milestone tracking with zero bandwidth strain on your team\n- Flexible scoping based on your immediate priorities\n\nWould you be open to a quick 10-minute call this week to review your current tasks and see how we can assist?\n\nBest regards,\n${activeMember?.name || 'CRM Team'}`);
+                    setBody(`Hi ${firstName},\n\nIf you are looking for a dedicated team to help you execute your tasks and ensure you hit your upcoming project deadlines on time, here are the core details of how we can support you:\n\n1. What We Handle:\n- End-to-end task execution and deliverable management\n- Rapid sprint turnaround to meet tight deadlines\n- Ongoing technical and operational workflow support\n\n2. How We Work:\n- Dedicated point of contact and daily/weekly progress updates\n- Transparent milestone tracking with zero bandwidth strain on your team\n- Flexible scoping based on your immediate priorities\n\nWould you be open to a quick 10-minute call this week to review your current tasks and see how we can assist?\n\nBest regards,\nUday Raj\nIngversions Digital`);
                   }}
                   className="px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold border border-indigo-200 transition"
                 >
@@ -343,7 +343,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
                     const firstName = contact.name.split(' ')[0] || contact.name;
                     const compName = contact.company?.name || 'your company';
                     setSubject(`Project Scope & Execution Plan for ${compName}`);
-                    setBody(`Hyy ${firstName},\n\nFollowing up on our recent conversation regarding your initiatives at ${compName}, here is a summary of the scope and deliverables we can handle for your team:\n\n• Objective: Accelerate project delivery and meet critical milestones.\n• Scope of Work: Complete execution of assigned tasks, QA review, and weekly delivery sprints.\n• Timeline: Ready to kick off immediately with dedicated allocation.\n\nPlease let me know if you would like any adjustments to this plan or if you have time for a brief sync tomorrow.\n\nBest regards,\n${activeMember?.name || 'CRM Team'}`);
+                    setBody(`Hi ${firstName},\n\nFollowing up on our recent conversation regarding your initiatives at ${compName}, here is a summary of the scope and deliverables we can handle for your team:\n\n• Objective: Accelerate project delivery and meet critical milestones.\n• Scope of Work: Complete execution of assigned tasks, QA review, and weekly delivery sprints.\n• Timeline: Ready to kick off immediately with dedicated allocation.\n\nPlease let me know if you would like any adjustments to this plan or if you have time for a brief sync tomorrow.\n\nBest regards,\nUday Raj\nIngversions Digital`);
                   }}
                   className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-200 transition"
                 >
@@ -353,12 +353,13 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
                   type="button"
                   onClick={() => {
                     const firstName = contact.name.split(' ')[0] || contact.name;
-                    setSubject(`Meeting Summary & Next Steps - ${contact.name}`);
-                    setBody(`Hyy ${firstName},\n\nThank you for connecting earlier! Here are the key details and action items we discussed:\n\n• Key Priority: Resolving task bottlenecks and hitting scheduled deadlines.\n• Next Deliverable: Reviewing requirements and finalizing kickoff details.\n• Action Item: Schedule a brief onboarding check-in.\n\nLooking forward to working together!\n\nBest regards,\n${activeMember?.name || 'CRM Team'}`);
+                    const compName = contact.company?.name || 'your team';
+                    setSubject(`Following up - ${compName}`);
+                    setBody(`Hi ${firstName},\n\nI hope you're having a productive week.\n\nI wanted to quickly follow up on my previous note and see if you had a chance to review it. We'd love to explore how we can support you and ${compName} in executing your key initiatives and hitting your deadlines on schedule.\n\nDo you have 10-15 minutes for a brief call sometime this week?\n\nBest regards,\nUday Raj\nIngversions Digital`);
                   }}
                   className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-200 transition"
                 >
-                  📝 Meeting Recap
+                  🔄 Follow-up
                 </button>
               </div>
             </div>

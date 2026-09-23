@@ -291,9 +291,10 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
       {/* ========================================================================= */}
       {/* 1. TOP SEGMENTED FILTER TABS                                              */}
       {/* ========================================================================= */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs select-none">
-        {/* Active All / Asia Deals Tab */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 text-xs select-none">
+        {/* Active All Deals Tab */}
         <button
+          type="button"
           onClick={() => setActiveTab('all')}
           className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
             activeTab === 'all'
@@ -302,10 +303,11 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
           }`}
         >
           <FolderKanban className="w-4 h-4 text-[#5b3ee8]" />
-          <span>Asia Deals</span>
+          <span>All Deals</span>
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab('premium')}
           className={`px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
             activeTab === 'premium'
@@ -318,6 +320,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab('new')}
           className={`px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
             activeTab === 'new'
@@ -330,6 +333,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab('recent')}
           className={`px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
             activeTab === 'recent'
@@ -342,6 +346,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab('shared')}
           className={`px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
             activeTab === 'shared'
@@ -350,10 +355,11 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
           }`}
         >
           <Users className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Leads Share to Me</span>
+          <span>Shared with Me</span>
         </button>
 
         <button
+          type="button"
           onClick={() => setActiveTab('closing_next_month')}
           className={`px-3 py-1.5 rounded-xl font-medium flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
             activeTab === 'closing_next_month'
@@ -366,9 +372,10 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
         </button>
 
         <button
-          onClick={() => {}}
+          type="button"
+          onClick={() => setIsFilterOpen(!isFilterOpen)}
           className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition shrink-0 cursor-pointer"
-          title="More views"
+          title="Filter stages"
         >
           <MoreHorizontal className="w-4 h-4" />
         </button>
@@ -486,29 +493,28 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
               <LayoutGrid className="w-4 h-4" />
             </button>
 
-            {/* Chart Icon */}
+            {/* Chart / Kanban Toggle */}
             <button
-              onClick={() => {}}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer hidden sm:block"
-              title="Analytics"
+              type="button"
+              onClick={() => setViewMode(viewMode === 'table' ? 'kanban' : 'table')}
+              className={`p-1.5 rounded-lg transition cursor-pointer hidden sm:block ${
+                viewMode === 'table' ? 'bg-white text-indigo-600 shadow-2xs font-bold' : 'text-slate-400 hover:text-slate-700'
+              }`}
+              title="Toggle Table / Kanban View"
             >
               <PieChart className="w-4 h-4" />
             </button>
 
-            {/* Calendar Icon */}
+            {/* Calendar Deals Closing Filter Toggle */}
             <button
-              onClick={() => {}}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer hidden sm:block"
-              title="Calendar"
+              type="button"
+              onClick={() => setActiveTab(activeTab === 'closing_next_month' ? 'all' : 'closing_next_month')}
+              className={`p-1.5 rounded-lg transition cursor-pointer hidden sm:block ${
+                activeTab === 'closing_next_month' ? 'bg-white text-rose-600 shadow-2xs font-bold' : 'text-slate-400 hover:text-slate-700'
+              }`}
+              title="Filter Deals Closing Soon"
             >
               <CalendarDays className="w-4 h-4" />
-            </button>
-
-            <button
-              className="p-1 rounded-md text-slate-400 hover:text-slate-600 transition"
-              title="More views"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>

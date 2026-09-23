@@ -570,30 +570,36 @@ export const LoginPage: React.FC = () => {
         </div>
 
         {/* Bottom Switcher Footer */}
-        <div className="text-xs text-slate-500">
-          {mode === 'signup' ? (
-            <>
-              Have an account?{' '}
-              <button
-                type="button"
-                onClick={() => setMode('signin')}
-                className="font-semibold text-blue-600 hover:underline cursor-pointer"
-              >
-                Sign in
-              </button>
-            </>
-          ) : (
-            <>
-              Don't have an account?{' '}
-              <button
-                type="button"
-                onClick={() => setMode('signup')}
-                className="font-semibold text-blue-600 hover:underline cursor-pointer"
-              >
-                Sign up
-              </button>
-            </>
-          )}
+        <div className="text-xs text-slate-500 space-y-2.5 pt-2">
+          <div>
+            {mode === 'signup' ? (
+              <>
+                Have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => setMode('signin')}
+                  className="font-semibold text-blue-600 hover:underline cursor-pointer"
+                >
+                  Sign in
+                </button>
+              </>
+            ) : (
+              <>
+                Don't have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => setMode('signup')}
+                  className="font-semibold text-blue-600 hover:underline cursor-pointer"
+                >
+                  Sign up
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="text-[11px] text-slate-400">
+            &copy; {new Date().getFullYear()} Team CRM. Enterprise data isolation & encryption enabled.
+          </div>
         </div>
       </div>
 

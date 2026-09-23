@@ -14,6 +14,7 @@ import {
   Plus,
   ArrowUpRight,
   Mail,
+  RotateCw,
 } from 'lucide-react';
 import { isToday, isPast, isFuture, format, isThisWeek } from 'date-fns';
 
@@ -22,6 +23,7 @@ interface RemindersDashboardProps {
   onRefresh: () => void;
   onOpenContact: (contact: Contact) => void;
   onOpenEmailComposer?: (contact: Contact) => void;
+  onOpenBulkEmail?: (contacts: Contact[], initialTemplate?: 'followup') => void;
   onAddNewReminder: () => void;
 }
 
@@ -30,6 +32,7 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
   onRefresh,
   onOpenContact,
   onOpenEmailComposer,
+  onOpenBulkEmail,
   onAddNewReminder,
 }) => {
   const { activeMember } = useTeam();
@@ -87,6 +90,11 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
 
   const currentList = getActiveList();
 
+  const pendingContactReminders = currentList
+    .map((r) => r.contact)
+    .filter((c): c is Contact => Boolean(c && c.email));
+  const uniqueContacts = Array.from(new Map(pendingContactReminders.map((c) => [c.id, c])).values());
+
   return (
     <div className="space-y-5">
       {/* Top Header & Filters */}
@@ -121,6 +129,19 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
               My Tasks Only
             </button>
           </div>
+
+          {uniqueContacts.length > 0 && onOpenBulkEmail && (
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<RotateCw className="w-3.5 h-3.5 text-emerald-600" />}
+              onClick={() => onOpenBulkEmail(uniqueContacts, 'followup')}
+              className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 hidden sm:inline-flex"
+              title="Launch Bulk Follow-up Sender for all contacts in this view"
+            >
+              Bulk Follow-up ({uniqueContacts.length})
+            </Button>
+          )}
 
           <Button
             size="sm"

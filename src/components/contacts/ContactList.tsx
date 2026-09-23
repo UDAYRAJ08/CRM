@@ -38,6 +38,7 @@ import {
   Layers,
   X,
   Globe,
+  RotateCw,
 } from 'lucide-react';
 
 interface ContactListProps {
@@ -47,7 +48,7 @@ interface ContactListProps {
   onEditContact: (contact: Contact) => void;
   onOpenEmailComposer: (contact: Contact) => void;
   onOpenLinkedIn?: (contact: Contact) => void;
-  onOpenBulkEmail: (selectedContacts: Contact[]) => void;
+  onOpenBulkEmail: (selectedContacts: Contact[], initialTemplate?: 'followup' | 'capabilities' | 'scope' | 'intro') => void;
   onAddNewContact: () => void;
   onRefresh: () => void;
 }
@@ -647,6 +648,26 @@ export const ContactList: React.FC<ContactListProps> = ({
               ))}
             </select>
 
+            {/* Quick 1-Click Bulk Follow-up for Due Leads */}
+            {pipelineCounts.due > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const dueContacts = contacts.filter((c) => {
+                    const contactDate = new Date(c.updated_at || c.created_at).getTime();
+                    const diffDays = Math.floor((Date.now() - contactDate) / (1000 * 60 * 60 * 24));
+                    return c.status === 'contacted' && diffDays >= 3;
+                  });
+                  onOpenBulkEmail(dueContacts, 'followup');
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300/80 rounded-xl font-bold shadow-2xs transition cursor-pointer"
+                title="Launch Bulk Follow-up Sender for all due contacts"
+              >
+                <RotateCw className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Bulk Follow-up Due ({pipelineCounts.due})</span>
+              </button>
+            )}
+
             {/* Density Toggle (Compact vs Comfortable) */}
             <button
               onClick={toggleDensity}
@@ -916,11 +937,27 @@ export const ContactList: React.FC<ContactListProps> = ({
                                             {contact.name}
                                           </div>
                                           <div className="text-[11px] text-slate-500 flex items-center gap-2">
-                                            {contact.email && <span>{contact.email}</span>}
+                                            {contact.email && (
+                                              <a
+                                                href={`mailto:${contact.email}`}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="hover:text-indigo-600 hover:underline truncate"
+                                                title="Send email"
+                                              >
+                                                {contact.email}
+                                              </a>
+                                            )}
                                             {contact.phone && (
                                               <>
                                                 <span>•</span>
-                                                <span>{contact.phone}</span>
+                                                <a
+                                                  href={`tel:${contact.phone}`}
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  className="hover:text-indigo-600 hover:underline shrink-0"
+                                                  title="Call phone"
+                                                >
+                                                  {contact.phone}
+                                                </a>
                                               </>
                                             )}
                                           </div>
@@ -1206,11 +1243,27 @@ export const ContactList: React.FC<ContactListProps> = ({
                               {contact.name || 'Unnamed Contact'}
                             </span>
                             <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                              {contact.email && <span>{contact.email}</span>}
+                              {contact.email && (
+                                <a
+                                  href={`mailto:${contact.email}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="hover:text-indigo-600 hover:underline truncate"
+                                  title="Send email"
+                                >
+                                  {contact.email}
+                                </a>
+                              )}
                               {contact.phone && (
                                 <>
                                   <span>•</span>
-                                  <span>{contact.phone}</span>
+                                  <a
+                                    href={`tel:${contact.phone}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="hover:text-indigo-600 hover:underline shrink-0"
+                                    title="Call phone"
+                                  >
+                                    {contact.phone}
+                                  </a>
                                 </>
                               )}
                             </div>
@@ -1509,14 +1562,26 @@ export const ContactList: React.FC<ContactListProps> = ({
                 </select>
               </div>
 
-              {/* Bulk Email / Sequence */}
+              {/* Bulk Follow-up Button */}
               <button
                 type="button"
-                onClick={() => onOpenBulkEmail(selectedContacts)}
+                onClick={() => onOpenBulkEmail(selectedContacts, 'followup')}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Send personalized bulk follow-ups to selected contacts"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>Bulk Follow-up</span>
+              </button>
+
+              {/* Bulk Outreach Campaign */}
+              <button
+                type="button"
+                onClick={() => onOpenBulkEmail(selectedContacts, 'intro')}
                 className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Send outreach campaign to selected contacts"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>Send 1st Email / Sequence</span>
+                <span>Bulk Outreach</span>
               </button>
 
               {/* Bulk Delete (Admin Only) */}
