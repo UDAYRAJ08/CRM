@@ -37,7 +37,6 @@ import {
   Sparkles,
   Layers,
   X,
-  Keyboard,
   Globe,
 } from 'lucide-react';
 
@@ -517,127 +516,157 @@ export const ContactList: React.FC<ContactListProps> = ({
       {/* ===================================================================== */}
       {/* 1. TOP PIPELINE WORKFLOW TABS & TOOLBAR                               */}
       {/* ===================================================================== */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-        {/* Pipeline Segmented Tabs */}
-        <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto">
-          <button
-            onClick={() => setPipelineTab('all')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${pipelineTab === 'all'
-                ? 'bg-indigo-600 text-white shadow-xs font-bold'
-                : 'bg-slate-100/80 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900'
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+        {/* Row 1: Pipeline Stage Segmented Tabs */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Segmented Control */}
+          <div className="inline-flex p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 overflow-x-auto no-scrollbar max-w-full">
+            <button
+              onClick={() => setPipelineTab('all')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
+                pipelineTab === 'all'
+                  ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
-          >
-            <span>All Leads</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${pipelineTab === 'all' ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-200 text-slate-700'
-                }`}
             >
-              {pipelineCounts.all}
-            </span>
-          </button>
+              <span>All Leads</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  pipelineTab === 'all'
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'bg-slate-200/80 text-slate-600'
+                }`}
+              >
+                {pipelineCounts.all}
+              </span>
+            </button>
 
-          <button
-            onClick={() => setPipelineTab('uncontacted')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${pipelineTab === 'uncontacted'
-                ? 'bg-blue-600 text-white shadow-xs font-bold'
-                : 'bg-slate-100/80 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setPipelineTab('uncontacted')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
+                pipelineTab === 'uncontacted'
+                  ? 'bg-white text-blue-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
-          >
-            <span>🆕 Uncontacted</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${pipelineTab === 'uncontacted' ? 'bg-blue-700 text-blue-100' : 'bg-slate-200 text-slate-700'
-                }`}
             >
-              {pipelineCounts.uncontacted}
-            </span>
-          </button>
+              <span>🆕 Uncontacted</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  pipelineTab === 'uncontacted'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-slate-200/80 text-slate-600'
+                }`}
+              >
+                {pipelineCounts.uncontacted}
+              </span>
+            </button>
 
-          <button
-            onClick={() => setPipelineTab('due')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${pipelineTab === 'due'
-                ? 'bg-rose-600 text-white shadow-xs font-bold'
-                : 'bg-slate-100/80 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setPipelineTab('due')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
+                pipelineTab === 'due'
+                  ? 'bg-white text-rose-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
-          >
-            <span>🚨 Due Follow-ups</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${pipelineTab === 'due' ? 'bg-rose-700 text-rose-100' : 'bg-slate-200 text-slate-700'
-                }`}
             >
-              {pipelineCounts.due}
-            </span>
-          </button>
+              <span>🚨 Due Follow-ups</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  pipelineTab === 'due'
+                    ? 'bg-rose-100 text-rose-700'
+                    : 'bg-slate-200/80 text-slate-600'
+                }`}
+              >
+                {pipelineCounts.due}
+              </span>
+            </button>
 
-          <button
-            onClick={() => setPipelineTab('replied')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${pipelineTab === 'replied'
-                ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                : 'bg-slate-100/80 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setPipelineTab('replied')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
+                pipelineTab === 'replied'
+                  ? 'bg-white text-emerald-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
-          >
-            <span>📥 Replied / Active</span>
-            <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${pipelineTab === 'replied' ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-200 text-slate-700'
-                }`}
             >
-              {pipelineCounts.replied}
-            </span>
-          </button>
+              <span>📥 Replied / Active</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  pipelineTab === 'replied'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-slate-200/80 text-slate-600'
+                }`}
+              >
+                {pipelineCounts.replied}
+              </span>
+            </button>
+          </div>
+
+          {/* Quick Counter / Info */}
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 shrink-0">
+            <span className="font-bold text-slate-800">{filteredContacts.length}</span>
+            <span>contacts showing</span>
+          </div>
         </div>
 
-        {/* Toolbar Dropdowns & Density Switcher */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {/* Tag Filter */}
-          {allTags.length > 0 && (
+        {/* Divider line */}
+        <div className="h-px bg-slate-100" />
+
+        {/* Row 2: Filters on Left, View Modes on Right */}
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+          {/* Filters on Left */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Tag Filter */}
+            {allTags.length > 0 && (
+              <select
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+                className="bg-slate-50 hover:bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer shadow-2xs transition-colors"
+              >
+                <option value="all">All Tags</option>
+                {allTags.map((tag) => (
+                  <option key={tag} value={tag}>
+                    #{tag}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Owner Filter */}
             <select
-              value={tagFilter}
-              onChange={(e) => setTagFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+              value={ownerFilter}
+              onChange={(e) => setOwnerFilter(e.target.value)}
+              className="bg-slate-50 hover:bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer shadow-2xs transition-colors"
             >
-              <option value="all">All Tags</option>
-              {allTags.map((tag) => (
-                <option key={tag} value={tag}>
-                  #{tag}
+              <option value="all">All Owners</option>
+              <option value="unassigned">Unassigned</option>
+              {teamMembers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
                 </option>
               ))}
             </select>
-          )}
 
-          {/* Owner Filter */}
-          <select
-            value={ownerFilter}
-            onChange={(e) => setOwnerFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
-          >
-            <option value="all">All Owners</option>
-            <option value="unassigned">Unassigned</option>
-            {teamMembers.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-
-          {/* Density Toggle (Compact vs Comfortable) */}
-          <button
-            onClick={toggleDensity}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer ${density === 'compact'
-                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-bold'
-                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+            {/* Density Toggle (Compact vs Comfortable) */}
+            <button
+              onClick={toggleDensity}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition cursor-pointer shadow-2xs ${
+                density === 'compact'
+                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-bold'
+                  : 'bg-slate-50 hover:bg-white border-slate-200 text-slate-600 hover:text-slate-900'
               }`}
-            title="Toggle Table Density (Compact / Comfortable)"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span className="capitalize">{density}</span>
-          </button>
+              title="Toggle Table Density (Compact / Comfortable)"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span className="capitalize">{density}</span>
+            </button>
+          </div>
 
-          <div className="h-4 w-px bg-slate-200 mx-0.5" />
-
-          {/* View Mode (Date Accordion / Table / Cards) */}
-          <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+          {/* View Modes on Right */}
+          <div className="inline-flex p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 shrink-0">
             <button
               onClick={() => setViewMode('accordion')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                 viewMode === 'accordion'
                   ? 'bg-white text-indigo-700 shadow-xs font-bold'
                   : 'text-slate-600 hover:text-slate-900'
@@ -649,7 +678,7 @@ export const ContactList: React.FC<ContactListProps> = ({
             </button>
             <button
               onClick={() => setViewMode('table')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                 viewMode === 'table'
                   ? 'bg-white text-indigo-700 shadow-xs font-bold'
                   : 'text-slate-600 hover:text-slate-900'
@@ -661,7 +690,7 @@ export const ContactList: React.FC<ContactListProps> = ({
             </button>
             <button
               onClick={() => setViewMode('cards')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                 viewMode === 'cards'
                   ? 'bg-white text-indigo-700 shadow-xs font-bold'
                   : 'text-slate-600 hover:text-slate-900'
@@ -673,21 +702,6 @@ export const ContactList: React.FC<ContactListProps> = ({
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Keyboard Shortcuts Hint Bar */}
-      <div className="hidden lg:flex items-center justify-between text-[11px] text-slate-400 px-1">
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1">
-            <Keyboard className="w-3.5 h-3.5 text-slate-400" />
-            <span>Shortcuts:</span>
-          </span>
-          <span><kbd className="px-1 py-0.2 bg-slate-100 border border-slate-200 rounded font-mono text-slate-700">J</kbd> / <kbd className="px-1 py-0.2 bg-slate-100 border border-slate-200 rounded font-mono text-slate-700">K</kbd> navigate</span>
-          <span><kbd className="px-1 py-0.2 bg-slate-100 border border-slate-200 rounded font-mono text-slate-700">Enter</kbd> open drawer</span>
-          <span><kbd className="px-1 py-0.2 bg-slate-100 border border-slate-200 rounded font-mono text-slate-700">E</kbd> compose email</span>
-          <span><kbd className="px-1 py-0.2 bg-slate-100 border border-slate-200 rounded font-mono text-slate-700">Esc</kbd> deselect</span>
-        </div>
-        <span>{filteredContacts.length} leads in view</span>
       </div>
 
       {/* ===================================================================== */}
