@@ -4,7 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { Contact, ContactStatus } from '../../types/crm';
 import { db } from '../../lib/supabase';
-import { getInitials, formatDate } from '../../lib/utils';
+import { getInitials } from '../../lib/utils';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import {
@@ -20,13 +20,14 @@ import {
   Trash2,
   Send,
   Plus,
+  Minus,
+  Calendar,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
   Tag,
   CheckSquare,
   Clock,
-  Calendar,
   AlertTriangle,
   Reply,
   CheckCircle2,
@@ -121,159 +122,55 @@ export function getCompanyUrl(company?: { name?: string; website?: string } | nu
 }
 
 function getFollowUpInfo(contact: Contact) {
-  const createdDate = new Date(contact.created_at);
-  const createdShort = isNaN(createdDate.getTime())
-    ? ''
-    : createdDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  const createdDateStr = isNaN(createdDate.getTime())
-    ? 'N/A'
-    : createdDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-
-  // Custom follow-up due date if set via dropdown timer
-  const customDueDateStr = contact.custom_fields?.follow_up_due_date;
-  const customDueDate = customDueDateStr ? new Date(customDueDateStr) : null;
-  const hasValidCustomDue = customDueDate && !isNaN(customDueDate.getTime());
-
   if (contact.status === 'new') {
-    if (hasValidCustomDue && customDueDate) {
-      const now = Date.now();
-      const diffDays = Math.ceil((customDueDate.getTime() - now) / (1000 * 60 * 60 * 24));
-      const dueShort = customDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      const dueStr = customDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-      const isOverdue = diffDays < 0;
-
-      return {
-        label: isOverdue
-          ? `🚨 Overdue • Was Due ${dueShort} (${Math.abs(diffDays)}d ago)`
-          : `⏳ Due ${dueShort} (in ${diffDays}d)`,
-        badgeClass: isOverdue
-          ? 'bg-rose-50 text-rose-800 border-rose-300 font-semibold shadow-2xs'
-          : 'bg-amber-50 text-amber-800 border-amber-200 font-semibold shadow-2xs',
-        actionText: 'Send 1st Email',
-        isOverdue,
-        stage: 'new',
-        createdDateStr,
-        dueDateStr: dueStr,
-        dueDate: customDueDate,
-        daysDiff: diffDays,
-      };
-    }
-
     return {
-      label: createdShort ? `Not Started • Added ${createdShort}` : 'Not Started',
-      badgeClass: 'bg-blue-50/90 text-blue-700 border-blue-200/80 font-medium shadow-2xs',
+      label: 'Not Started',
+      badgeClass: 'bg-blue-50/90 text-blue-700 border-blue-200/80 font-medium',
       actionText: 'Send 1st Email',
       isOverdue: false,
       stage: 'new',
-      createdDateStr,
-      dueDateStr: createdDateStr,
-      dueDate: createdDate,
-      daysDiff: 0,
     };
   }
-
   if (contact.status === 'qualified') {
-    const qualDate = new Date(contact.updated_at || contact.created_at);
-    const qualShort = isNaN(qualDate.getTime())
-      ? ''
-      : qualDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    const qualStr = isNaN(qualDate.getTime())
-      ? 'N/A'
-      : qualDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-
     return {
-      label: qualShort ? `Replied & Qualified • ${qualShort}` : 'Replied & Qualified',
-      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold shadow-2xs',
+      label: 'Replied & Qualified',
+      badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold',
       actionText: 'View Details',
       isOverdue: false,
       stage: 'qualified',
-      createdDateStr,
-      dueDateStr: qualStr,
-      dueDate: qualDate,
-      daysDiff: 0,
     };
   }
-
   if (contact.status === 'contacted') {
-    if (hasValidCustomDue && customDueDate) {
-      const now = Date.now();
-      const diffDays = Math.ceil((customDueDate.getTime() - now) / (1000 * 60 * 60 * 24));
-      const dueShort = customDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      const dueStr = customDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-      const isOverdue = diffDays < 0;
-
-      return {
-        label: isOverdue
-          ? `🚨 Overdue • Was Due ${dueShort} (${Math.abs(diffDays)}d ago)`
-          : `⏳ Due ${dueShort} (in ${diffDays}d)`,
-        badgeClass: isOverdue
-          ? 'bg-rose-50 text-rose-800 border-rose-300 font-semibold shadow-2xs'
-          : 'bg-amber-50 text-amber-800 border-amber-200 font-semibold shadow-2xs',
-        actionText: 'Send Follow-up Message',
-        isOverdue,
-        stage: isOverdue ? 'overdue' : 'contacted',
-        createdDateStr,
-        dueDateStr: dueStr,
-        dueDate: customDueDate,
-        daysDiff: diffDays,
-      };
-    }
-
     const contactDate = new Date(contact.updated_at || contact.created_at).getTime();
     const diffHours = (Date.now() - contactDate) / (1000 * 60 * 60);
     const diffDays = Math.floor(diffHours / 24);
 
-    const targetDueDate = new Date(contactDate + 3 * 24 * 60 * 60 * 1000);
-    const dueShort = targetDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    const dueStr = targetDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-
     if (diffDays >= 3) {
       return {
-        label: `🚨 3-Day Due • ${dueShort} (${diffDays}d ago)`,
+        label: `🚨 3-Day Follow-up Due (${diffDays}d ago)`,
         badgeClass: 'bg-rose-50 text-rose-800 border-rose-300 font-semibold shadow-2xs',
         actionText: 'Send Follow-up Message',
         isOverdue: true,
         stage: 'overdue',
-        createdDateStr,
-        dueDateStr: dueStr,
-        dueDate: targetDueDate,
-        daysDiff: -diffDays,
       };
     } else {
       const remainingDays = Math.max(1, 3 - diffDays);
       return {
-        label: `⏳ Waiting • Due ${dueShort} (${remainingDays}d)`,
-        badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-semibold shadow-2xs',
+        label: `⏳ Waiting (Follow-up in ${remainingDays}d)`,
+        badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-semibold',
         actionText: 'Follow-up Email',
         isOverdue: false,
         stage: 'contacted',
-        createdDateStr,
-        dueDateStr: dueStr,
-        dueDate: targetDueDate,
-        daysDiff: remainingDays,
       };
     }
   }
-
   const conf = STATUS_CONFIG[contact.status] || STATUS_CONFIG.new;
-  const updateDate = new Date(contact.updated_at || contact.created_at);
-  const updateShort = isNaN(updateDate.getTime())
-    ? ''
-    : updateDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  const updateStr = isNaN(updateDate.getTime())
-    ? 'N/A'
-    : updateDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-
   return {
-    label: updateShort ? `${conf.label} • ${updateShort}` : conf.label,
-    badgeClass: `${conf.bg} ${conf.text} ${conf.border} font-medium shadow-2xs`,
+    label: conf.label,
+    badgeClass: `${conf.bg} ${conf.text} ${conf.border} font-medium`,
     actionText: 'Contact',
     isOverdue: false,
     stage: contact.status,
-    createdDateStr,
-    dueDateStr: updateStr,
-    dueDate: updateDate,
-    daysDiff: 0,
   };
 }
 
@@ -296,8 +193,9 @@ export const ContactList: React.FC<ContactListProps> = ({
   const [pipelineTab, setPipelineTab] = useState<'all' | 'uncontacted' | 'due' | 'replied'>('all');
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
-  
+  const [viewMode, setViewMode] = useState<'accordion' | 'table' | 'cards'>('accordion');
+  const [expandedDateKeys, setExpandedDateKeys] = useState<Set<string>>(new Set());
+
   // Density: 'compact' | 'comfortable'
   const [density, setDensity] = useState<'compact' | 'comfortable'>(() => {
     return (localStorage.getItem('crm_table_density') as any) || 'comfortable';
@@ -309,18 +207,12 @@ export const ContactList: React.FC<ContactListProps> = ({
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  
+
   // Keyboard active row focus index
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
 
   // Active open inline status dropdown contactId
   const [activeStatusDropdownId, setActiveStatusDropdownId] = useState<string | null>(null);
-
-  // Active open inline lifecycle & dates dropdown contactId
-  const [activeLifecycleDropdownId, setActiveLifecycleDropdownId] = useState<string | null>(null);
-
-  // Date Filter State
-  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'due_today' | 'overdue'>('all');
 
   // Save density preference
   const toggleDensity = () => {
@@ -395,27 +287,6 @@ export const ContactList: React.FC<ContactListProps> = ({
           if (diffDays < 3) return false;
         }
 
-        // Date filter
-        if (dateFilter !== 'all') {
-          const now = Date.now();
-          const createdTime = new Date(c.created_at).getTime();
-          const diffDays = Math.floor((now - createdTime) / (1000 * 60 * 60 * 24));
-
-          if (dateFilter === 'today') {
-            if (diffDays > 0) return false;
-          } else if (dateFilter === 'this_week') {
-            if (diffDays > 7) return false;
-          } else if (dateFilter === 'this_month') {
-            if (diffDays > 30) return false;
-          } else if (dateFilter === 'due_today') {
-            const fu = getFollowUpInfo(c);
-            if (fu.daysDiff !== 0) return false;
-          } else if (dateFilter === 'overdue') {
-            const fu = getFollowUpInfo(c);
-            if (!fu.isOverdue) return false;
-          }
-        }
-
         // Owner filter
         if (ownerFilter !== 'all') {
           if (ownerFilter === 'unassigned' && c.owner_id) return false;
@@ -442,7 +313,86 @@ export const ContactList: React.FC<ContactListProps> = ({
         }
         return sortOrder === 'asc' ? -comparison : comparison;
       });
-  }, [contacts, searchQuery, pipelineTab, dateFilter, ownerFilter, tagFilter, sortBy, sortOrder]);
+  }, [contacts, searchQuery, pipelineTab, ownerFilter, tagFilter, sortBy, sortOrder]);
+
+  // Group contacts by Date Added (created_at) for the Accordion View
+  const dateGroups = useMemo(() => {
+    const groups: { [key: string]: { rawDate: Date; contacts: Contact[] } } = {};
+
+    filteredContacts.forEach((contact) => {
+      const d = new Date(contact.created_at || Date.now());
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const key = `${year}-${month}-${day}`;
+
+      if (!groups[key]) {
+        groups[key] = {
+          rawDate: d,
+          contacts: [],
+        };
+      }
+      groups[key].contacts.push(contact);
+    });
+
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+    return Object.entries(groups)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([key, data]) => {
+        const d = data.rawDate;
+        let displayLabel = d.toLocaleDateString(undefined, {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        });
+
+        if (key === todayKey) {
+          displayLabel = `Today — ${d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}`;
+        } else if (key === yesterdayKey) {
+          displayLabel = `Yesterday — ${d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}`;
+        }
+
+        return {
+          key,
+          displayLabel,
+          count: data.contacts.length,
+          contacts: data.contacts,
+        };
+      });
+  }, [filteredContacts]);
+
+  // Auto-expand the first date group by default
+  useEffect(() => {
+    if (dateGroups.length > 0 && expandedDateKeys.size === 0) {
+      setExpandedDateKeys(new Set([dateGroups[0].key]));
+    }
+  }, [dateGroups]);
+
+  const toggleDateGroup = (key: string) => {
+    setExpandedDateKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const expandAllDates = () => {
+    setExpandedDateKeys(new Set(dateGroups.map((g) => g.key)));
+  };
+
+  const collapseAllDates = () => {
+    setExpandedDateKeys(new Set());
+  };
 
   // Handle Sort Column Click
   const handleSort = (field: 'name' | 'created_at' | 'company' | 'status') => {
@@ -451,70 +401,6 @@ export const ContactList: React.FC<ContactListProps> = ({
     } else {
       setSortBy(field);
       setSortOrder('asc');
-    }
-  };
-
-  // Reschedule / Set Follow-up Due Date
-  const handleUpdateDueDate = async (contact: Contact, addDays: number) => {
-    const targetDate = new Date();
-    targetDate.setDate(targetDate.getDate() + addDays);
-    targetDate.setHours(10, 0, 0, 0);
-
-    const isoDate = targetDate.toISOString();
-    try {
-      const updatedCustomFields = {
-        ...(contact.custom_fields || {}),
-        follow_up_due_date: isoDate,
-      };
-      await db.saveContact({
-        id: contact.id,
-        custom_fields: updatedCustomFields,
-      });
-      await db.saveReminder({
-        contact_id: contact.id,
-        due_date: isoDate,
-        note: `Follow-up with ${contact.name}`,
-        done: false,
-      });
-      success(
-        'Due Date Updated',
-        `Follow-up scheduled for ${targetDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
-      );
-      setActiveLifecycleDropdownId(null);
-      onRefresh();
-    } catch (err: any) {
-      error('Update Failed', err.message || 'Could not reschedule follow-up.');
-    }
-  };
-
-  const handleSetCustomDueDate = async (contact: Contact, dateVal: string) => {
-    if (!dateVal) return;
-    const targetDate = new Date(dateVal);
-    targetDate.setHours(10, 0, 0, 0);
-    const isoDate = targetDate.toISOString();
-    try {
-      const updatedCustomFields = {
-        ...(contact.custom_fields || {}),
-        follow_up_due_date: isoDate,
-      };
-      await db.saveContact({
-        id: contact.id,
-        custom_fields: updatedCustomFields,
-      });
-      await db.saveReminder({
-        contact_id: contact.id,
-        due_date: isoDate,
-        note: `Follow-up with ${contact.name}`,
-        done: false,
-      });
-      success(
-        'Custom Due Date Set',
-        `Follow-up scheduled for ${targetDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
-      );
-      setActiveLifecycleDropdownId(null);
-      onRefresh();
-    } catch (err: any) {
-      error('Update Failed', err.message || 'Could not set due date.');
     }
   };
 
@@ -636,17 +522,15 @@ export const ContactList: React.FC<ContactListProps> = ({
         <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto">
           <button
             onClick={() => setPipelineTab('all')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
-              pipelineTab === 'all'
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${pipelineTab === 'all'
                 ? 'bg-indigo-600 text-white shadow-xs font-bold'
                 : 'bg-slate-100/80 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <span>All Leads</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                pipelineTab === 'all' ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-200 text-slate-700'
-              }`}
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${pipelineTab === 'all' ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-200 text-slate-700'
+                }`}
             >
               {pipelineCounts.all}
             </span>
@@ -654,17 +538,15 @@ export const ContactList: React.FC<ContactListProps> = ({
 
           <button
             onClick={() => setPipelineTab('uncontacted')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
-              pipelineTab === 'uncontacted'
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${pipelineTab === 'uncontacted'
                 ? 'bg-blue-600 text-white shadow-xs font-bold'
                 : 'bg-slate-100/80 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <span>🆕 Uncontacted</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                pipelineTab === 'uncontacted' ? 'bg-blue-700 text-blue-100' : 'bg-slate-200 text-slate-700'
-              }`}
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${pipelineTab === 'uncontacted' ? 'bg-blue-700 text-blue-100' : 'bg-slate-200 text-slate-700'
+                }`}
             >
               {pipelineCounts.uncontacted}
             </span>
@@ -672,17 +554,15 @@ export const ContactList: React.FC<ContactListProps> = ({
 
           <button
             onClick={() => setPipelineTab('due')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
-              pipelineTab === 'due'
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${pipelineTab === 'due'
                 ? 'bg-rose-600 text-white shadow-xs font-bold'
                 : 'bg-slate-100/80 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <span>🚨 Due Follow-ups</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                pipelineTab === 'due' ? 'bg-rose-700 text-rose-100' : 'bg-slate-200 text-slate-700'
-              }`}
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${pipelineTab === 'due' ? 'bg-rose-700 text-rose-100' : 'bg-slate-200 text-slate-700'
+                }`}
             >
               {pipelineCounts.due}
             </span>
@@ -690,17 +570,15 @@ export const ContactList: React.FC<ContactListProps> = ({
 
           <button
             onClick={() => setPipelineTab('replied')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
-              pipelineTab === 'replied'
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${pipelineTab === 'replied'
                 ? 'bg-emerald-600 text-white shadow-xs font-bold'
                 : 'bg-slate-100/80 hover:bg-slate-200/70 text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <span>📥 Replied / Active</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                pipelineTab === 'replied' ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-200 text-slate-700'
-              }`}
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${pipelineTab === 'replied' ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-200 text-slate-700'
+                }`}
             >
               {pipelineCounts.replied}
             </span>
@@ -740,29 +618,13 @@ export const ContactList: React.FC<ContactListProps> = ({
             ))}
           </select>
 
-          {/* Date Filter */}
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value as any)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer"
-            title="Filter by Activity / Creation / Due Date"
-          >
-            <option value="all">📅 All Dates</option>
-            <option value="today">Added Today</option>
-            <option value="this_week">Added This Week</option>
-            <option value="this_month">Added This Month</option>
-            <option value="due_today">Follow-up Due Today</option>
-            <option value="overdue">Overdue Follow-ups</option>
-          </select>
-
           {/* Density Toggle (Compact vs Comfortable) */}
           <button
             onClick={toggleDensity}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer ${
-              density === 'compact'
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition cursor-pointer ${density === 'compact'
                 ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-bold'
                 : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-            }`}
+              }`}
             title="Toggle Table Density (Compact / Comfortable)"
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -771,25 +633,43 @@ export const ContactList: React.FC<ContactListProps> = ({
 
           <div className="h-4 w-px bg-slate-200 mx-0.5" />
 
-          {/* View Mode (Table / Cards) */}
+          {/* View Mode (Date Accordion / Table / Cards) */}
           <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
             <button
-              onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded-lg transition ${
-                viewMode === 'table' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-500'
+              onClick={() => setViewMode('accordion')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                viewMode === 'accordion'
+                  ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
-              title="Table View"
+              title="Group by Dates (Accordion)"
             >
-              <List className="w-4 h-4" />
+              <Calendar className="w-3.5 h-3.5" />
+              <span>By Date</span>
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Classic Table View"
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>Table</span>
             </button>
             <button
               onClick={() => setViewMode('cards')}
-              className={`p-1.5 rounded-lg transition ${
-                viewMode === 'cards' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-500'
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                viewMode === 'cards'
+                  ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
               title="Grid Card View"
             >
-              <LayoutGrid className="w-4 h-4" />
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Cards</span>
             </button>
           </div>
         </div>
@@ -831,6 +711,363 @@ export const ContactList: React.FC<ContactListProps> = ({
           >
             Add New Contact
           </Button>
+        </div>
+      ) : viewMode === 'accordion' ? (
+        <div className="space-y-4">
+          {/* Top Accordion Info & Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 text-xs text-slate-500">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-indigo-600" />
+                <span>Grouped by Date Added:</span>
+              </span>
+              <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full font-bold">
+                {dateGroups.length} {dateGroups.length === 1 ? 'Date' : 'Dates'}
+              </span>
+              <span>•</span>
+              <span className="font-medium text-slate-600">{filteredContacts.length} people total</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={expandAllDates}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+              >
+                Expand All
+              </button>
+              <span className="text-slate-300">•</span>
+              <button
+                type="button"
+                onClick={collapseAllDates}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-800 hover:underline cursor-pointer"
+              >
+                Collapse All
+              </button>
+            </div>
+          </div>
+
+          {/* Accordion List (Matching Screenshot Style) */}
+          <div className="space-y-3.5">
+            {dateGroups.map((group) => {
+              const isExpanded = expandedDateKeys.has(group.key);
+              const allGroupSelected =
+                group.contacts.length > 0 && group.contacts.every((c) => selectedIds.has(c.id));
+
+              return (
+                <div
+                  key={group.key}
+                  className={`bg-white border rounded-2xl overflow-hidden transition-all duration-200 ${
+                    isExpanded
+                      ? 'border-indigo-300 shadow-md ring-2 ring-indigo-500/10'
+                      : 'border-slate-200 hover:border-slate-300 shadow-xs hover:shadow-sm'
+                  }`}
+                >
+                  {/* Header Bar */}
+                  <div
+                    onClick={() => toggleDateGroup(group.key)}
+                    className={`px-5 md:px-6 py-4 flex items-center justify-between gap-4 select-none cursor-pointer transition-colors duration-150 ${
+                      isExpanded
+                        ? 'bg-slate-50/70 border-b border-slate-200/80 hover:bg-slate-100/50'
+                        : 'bg-white hover:bg-slate-50/70'
+                    }`}
+                  >
+                    {/* Left: Date Title & Count */}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100/80 shrink-0">
+                        <Calendar className="w-4 h-4" />
+                      </div>
+                      <h3 className="font-bold text-slate-900 text-sm md:text-base tracking-tight">
+                        {group.displayLabel}
+                      </h3>
+                      <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/70 shadow-2xs">
+                        {group.count} {group.count === 1 ? 'person added' : 'people added'}
+                      </span>
+                    </div>
+
+                    {/* Right: Circular (+) / (-) toggle button matching exact uploaded image */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleDateGroup(group.key);
+                      }}
+                      className={`w-9 h-9 md:w-10 md:h-10 rounded-full bg-[#fbbf24] hover:bg-[#f59e0b] border-[1.5px] border-slate-900 flex items-center justify-center text-slate-950 font-bold shrink-0 shadow-xs transition-all duration-200 ease-out active:scale-90 cursor-pointer ${
+                        isExpanded ? 'rotate-45' : 'rotate-0'
+                      }`}
+                      title={isExpanded ? 'Collapse date' : 'Expand to view people added'}
+                    >
+                      <Plus className="w-5 h-5 stroke-[2.5] text-slate-950 transition-transform duration-200" />
+                    </button>
+                  </div>
+
+                  {/* Expanded Body: "the people we added" - Animated with CSS Grid */}
+                  <div
+                    className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
+                      isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+                    }`}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="p-3 sm:p-4 space-y-3 bg-slate-50/40">
+                        <div className="flex items-center justify-between px-1">
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-indigo-600" />
+                            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                              People Added On This Date ({group.contacts.length})
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                            e.stopPropagation();
+                            const next = new Set(selectedIds);
+                            if (allGroupSelected) {
+                              group.contacts.forEach((c) => next.delete(c.id));
+                            } else {
+                              group.contacts.forEach((c) => next.add(c.id));
+                            }
+                            setSelectedIds(next);
+                          }}
+                          className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
+                        >
+                          {allGroupSelected ? 'Deselect All on Date' : 'Select All on Date'}
+                        </button>
+                      </div>
+
+                      {/* Clean Table of People Added on this Date */}
+                      <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs min-w-[840px]">
+                            <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 select-none">
+                              <tr>
+                                <th className="p-3 w-10 text-center whitespace-nowrap">
+                                  <input
+                                    type="checkbox"
+                                    checked={allGroupSelected}
+                                    onChange={(e) => {
+                                      const next = new Set(selectedIds);
+                                      if (e.target.checked) {
+                                        group.contacts.forEach((c) => next.add(c.id));
+                                      } else {
+                                        group.contacts.forEach((c) => next.delete(c.id));
+                                      }
+                                      setSelectedIds(next);
+                                    }}
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                  />
+                                </th>
+                                <th className="py-2.5 px-3 whitespace-nowrap">Person</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap">Company</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap">Status</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap">Lifecycle & Due</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap">Owner</th>
+                                <th className="py-2.5 px-3 text-right whitespace-nowrap">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">
+                              {group.contacts.map((contact) => {
+                                const isSelected = selectedIds.has(contact.id);
+                                const followUp = getFollowUpInfo(contact);
+                                const statusConf = STATUS_CONFIG[contact.status] || STATUS_CONFIG.new;
+                                const isDropdownOpen = activeStatusDropdownId === contact.id;
+                                const companyUrl = getCompanyUrl(contact.company);
+
+                                return (
+                                  <tr
+                                    key={contact.id}
+                                    onClick={() => onSelectContact(contact)}
+                                    className={`cursor-pointer transition-colors hover:bg-slate-50/80 ${
+                                      isSelected ? 'bg-indigo-50/40' : ''
+                                    }`}
+                                  >
+                                    <td
+                                      className="p-3 text-center whitespace-nowrap"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={(e) => handleToggleSelect(contact.id, e as any)}
+                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                      />
+                                    </td>
+
+                                    {/* Person */}
+                                    <td className="py-2.5 px-3 whitespace-nowrap">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center border border-slate-200 shrink-0">
+                                          {getInitials(contact.name, 'C')}
+                                        </div>
+                                        <div>
+                                          <div className="font-bold text-slate-900 hover:text-indigo-600 transition">
+                                            {contact.name}
+                                          </div>
+                                          <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                                            {contact.email && <span>{contact.email}</span>}
+                                            {contact.phone && (
+                                              <>
+                                                <span>•</span>
+                                                <span>{contact.phone}</span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    {/* Company */}
+                                    <td className="py-2.5 px-3 whitespace-nowrap">
+                                      {contact.company?.name ? (
+                                        <div className="flex items-center gap-1.5 font-medium text-slate-800">
+                                          <Building className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                          {companyUrl ? (
+                                            <a
+                                              href={companyUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              onClick={(e) => e.stopPropagation()}
+                                              className="text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center gap-1"
+                                            >
+                                              <span>{contact.company.name}</span>
+                                              <ExternalLink className="w-3 h-3 text-indigo-400" />
+                                            </a>
+                                          ) : (
+                                            <span>{contact.company.name}</span>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <span className="text-slate-400 italic">—</span>
+                                      )}
+                                      {contact.title && (
+                                        <span className="text-[11px] text-slate-500 block">
+                                          {contact.title}
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Status with Inline Editor */}
+                                    <td
+                                      className="py-2.5 px-3 relative whitespace-nowrap"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="relative inline-block text-left">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveStatusDropdownId(isDropdownOpen ? null : contact.id);
+                                          }}
+                                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition cursor-pointer hover:shadow-xs whitespace-nowrap shrink-0 ${statusConf.bg} ${statusConf.text} ${statusConf.border}`}
+                                        >
+                                          <span className={`w-2 h-2 rounded-full ${statusConf.dot} shrink-0`} />
+                                          <span>{statusConf.label}</span>
+                                          <ChevronDown className="w-3 h-3 opacity-60 ml-0.5 shrink-0" />
+                                        </button>
+
+                                        {isDropdownOpen && (
+                                          <>
+                                            <div
+                                              className="fixed inset-0 z-30"
+                                              onClick={() => setActiveStatusDropdownId(null)}
+                                            />
+                                            <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-40 p-1 animate-in fade-in zoom-in-95 duration-100">
+                                              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1">
+                                                Set Status
+                                              </div>
+                                              {(Object.keys(STATUS_CONFIG) as ContactStatus[]).map((st) => {
+                                                const item = STATUS_CONFIG[st];
+                                                const isCurrent = contact.status === st;
+                                                return (
+                                                  <button
+                                                    key={st}
+                                                    type="button"
+                                                    onClick={(e) => handleInlineStatusUpdate(contact.id, st, e)}
+                                                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition text-left cursor-pointer ${
+                                                      isCurrent
+                                                        ? 'bg-slate-100 font-bold text-slate-900'
+                                                        : 'hover:bg-slate-50 text-slate-700'
+                                                    }`}
+                                                  >
+                                                    <div className="flex items-center gap-2">
+                                                      <span className={`w-2 h-2 rounded-full ${item.dot}`} />
+                                                      <span>{item.label}</span>
+                                                    </div>
+                                                    {isCurrent && (
+                                                      <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+                                                    )}
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* Lifecycle */}
+                                    <td className="py-2.5 px-3 whitespace-nowrap">
+                                      <span
+                                        className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border whitespace-nowrap shadow-2xs ${followUp.badgeClass}`}
+                                      >
+                                        {followUp.label}
+                                      </span>
+                                    </td>
+
+                                    {/* Owner */}
+                                    <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                                      {contact.owner?.name ? (
+                                        <div className="flex items-center gap-1.5">
+                                          <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center">
+                                            {getInitials(contact.owner.name, 'U')[0]}
+                                          </div>
+                                          <span className="text-xs">{contact.owner.name}</span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-slate-400 italic text-xs">Unassigned</span>
+                                      )}
+                                    </td>
+
+                                    {/* Actions */}
+                                    <td
+                                      className="py-2.5 px-3 text-right whitespace-nowrap"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        {contact.email && (
+                                          <button
+                                            type="button"
+                                            onClick={() => onOpenEmailComposer(contact)}
+                                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                                            title="Send Email"
+                                          >
+                                            <Mail className="w-4 h-4" />
+                                          </button>
+                                        )}
+                                        {onOpenLinkedIn && (
+                                          <button
+                                            type="button"
+                                            onClick={() => onOpenLinkedIn(contact)}
+                                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                                            title="LinkedIn Outreach"
+                                          >
+                                            <Send className="w-4 h-4" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+            })}
+          </div>
         </div>
       ) : viewMode === 'table' ? (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
@@ -895,20 +1132,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                     </div>
                   </th>
 
-                  <th
-                    onClick={() => handleSort('created_at')}
-                    className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} cursor-pointer hover:text-slate-900 transition-colors whitespace-nowrap`}
-                    title="Sort by Date Added / Due"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Lifecycle & Due Timer</span>
-                      {sortBy === 'created_at' ? (
-                        sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-indigo-600" /> : <ArrowDown className="w-3.5 h-3.5 text-indigo-600" />
-                      ) : (
-                        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
-                      )}
-                    </div>
-                  </th>
+                  <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} whitespace-nowrap`}>Lifecycle & Due Timer</th>
                   <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} whitespace-nowrap`}>Owner</th>
                   <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} whitespace-nowrap`}>Tags</th>
                   <th className={`${density === 'compact' ? 'py-2 px-3' : 'p-3.5'} text-right whitespace-nowrap`}>Actions</th>
@@ -922,7 +1146,6 @@ export const ContactList: React.FC<ContactListProps> = ({
                   const followUp = getFollowUpInfo(contact);
                   const statusConf = STATUS_CONFIG[contact.status] || STATUS_CONFIG.new;
                   const isDropdownOpen = activeStatusDropdownId === contact.id;
-                  const isLifecycleDropdownOpen = activeLifecycleDropdownId === contact.id;
                   const companyUrl = getCompanyUrl(contact.company);
 
                   return (
@@ -932,13 +1155,12 @@ export const ContactList: React.FC<ContactListProps> = ({
                         setFocusedIndex(index);
                         onSelectContact(contact);
                       }}
-                      className={`cursor-pointer transition-colors ${
-                        isFocused
+                      className={`cursor-pointer transition-colors ${isFocused
                           ? 'bg-indigo-50/60 ring-1 ring-indigo-500/40'
                           : isSelected
-                          ? 'bg-indigo-50/30'
-                          : 'hover:bg-slate-50/80'
-                      }`}
+                            ? 'bg-indigo-50/30'
+                            : 'hover:bg-slate-50/80'
+                        }`}
                     >
                       {/* Checkbox */}
                       <td
@@ -957,17 +1179,15 @@ export const ContactList: React.FC<ContactListProps> = ({
                       <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} whitespace-nowrap`}>
                         <div className="flex items-center gap-2.5">
                           <div
-                            className={`${
-                              density === 'compact' ? 'w-6 h-6 text-[10px]' : 'w-8 h-8 text-xs'
-                            } rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center shrink-0 border border-slate-200`}
+                            className={`${density === 'compact' ? 'w-6 h-6 text-[10px]' : 'w-8 h-8 text-xs'
+                              } rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center shrink-0 border border-slate-200`}
                           >
                             {getInitials(contact.name, 'C')}
                           </div>
                           <div>
                             <span
-                              className={`font-bold text-slate-900 block hover:text-indigo-600 transition ${
-                                density === 'compact' ? 'text-xs' : 'text-sm'
-                              }`}
+                              className={`font-bold text-slate-900 block hover:text-indigo-600 transition ${density === 'compact' ? 'text-xs' : 'text-sm'
+                                }`}
                             >
                               {contact.name || 'Unnamed Contact'}
                             </span>
@@ -1053,11 +1273,10 @@ export const ContactList: React.FC<ContactListProps> = ({
                                       key={st}
                                       type="button"
                                       onClick={(e) => handleInlineStatusUpdate(contact.id, st, e)}
-                                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition text-left cursor-pointer ${
-                                        isCurrent
+                                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition text-left cursor-pointer ${isCurrent
                                           ? 'bg-slate-100 font-bold text-slate-900'
                                           : 'hover:bg-slate-50 text-slate-700'
-                                      }`}
+                                        }`}
                                     >
                                       <div className="flex items-center gap-2">
                                         <span className={`w-2 h-2 rounded-full ${item.dot}`} />
@@ -1073,174 +1292,13 @@ export const ContactList: React.FC<ContactListProps> = ({
                         </div>
                       </td>
 
-                      {/* Lifecycle & Due Timer Dropdown */}
-                      <td
-                        className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} relative whitespace-nowrap`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="relative inline-block text-left">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveStatusDropdownId(null);
-                              setActiveLifecycleDropdownId(isLifecycleDropdownOpen ? null : contact.id);
-                            }}
-                            className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition cursor-pointer hover:shadow-xs whitespace-nowrap shadow-2xs ${followUp.badgeClass}`}
-                            title="Click to view dates, timeline, and manage follow-up timer"
-                          >
-                            <span>{followUp.label}</span>
-                            <ChevronDown className="w-3 h-3 opacity-60 ml-0.5 shrink-0" />
-                          </button>
-
-                          {/* Lifecycle Details & Dates Dropdown Popover */}
-                          {isLifecycleDropdownOpen && (
-                            <>
-                              <div
-                                className="fixed inset-0 z-30"
-                                onClick={() => setActiveLifecycleDropdownId(null)}
-                              />
-                              <div className="absolute left-0 mt-1.5 w-80 bg-white rounded-2xl shadow-xl border border-slate-200 z-40 p-3.5 text-slate-800 animate-in fade-in zoom-in-95 duration-100">
-                                {/* Header */}
-                                <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-100">
-                                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-                                    <Calendar className="w-4 h-4 text-indigo-600" />
-                                    <span>Lifecycle & Timeline Dates</span>
-                                  </div>
-                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${followUp.badgeClass}`}>
-                                    {contact.status}
-                                  </span>
-                                </div>
-
-                                {/* Dates Breakdown */}
-                                <div className="space-y-2 text-xs">
-                                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
-                                    <span className="text-slate-500 flex items-center gap-1.5">
-                                      <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                      Added to CRM:
-                                    </span>
-                                    <span className="font-semibold text-slate-800">
-                                      {formatDate(contact.created_at)}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100">
-                                    <span className="text-slate-500 flex items-center gap-1.5">
-                                      <Mail className="w-3.5 h-3.5 text-slate-400" />
-                                      Last Activity:
-                                    </span>
-                                    <span className="font-semibold text-slate-800">
-                                      {contact.status === 'new'
-                                        ? 'Not Contacted Yet'
-                                        : formatDate(contact.updated_at || contact.created_at)}
-                                    </span>
-                                  </div>
-
-                                  <div className={`flex items-center justify-between p-2 rounded-xl border ${
-                                    followUp.isOverdue
-                                      ? 'bg-rose-50/80 border-rose-200 text-rose-900'
-                                      : 'bg-indigo-50/70 border-indigo-100 text-indigo-900'
-                                  }`}>
-                                    <span className="font-medium flex items-center gap-1.5">
-                                      <Calendar className="w-3.5 h-3.5 shrink-0" />
-                                      Next Due Date:
-                                    </span>
-                                    <div className="text-right">
-                                      <span className="font-bold block">
-                                        {followUp.dueDateStr}
-                                      </span>
-                                      <span className="text-[10px] opacity-80 block font-medium">
-                                        {followUp.isOverdue
-                                          ? `🚨 ${Math.abs(followUp.daysDiff)}d overdue`
-                                          : followUp.daysDiff > 0
-                                          ? `in ${followUp.daysDiff} days`
-                                          : 'Due Today'}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Reschedule Section */}
-                                <div className="mt-3 pt-2.5 border-t border-slate-100">
-                                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center justify-between">
-                                    <span>Set / Reschedule Due Date</span>
-                                    <span className="text-[10px] text-indigo-600 font-bold">Quick Timer</span>
-                                  </div>
-                                  <div className="grid grid-cols-3 gap-1 mb-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUpdateDueDate(contact, 1)}
-                                      className="py-1 px-1.5 text-center bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 rounded-lg text-[11px] font-semibold transition cursor-pointer"
-                                    >
-                                      Tomorrow
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUpdateDueDate(contact, 3)}
-                                      className="py-1 px-1.5 text-center bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 rounded-lg text-[11px] font-semibold transition cursor-pointer"
-                                    >
-                                      +3 Days
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUpdateDueDate(contact, 7)}
-                                      className="py-1 px-1.5 text-center bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 rounded-lg text-[11px] font-semibold transition cursor-pointer"
-                                    >
-                                      +1 Week
-                                    </button>
-                                  </div>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[10px] text-slate-400 font-medium shrink-0">Custom:</span>
-                                    <input
-                                      type="date"
-                                      min={new Date().toISOString().split('T')[0]}
-                                      onChange={(e) => {
-                                        if (e.target.value) {
-                                          handleSetCustomDueDate(contact, e.target.value);
-                                        }
-                                      }}
-                                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                                    />
-                                  </div>
-                                </div>
-
-                                {/* Action Buttons */}
-                                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-1.5">
-                                  {contact.email && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setActiveLifecycleDropdownId(null);
-                                        onOpenEmailComposer(contact);
-                                      }}
-                                      className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
-                                    >
-                                      <Mail className="w-3.5 h-3.5" />
-                                      <span>Send Email</span>
-                                    </button>
-                                  )}
-                                  {contact.status === 'new' ? (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => handleInlineStatusUpdate(contact.id, 'contacted', e)}
-                                      className="flex-1 py-1.5 px-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition cursor-pointer text-center shadow-xs"
-                                    >
-                                      Mark Contacted
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => handleInlineStatusUpdate(contact.id, 'qualified', e)}
-                                      className="flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer text-center shadow-xs"
-                                    >
-                                      Mark Qualified
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            </>
-                          )}
-                        </div>
+                      {/* Follow-up / Overdue Badge */}
+                      <td className={`${density === 'compact' ? 'py-1.5 px-3' : 'p-3.5'} whitespace-nowrap`}>
+                        <span
+                          className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border whitespace-nowrap shadow-2xs ${followUp.badgeClass}`}
+                        >
+                          {followUp.label}
+                        </span>
                       </td>
 
                       {/* Owner */}
@@ -1323,9 +1381,8 @@ export const ContactList: React.FC<ContactListProps> = ({
               <div
                 key={contact.id}
                 onClick={() => onSelectContact(contact)}
-                className={`bg-white rounded-2xl border p-4 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between ${
-                  isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-slate-200'
-                }`}
+                className={`bg-white rounded-2xl border p-4 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-slate-200'
+                  }`}
               >
                 <div>
                   <div className="flex items-start justify-between gap-3 mb-3">
@@ -1404,7 +1461,7 @@ export const ContactList: React.FC<ContactListProps> = ({
       {selectedIds.size > 0 && (
         <div className="fixed bottom-6 inset-x-0 mx-auto max-w-2xl px-4 z-40 animate-in slide-in-from-bottom-5 duration-200">
           <div className="bg-slate-900 text-white rounded-2xl p-3.5 shadow-2xl border border-slate-700/80 flex flex-wrap items-center justify-between gap-3">
-            
+
             {/* Counter */}
             <div className="flex items-center gap-2.5">
               <span className="px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-500/30 flex items-center gap-1.5">
