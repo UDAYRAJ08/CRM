@@ -12,6 +12,7 @@ import {
   Sparkles,
   LogOut,
   UserCheck,
+  FileEdit,
 } from 'lucide-react';
 import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
@@ -27,6 +28,7 @@ interface MobileNavDrawerProps {
   reminderCount: number;
   inboxCount?: number;
   dealCount?: number;
+  draftCount?: number;
 }
 
 export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
@@ -38,6 +40,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
   reminderCount,
   inboxCount = 0,
   dealCount = 0,
+  draftCount = 0,
 }) => {
   const { activeMember, setIsPickerOpen, logout } = useTeam();
   const { user } = useAuth();
@@ -82,6 +85,13 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
       icon: <Inbox className="w-5 h-5" />,
       badge: inboxCount > 0 ? inboxCount : undefined,
       badgeColor: 'bg-emerald-100 text-emerald-800 font-bold',
+    },
+    {
+      id: 'drafts',
+      label: 'Email Drafts',
+      icon: <FileEdit className="w-5 h-5" />,
+      badge: draftCount > 0 ? draftCount : undefined,
+      badgeColor: 'bg-amber-100 text-amber-700 font-bold',
     },
     {
       id: 'reminders',

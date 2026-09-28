@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { TeamProvider, useTeam } from './context/TeamContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { Contact, Reminder } from './types/crm';
-import { db } from './lib/supabase';
+import { db, EmailDraft } from './lib/supabase';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { TeamMemberModal } from './components/layout/TeamMemberModal';
@@ -15,6 +15,7 @@ import { ImportHistoryView } from './components/import/ImportHistoryView';
 import { EmailComposerModal } from './components/email/EmailComposerModal';
 import { BulkEmailModal, BulkTemplateKey } from './components/email/BulkEmailModal';
 import { EmailSettingsModal } from './components/email/EmailSettingsModal';
+import { DraftsView } from './components/email/DraftsView';
 import { RemindersDashboard } from './components/reminders/RemindersDashboard';
 import { ReminderFormModal } from './components/reminders/ReminderFormModal';
 import { CompaniesView } from './components/companies/CompaniesView';
@@ -30,7 +31,7 @@ import { Footer } from './components/layout/Footer';
 import { NotFoundView } from './components/common/NotFoundView';
 import { Loader2 } from 'lucide-react';
 
-export type ViewType = 'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'reminders' | 'companies' | 'imports' | '404';
+export type ViewType = 'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'drafts' | 'reminders' | 'companies' | 'imports' | '404';
 
 const CRMMain: React.FC = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -71,6 +72,8 @@ const CRMMain: React.FC = () => {
   const [reminderTargetContact, setReminderTargetContact] = useState<Contact | null>(null);
   const [isEmailSettingsOpen, setIsEmailSettingsOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [draftCount, setDraftCount] = useState(0);
+  const [resumingDraft, setResumingDraft] = useState<EmailDraft | null>(null);
 
   const countInboundReplies = async (contactList: Contact[]) => {
     try {
@@ -168,7 +171,7 @@ const CRMMain: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '').trim();
-      const validViews: ViewType[] = ['dashboard', 'pipeline', 'contacts', 'inbox', 'reminders', 'companies', 'imports'];
+  const validViews: ViewType[] = ['dashboard', 'pipeline', 'contacts', 'inbox', 'drafts', 'reminders', 'companies', 'imports'];
       if (!hash) {
         setActiveView('dashboard');
       } else if (validViews.includes(hash as ViewType)) {
@@ -197,19 +200,60 @@ const CRMMain: React.FC = () => {
       pipeline: `Sales Pipeline (${dealCount} Deals) | Team CRM`,
       contacts: `Contacts (${contacts.length}) | Team CRM`,
       inbox: inboxCount > 0 ? `Inbox (${inboxCount} New) | Team CRM` : 'Inbox & Replies | Team CRM',
+      drafts: draftCount > 0 ? `Drafts (${draftCount}) | Team CRM` : 'Email Drafts | Team CRM',
       reminders: activeRemindersCount > 0 ? `Tasks (${activeRemindersCount} Due) | Team CRM` : 'Tasks & Reminders | Team CRM',
       companies: 'Companies & Accounts | Team CRM',
       imports: 'Import History | Team CRM',
       '404': '404 Not Found | Team CRM',
     };
     document.title = titles[activeView] || 'Team CRM - Collaborative Workspace';
-  }, [activeView, contacts.length, dealCount, inboxCount, activeRemindersCount]);
+  }, [activeView, contacts.length, dealCount, inboxCount, draftCount, activeRemindersCount]);
 
-  const handleOpenEmailComposer = (contact: Contact, replySubject?: string) => {
+  const handleOpenEmailComposer = (contact: Contact, replySubject?: string, draft?: EmailDraft) => {
     setEmailTargetContact(contact);
     setEmailReplySubject(replySubject);
+    setResumingDraft(draft || null);
     setIsEmailComposerOpen(true);
   };
+
+  const handleResumeDraft = (draft: EmailDraft) => {
+    // Find the contact associated with the draft, or use a placeholder
+    const contact = contacts.find((c) => c.id === draft.contact_id) ||
+      (contacts.length > 0 ? contacts[0] : null);
+    if (!contact) return;
+    handleOpenEmailComposer(contact, undefined, draft);
+  };
+
+  const refreshDraftCount = useCallback(() => {
+    setDraftCount(db.getDraftCount());
+  }, []);
+
+  // Sync draft count on load & view changes
+  useEffect(() => {
+    refreshDraftCount();
+  }, [activeView, refreshDraftCount]);
+
+  // Real-time synchronization for drafts, contacts, deals, and reminders without reloading
+  useEffect(() => {
+    const handleDraftsChange = () => {
+      refreshDraftCount();
+    };
+    const handleDataChange = () => {
+      refreshAllData();
+    };
+
+    window.addEventListener('crm_drafts_updated', handleDraftsChange);
+    window.addEventListener('crm_contacts_updated', handleDataChange);
+    window.addEventListener('crm_deals_updated', handleDataChange);
+    window.addEventListener('crm_reminders_updated', handleDataChange);
+
+    return () => {
+      window.removeEventListener('crm_drafts_updated', handleDraftsChange);
+      window.removeEventListener('crm_contacts_updated', handleDataChange);
+      window.removeEventListener('crm_deals_updated', handleDataChange);
+      window.removeEventListener('crm_reminders_updated', handleDataChange);
+    };
+  }, [refreshDraftCount, refreshAllData]);
 
   const handleOpenLinkedInComposer = (contact: Contact) => {
     setLinkedInTargetContact(contact);
@@ -257,6 +301,7 @@ const CRMMain: React.FC = () => {
         reminderCount={activeRemindersCount}
         inboxCount={inboxCount}
         dealCount={dealCount}
+        draftCount={draftCount}
       />
 
       {/* Sidebar for Desktop */}
@@ -267,6 +312,7 @@ const CRMMain: React.FC = () => {
         reminderCount={activeRemindersCount}
         inboxCount={inboxCount}
         dealCount={dealCount}
+        draftCount={draftCount}
       />
 
       {/* Main Workspace Area */}
@@ -301,7 +347,10 @@ const CRMMain: React.FC = () => {
               )}
 
               {activeView === 'pipeline' && (
-                <PipelineView onOpenContact={(c) => setSelectedContact(c)} />
+                <PipelineView
+                  onOpenContact={(c) => setSelectedContact(c)}
+                  onRefresh={refreshAllData}
+                />
               )}
 
               {activeView === 'contacts' && (
@@ -334,6 +383,14 @@ const CRMMain: React.FC = () => {
                   onSyncInbox={() => handleSyncInbox(false)}
                   isSyncing={isSyncingInbox}
                   onRefresh={refreshAllData}
+                />
+              )}
+
+              {activeView === 'drafts' && (
+                <DraftsView
+                  contacts={contacts}
+                  onResumeDraft={handleResumeDraft}
+                  onRefresh={refreshDraftCount}
                 />
               )}
 
@@ -414,10 +471,28 @@ const CRMMain: React.FC = () => {
             setIsEmailComposerOpen(false);
             setEmailTargetContact(null);
             setEmailReplySubject(undefined);
+            setResumingDraft(null);
+            refreshDraftCount();
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('crm_drafts_updated'));
+            }
           }}
           contact={emailTargetContact}
           initialSubject={emailReplySubject}
-          onEmailSent={refreshAllData}
+          onEmailSent={() => {
+            refreshAllData();
+            refreshDraftCount();
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('crm_drafts_updated'));
+            }
+          }}
+          resumeDraft={resumingDraft}
+          onDraftSaved={() => {
+            refreshDraftCount();
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('crm_drafts_updated'));
+            }
+          }}
         />
       )}
 

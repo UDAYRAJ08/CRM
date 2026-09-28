@@ -14,6 +14,28 @@ import {
   Deal,
 } from '../types/crm';
 
+// Draft email attachment descriptor
+export interface DraftAttachment {
+  name: string;
+  size: number;
+  type: string;
+  dataUrl: string; // base64 data URL stored locally
+}
+
+// Auto-saved email draft
+export interface EmailDraft {
+  id: string;
+  contact_id?: string | null;
+  recipient_email: string;
+  subject: string;
+  body: string; // may contain HTML from rich-text editor
+  ai_generated?: boolean;
+  sender_email?: string | null;
+  attachments?: DraftAttachment[];
+  saved_at: string;
+  created_at: string;
+}
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
@@ -55,6 +77,12 @@ function setLocal<T>(key: string, val: T): void {
     localStorage.setItem(`crm_${key}`, JSON.stringify(val));
   } catch (e) {
     console.error('LocalStorage error', e);
+  }
+}
+
+export function notifyCRMEvent(event: string): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(event));
   }
 }
 
@@ -225,7 +253,10 @@ export const db = {
           .select('*, company:companies(*), owner:team_members(*)')
           .single();
 
-        if (!error && data) return data;
+        if (!error && data) {
+          notifyCRMEvent('crm_contacts_updated');
+          return data;
+        }
       }
     }
 
@@ -257,6 +288,7 @@ export const db = {
       updatedList = [updatedContact, ...contacts];
     }
     setLocal('contacts', updatedList);
+    notifyCRMEvent('crm_contacts_updated');
 
     const companies = getLocal<Company[]>('companies', INITIAL_COMPANIES);
     const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
@@ -320,10 +352,11 @@ export const db = {
   async deleteContact(id: string): Promise<void> {
     if (supabase) {
       await supabase.from('contacts').delete().eq('id', id);
-      return;
+    } else {
+      const contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
+      setLocal('contacts', contacts.filter((c) => c.id !== id));
     }
-    const contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
-    setLocal('contacts', contacts.filter((c) => c.id !== id));
+    notifyCRMEvent('crm_contacts_updated');
   },
 
   async getInteractions(contactId: string): Promise<Interaction[]> {
@@ -415,7 +448,10 @@ export const db = {
         .upsert(payload)
         .select('*, contact:contacts(*), assignee:team_members(*)')
         .single();
-      if (!error && data) return data;
+      if (!error && data) {
+        notifyCRMEvent('crm_reminders_updated');
+        return data;
+      }
     }
 
     const list = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
@@ -428,6 +464,7 @@ export const db = {
       updated = [payload as Reminder, ...list];
     }
     setLocal('reminders', updated);
+    notifyCRMEvent('crm_reminders_updated');
 
     const contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
     const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
@@ -443,14 +480,24 @@ export const db = {
     const completed_at = done ? new Date().toISOString() : null;
     if (supabase) {
       await supabase.from('reminders').update({ done, completed_at }).eq('id', id);
-      return;
+    } else {
+      const list = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
+      setLocal(
+        'reminders',
+        list.map((r) => (r.id === id ? { ...r, done, completed_at } : r))
+      );
     }
+    notifyCRMEvent('crm_reminders_updated');
+  },
 
-    const list = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
-    setLocal(
-      'reminders',
-      list.map((r) => (r.id === id ? { ...r, done, completed_at } : r))
-    );
+  async deleteReminder(id: string): Promise<void> {
+    if (supabase) {
+      await supabase.from('reminders').delete().eq('id', id);
+    } else {
+      const list = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
+      setLocal('reminders', list.filter((r) => r.id !== id));
+    }
+    notifyCRMEvent('crm_reminders_updated');
   },
 
   async getEmails(contactId?: string): Promise<EmailRecord[]> {
@@ -1069,6 +1116,7 @@ export const db = {
         `)
         .single();
       if (!error && data) {
+        notifyCRMEvent('crm_deals_updated');
         return {
           ...data,
           contact_name: data.contact?.name,
@@ -1081,6 +1129,7 @@ export const db = {
     const list = getLocal<Deal[]>('deals', INITIAL_DEALS);
     const updated = [newDeal, ...list];
     setLocal('deals', updated);
+    notifyCRMEvent('crm_deals_updated');
     return newDeal;
   },
 
@@ -1104,6 +1153,7 @@ export const db = {
         `)
         .single();
       if (!error && data) {
+        notifyCRMEvent('crm_deals_updated');
         return {
           ...data,
           contact_name: data.contact?.name,
@@ -1123,6 +1173,7 @@ export const db = {
       return d;
     });
     setLocal('deals', updated);
+    notifyCRMEvent('crm_deals_updated');
     return updatedDeal;
   },
 
@@ -1132,6 +1183,64 @@ export const db = {
     }
     const list = getLocal<Deal[]>('deals', INITIAL_DEALS);
     setLocal('deals', list.filter((d) => d.id !== id));
+    notifyCRMEvent('crm_deals_updated');
+  },
+
+  // ===========================================================================
+  // DRAFT MANAGEMENT
+  // ===========================================================================
+
+  async getDrafts(): Promise<EmailDraft[]> {
+    // Drafts are stored only in localStorage (attachments can be large)
+    const drafts = getLocal<EmailDraft[]>('email_drafts', []);
+    return drafts.sort(
+      (a, b) => new Date(b.saved_at).getTime() - new Date(a.saved_at).getTime()
+    );
+  },
+
+  async saveDraft(draft: Omit<EmailDraft, 'id' | 'created_at' | 'saved_at'> & { id?: string }): Promise<EmailDraft> {
+    const drafts = getLocal<EmailDraft[]>('email_drafts', []);
+    const now = new Date().toISOString();
+    const existingIdx = draft.id ? drafts.findIndex((d) => d.id === draft.id) : -1;
+
+    let saved: EmailDraft;
+    if (existingIdx >= 0) {
+      saved = { ...drafts[existingIdx], ...draft, saved_at: now } as EmailDraft;
+      const updated = [...drafts];
+      updated[existingIdx] = saved;
+      setLocal('email_drafts', updated);
+    } else {
+      saved = {
+        id: draft.id || crypto.randomUUID(),
+        contact_id: draft.contact_id || null,
+        recipient_email: draft.recipient_email || '',
+        subject: draft.subject || '',
+        body: draft.body || '',
+        ai_generated: draft.ai_generated || false,
+        sender_email: draft.sender_email || null,
+        attachments: draft.attachments || [],
+        saved_at: now,
+        created_at: now,
+      };
+      setLocal('email_drafts', [saved, ...drafts]);
+    }
+    notifyCRMEvent('crm_drafts_updated');
+    return saved;
+  },
+
+  async deleteDraft(id: string): Promise<void> {
+    const drafts = getLocal<EmailDraft[]>('email_drafts', []);
+    setLocal('email_drafts', drafts.filter((d) => d.id !== id));
+    notifyCRMEvent('crm_drafts_updated');
+  },
+
+  getDraftCount(): number {
+    try {
+      const drafts = getLocal<EmailDraft[]>('email_drafts', []);
+      return drafts.length;
+    } catch {
+      return 0;
+    }
   },
 
   clearAllLocalData(): void {
@@ -1144,6 +1253,7 @@ export const db = {
     localStorage.removeItem('crm_import_logs');
     localStorage.removeItem('crm_team_members');
     localStorage.removeItem('crm_active_member_id');
+    localStorage.removeItem('crm_email_drafts');
   },
 };
 

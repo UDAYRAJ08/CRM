@@ -9,6 +9,7 @@ import {
   Sparkles,
   LayoutDashboard,
   DollarSign,
+  FileEdit,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -18,6 +19,7 @@ interface SidebarProps {
   reminderCount: number;
   inboxCount?: number;
   dealCount?: number;
+  draftCount?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -27,6 +29,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   reminderCount,
   inboxCount = 0,
   dealCount = 0,
+  draftCount = 0,
 }) => {
   const navItems = [
     {
@@ -53,6 +56,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Inbox className="w-4 h-4" />,
       badge: inboxCount > 0 ? inboxCount : undefined,
       badgeColor: 'bg-emerald-100 text-emerald-800 font-bold',
+    },
+    {
+      id: 'drafts',
+      label: 'Email Drafts',
+      icon: <FileEdit className="w-4 h-4" />,
+      badge: draftCount > 0 ? draftCount : undefined,
+      badgeColor: 'bg-amber-100 text-amber-700 font-bold',
     },
     {
       id: 'reminders',

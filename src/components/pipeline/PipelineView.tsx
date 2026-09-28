@@ -35,6 +35,7 @@ import { format, isToday, isPast, addMonths, isSameMonth } from 'date-fns';
 
 interface PipelineViewProps {
   onOpenContact?: (contact: Contact) => void;
+  onRefresh?: () => void;
 }
 
 type TabType =
@@ -50,7 +51,7 @@ type ViewMode = 'table' | 'kanban';
 type SortField = 'name' | 'amount' | 'stage' | 'date';
 type SortOrder = 'asc' | 'desc';
 
-export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => {
+export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRefresh }) => {
   const { activeMember } = useTeam();
   const { success, error } = useToast();
 
@@ -93,6 +94,11 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
 
   useEffect(() => {
     loadDeals();
+    const handleDealsUpdate = () => {
+      loadDeals();
+    };
+    window.addEventListener('crm_deals_updated', handleDealsUpdate);
+    return () => window.removeEventListener('crm_deals_updated', handleDealsUpdate);
   }, []);
 
   // Filter and sort deals
@@ -171,11 +177,13 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
   const handleDeleteDeal = async (deal: Deal) => {
     if (!confirm(`Are you sure you want to delete "${deal.title}"?`)) return;
     try {
-      await db.deleteDeal(deal.id);
       setDeals((prev) => prev.filter((d) => d.id !== deal.id));
       setSelectedDeals((prev) => prev.filter((item) => item !== deal.id));
+      await db.deleteDeal(deal.id);
       success('Deal Deleted', `Removed "${deal.title}".`);
+      onRefresh?.();
     } catch (err: any) {
+      loadDeals();
       error('Failed to delete deal', err.message);
     }
   };
@@ -183,11 +191,14 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
   const handleBulkDelete = async () => {
     if (!confirm(`Delete ${selectedDeals.length} selected deals?`)) return;
     try {
-      await Promise.all(selectedDeals.map((id) => db.deleteDeal(id)));
-      setDeals((prev) => prev.filter((d) => !selectedDeals.includes(d.id)));
+      const idsToDelete = [...selectedDeals];
+      setDeals((prev) => prev.filter((d) => !idsToDelete.includes(d.id)));
       setSelectedDeals([]);
+      await Promise.all(idsToDelete.map((id) => db.deleteDeal(id)));
       success('Deals Deleted', 'Selected deals have been deleted.');
+      onRefresh?.();
     } catch (err: any) {
+      loadDeals();
       error('Failed to delete deals', err.message);
     }
   };
@@ -829,7 +840,10 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact }) => 
           setEditingDeal(null);
         }}
         dealToEdit={editingDeal}
-        onSuccess={loadDeals}
+        onSuccess={() => {
+          loadDeals();
+          onRefresh?.();
+        }}
       />
     </div>
   );

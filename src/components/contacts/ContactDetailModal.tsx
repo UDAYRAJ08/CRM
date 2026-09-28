@@ -183,10 +183,10 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
       return;
     }
     if (window.confirm(`Are you sure you want to delete ${contact.name}?`)) {
+      onClose();
       await db.deleteContact(contact.id);
       success('Contact Deleted', `${contact.name} was removed.`);
       onContactUpdated();
-      onClose();
     }
   };
 
