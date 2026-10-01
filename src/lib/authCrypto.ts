@@ -107,3 +107,88 @@ export async function verifyEmailCredentials(
 
   return true;
 }
+
+// ------------------------------------------------------------------------------
+// API KEY MASKING & STORAGE ENCRYPTION
+// ------------------------------------------------------------------------------
+
+const SECRET_SALT = 'crm_vault_salt_secure_2026_';
+const CIPHER_PREFIX = 'enc_v1:';
+
+/**
+ * Permanently masks an API key for safe UI display so the raw secret is never shown.
+ * e.g. "sk-ant-api03-1234567890abcdef" -> "sk-ant-api03-••••••••••••cdef"
+ */
+export function maskApiKey(key: string): string {
+  if (!key) return '';
+  const trimmed = key.trim();
+  if (!trimmed) return '';
+  if (trimmed.includes('••••')) return trimmed; // already masked
+
+  if (trimmed.length <= 8) {
+    return '••••••••••••';
+  }
+
+  // Detect common prefix
+  let prefixLength = 4;
+  if (trimmed.startsWith('sk-ant-api03-')) prefixLength = 13;
+  else if (trimmed.startsWith('sk-proj-')) prefixLength = 8;
+  else if (trimmed.startsWith('sk-or-v1-')) prefixLength = 9;
+  else if (trimmed.startsWith('AIzaSy')) prefixLength = 6;
+  else if (trimmed.startsWith('AQ.')) prefixLength = 6;
+  else if (trimmed.startsWith('gsk_')) prefixLength = 4;
+  else if (trimmed.startsWith('re_')) prefixLength = 3;
+  else if (trimmed.startsWith('ck_')) prefixLength = 3;
+
+  const prefix = trimmed.slice(0, prefixLength);
+  const suffix = trimmed.slice(-4);
+  return `${prefix}••••••••••••${suffix}`;
+}
+
+/**
+ * Obfuscates and encrypts a sensitive API secret before writing to localStorage.
+ */
+export function encryptSecret(plainText: string): string {
+  if (!plainText) return '';
+  const trimmed = plainText.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith(CIPHER_PREFIX)) return trimmed; // already encrypted
+
+  try {
+    const salt = SECRET_SALT;
+    let result = '';
+    for (let i = 0; i < trimmed.length; i++) {
+      const charCode = trimmed.charCodeAt(i) ^ salt.charCodeAt(i % salt.length);
+      result += String.fromCharCode(charCode);
+    }
+    return `${CIPHER_PREFIX}${btoa(result)}`;
+  } catch {
+    return trimmed;
+  }
+}
+
+/**
+ * Decrypts a stored secret from localStorage for authorized internal usage.
+ */
+export function decryptSecret(cipherText: string): string {
+  if (!cipherText) return '';
+  const trimmed = cipherText.trim();
+  if (!trimmed) return '';
+  if (!trimmed.startsWith(CIPHER_PREFIX)) {
+    return trimmed; // Plain text fallback from earlier storage
+  }
+
+  try {
+    const raw = atob(trimmed.slice(CIPHER_PREFIX.length));
+    const salt = SECRET_SALT;
+    let result = '';
+    for (let i = 0; i < raw.length; i++) {
+      const charCode = raw.charCodeAt(i) ^ salt.charCodeAt(i % salt.length);
+      result += String.fromCharCode(charCode);
+    }
+    return result;
+  } catch {
+    return trimmed;
+  }
+}
+

@@ -20,6 +20,7 @@ interface SidebarProps {
   inboxCount?: number;
   dealCount?: number;
   draftCount?: number;
+  onOpenAISettings?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -30,6 +31,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   inboxCount = 0,
   dealCount = 0,
   draftCount = 0,
+  onOpenAISettings,
 }) => {
   const navItems = [
     {
@@ -147,15 +149,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer Info Box */}
       <div className="p-4 border-t border-slate-100">
-        <div className="p-3 rounded-xl bg-gradient-to-br from-indigo-500/5 to-purple-500/5 border border-indigo-100/80">
-          <div className="flex items-center gap-2 text-xs font-bold text-indigo-900">
-            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-            <span>AI Assistant Enabled</span>
+        <button
+          type="button"
+          onClick={onOpenAISettings}
+          className="w-full text-left p-3 rounded-xl bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-slate-50 border border-indigo-100/90 hover:border-indigo-300 hover:bg-indigo-50/60 transition group cursor-pointer"
+          title="Configure Multi-AI API Keys & Services"
+        >
+          <div className="flex items-center justify-between text-xs font-bold text-indigo-950">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600 group-hover:scale-110 transition-transform" />
+              <span>Multi-AI Engine</span>
+            </div>
+            <span className="text-[10px] text-indigo-600 font-semibold group-hover:underline">
+              Settings &rarr;
+            </span>
           </div>
           <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-            Claude Sonnet drafts personalized emails directly in the contact compose view.
+            OpenAI, Claude, Gemini & Groq write professional bulk emails for your services.
           </p>
-        </div>
+        </button>
       </div>
     </aside>
   );

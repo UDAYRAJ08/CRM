@@ -26,6 +26,7 @@ export interface Permissions {
   canExportData: boolean;
   canSendEmail: boolean;
   canChangeStatus: boolean;
+  canManageAIKeys: boolean;
 }
 
 export function usePermissions(): Permissions {
@@ -89,5 +90,7 @@ export function usePermissions(): Permissions {
     canSendEmail: true,
     // Status transitions: allowed for Admins & Managers, employees can advance workflow
     canChangeStatus: true,
+    // AI API Keys configuration restricted to Admins & Owners only
+    canManageAIKeys: isAdmin,
   };
 }

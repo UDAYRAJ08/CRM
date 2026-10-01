@@ -18,8 +18,21 @@ import {
   User,
   Radio,
   Sliders,
+  Sparkles,
+  Cpu,
+  Lock,
 } from 'lucide-react';
 import { sendEmailDirectly } from '../../lib/emailService';
+import { AISettingsModal } from './AISettingsModal';
+import { usePermissions } from '../../hooks/usePermissions';
+import {
+  getActiveAIProvider,
+  AI_PROVIDERS,
+  AI_PROVIDER_ORDER,
+  getAIProviderKey,
+  setAIProviderKey,
+  maskApiKey,
+} from '../../lib/aiConfig';
 
 interface EmailSettingsModalProps {
   isOpen: boolean;
@@ -33,19 +46,23 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
   const { user } = useAuth();
   const { activeMember } = useTeam();
   const { success, error, info } = useToast();
+  const { isAdmin, canManageAIKeys } = usePermissions();
 
   const activeUserEmail = (activeMember?.email || user?.email || '').trim();
   const activeUserName = (activeMember?.name || user?.user_metadata?.full_name || 'Team Member').trim();
 
   const [resendApiKey, setResendApiKey] = useState('');
+  const [isEditingResendKey, setIsEditingResendKey] = useState(false);
   const [senderEmail, setSenderEmail] = useState('');
   const [companyDomain, setCompanyDomain] = useState('');
   const [useComposio, setUseComposio] = useState(false);
   const [composioApiKey, setComposioApiKey] = useState('');
+  const [isEditingComposioKey, setIsEditingComposioKey] = useState(false);
   const [anthropicApiKey, setAnthropicApiKey] = useState('');
   const [testRecipient, setTestRecipient] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [isAISettingsOpen, setIsAISettingsOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -101,6 +118,7 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
 
     if (anthropicApiKey.trim()) {
       localStorage.setItem('crm_anthropic_api_key', anthropicApiKey.trim());
+      setAIProviderKey('anthropic', anthropicApiKey.trim());
     } else {
       localStorage.removeItem('crm_anthropic_api_key');
     }
@@ -154,9 +172,10 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
   const isSandbox = senderEmail.includes('onboarding@resend.dev');
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
       maxWidth="xl"
       title={
         <div className="flex items-center gap-2.5">
@@ -250,15 +269,68 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
             </a>
           </div>
 
-          <Input
-            label="Resend API Key"
-            placeholder="re_123456789..."
-            type="password"
-            value={resendApiKey}
-            onChange={(e) => setResendApiKey(e.target.value)}
-            leftIcon={<Key className="w-4 h-4" />}
-            helperText="Provides high-throughput multi-user email delivery without account lockout."
-          />
+          {resendApiKey && !isEditingResendKey ? (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Resend API Key
+              </label>
+              <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Lock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="font-mono text-slate-800 font-semibold tracking-wider truncate">
+                    {maskApiKey(resendApiKey)}
+                  </span>
+                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 shrink-0 font-medium">
+                    Masked & Encrypted
+                  </span>
+                </div>
+                {isAdmin && (
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingResendKey(true)}
+                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 bg-white hover:bg-indigo-50 px-2 py-0.5 rounded-lg border border-slate-200 transition cursor-pointer"
+                    >
+                      Change
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResendApiKey('');
+                        localStorage.removeItem('crm_resend_api_key');
+                        setIsEditingResendKey(true);
+                      }}
+                      className="text-[11px] font-semibold text-red-600 hover:text-red-800 bg-white hover:bg-red-50 px-2 py-0.5 rounded-lg border border-slate-200 transition cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="relative">
+              <Input
+                label="Resend API Key"
+                placeholder={resendApiKey ? 'Enter new key to replace...' : 're_123456789...'}
+                type="password"
+                value={isEditingResendKey && resendApiKey.includes('••••') ? '' : resendApiKey}
+                onChange={(e) => setResendApiKey(e.target.value)}
+                leftIcon={<Key className="w-4 h-4" />}
+                disabled={!isAdmin}
+                helperText="Provides high-throughput multi-user email delivery without account lockout."
+              />
+              {resendApiKey && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingResendKey(false)}
+                  className="absolute right-3 top-8 text-[11px] text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
@@ -308,15 +380,68 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
               <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900">
                 ⚠️ <strong>Note:</strong> When Composio is enabled, all emails will be dispatched via your single connected personal Outlook account rather than each user's separate address.
               </div>
-              <Input
-                label="Composio API Key"
-                placeholder="cmp_..."
-                type="password"
-                value={composioApiKey}
-                onChange={(e) => setComposioApiKey(e.target.value)}
-                leftIcon={<Key className="w-4 h-4" />}
-                helperText="Required only if Composio routing is switched on."
-              />
+              {composioApiKey && !isEditingComposioKey ? (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Composio API Key
+                  </label>
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Lock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span className="font-mono text-slate-800 font-semibold tracking-wider truncate">
+                        {maskApiKey(composioApiKey)}
+                      </span>
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 shrink-0 font-medium">
+                        Masked
+                      </span>
+                    </div>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingComposioKey(true)}
+                          className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 bg-white hover:bg-indigo-50 px-2 py-0.5 rounded-lg border border-slate-200 transition cursor-pointer"
+                        >
+                          Change
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setComposioApiKey('');
+                            localStorage.removeItem('crm_composio_api_key');
+                            setIsEditingComposioKey(true);
+                          }}
+                          className="text-[11px] font-semibold text-red-600 hover:text-red-800 bg-white hover:bg-red-50 px-2 py-0.5 rounded-lg border border-slate-200 transition cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Input
+                    label="Composio API Key"
+                    placeholder={composioApiKey ? 'Enter new key to replace...' : 'cmp_...'}
+                    type="password"
+                    value={isEditingComposioKey && composioApiKey.includes('••••') ? '' : composioApiKey}
+                    onChange={(e) => setComposioApiKey(e.target.value)}
+                    leftIcon={<Key className="w-4 h-4" />}
+                    disabled={!isAdmin}
+                    helperText="Required only if Composio routing is switched on."
+                  />
+                  {composioApiKey && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingComposioKey(false)}
+                      className="absolute right-3 top-8 text-[11px] text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -366,17 +491,64 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
           )}
         </div>
 
-        {/* Optional AI Assistant API Key */}
-        <div className="pt-2 border-t border-slate-100">
-          <Input
-            label="Anthropic Claude API Key (Optional)"
-            placeholder="sk-ant-api03-..."
-            type="password"
-            value={anthropicApiKey}
-            onChange={(e) => setAnthropicApiKey(e.target.value)}
-            leftIcon={<Key className="w-4 h-4" />}
-            helperText="Optional: If you want live Anthropic Claude generation in the Email Composer"
-          />
+        {/* Multi-AI System & API Key Engine */}
+        <div className="p-3.5 bg-gradient-to-br from-indigo-50/80 via-purple-50/50 to-white border border-indigo-200/90 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                  <span>Multi-AI System & API Key Engine</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 font-semibold">
+                    {AI_PROVIDERS[getActiveAIProvider()]?.shortName} Active
+                  </span>
+                </h4>
+                <p className="text-[11px] text-indigo-700">
+                  Connect multiple AI systems (OpenAI, Claude, Gemini, Groq, DeepSeek) to write bulk emails.
+                </p>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAISettingsOpen(true)}
+              leftIcon={<Cpu className="w-3.5 h-3.5 text-indigo-600" />}
+              className="text-xs border-indigo-200 hover:bg-indigo-50 bg-white"
+            >
+              Configure AI Systems ({AI_PROVIDER_ORDER.filter((id) => Boolean(getAIProviderKey(id))).length}/6)
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pt-1">
+            {AI_PROVIDER_ORDER.map((id) => {
+              const meta = AI_PROVIDERS[id];
+              const hasKey = Boolean(getAIProviderKey(id));
+              const isActive = getActiveAIProvider() === id;
+              return (
+                <div
+                  key={id}
+                  className={`p-2 rounded-xl border text-xs flex items-center justify-between ${
+                    isActive
+                      ? 'bg-indigo-50 border-indigo-300 font-bold text-indigo-950'
+                      : hasKey
+                      ? 'bg-white border-slate-200 text-slate-800'
+                      : 'bg-slate-50/50 border-slate-200/60 text-slate-400'
+                  }`}
+                >
+                  <span className="truncate">{meta.shortName}</span>
+                  {hasKey ? (
+                    <span className="text-[10px] font-semibold text-emerald-600">✓ Ready</span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">No key</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Footer */}
@@ -397,5 +569,11 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
         </div>
       </form>
     </Modal>
+
+    <AISettingsModal
+      isOpen={isAISettingsOpen}
+      onClose={() => setIsAISettingsOpen(false)}
+    />
+  </>
   );
 };

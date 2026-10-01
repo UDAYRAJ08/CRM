@@ -26,11 +26,18 @@ A lightweight, collaborative internal CRM web app for small teams (3–10 people
    - Click-to-call direct dialer (`tel:`).
    - Detailed contact profile drawer with chronological interaction timeline (calls, meetings, notes).
 
-4. **AI-Assisted Email Composer & Bulk Campaigns**:
-   - **Claude AI Assistant**: Gathers contact details (name, company, title, stage) + past interaction notes to draft personalized, context-aware emails.
-   - Tone selector (Professional, Friendly, Concise, Persuasive) + custom instruction prompt.
-   - Review and edit drafts before sending.
-   - **Bulk Email**: Send templated emails with merge tags (`{{name}}`, `{{first_name}}`, `{{company}}`, `{{title}}`, `{{email}}`) with live preview and queue execution.
+4. **Multi-AI Engine & Professional Bulk Outreach Generator**:
+   - **Multi-AI System Integration**: Seamlessly connect API keys from multiple premier AI providers:
+     - **Anthropic Claude** (Claude 3.5 Sonnet / Haiku / Opus)
+     - **OpenAI** (GPT-4o / GPT-4o-mini / o3-mini)
+     - **Google Gemini** (Gemini 1.5 Flash / Pro / 2.0 Flash)
+     - **Groq** (Llama 3.3 70B / 8B - ultra-fast LPU inference)
+     - **DeepSeek** (DeepSeek V3 / R1)
+     - **OpenRouter** (Unified gateway to 200+ models)
+   - **Company & Service Profile**: Configure your agency/company services (e.g. Ingversions Digital dedicated sprint teams, web/mobile development, deadline support) so the AI writes hyper-relevant B2B emails tailored to what you deliver.
+   - **AI Bulk Email Campaign Generator**: Generate 3 high-converting B2B outreach variations with dynamic merge tags (`{{first_name}}`, `{{company}}`, `{{title}}`) in 1 click.
+   - **Automated Failover & Live Key Tester**: Live connection testing with latency benchmarking and auto-failover to backup keys if a provider is rate-limited.
+   - **Personalized 1-on-1 AI Assistant**: Injects recipient profile + past interactions for custom proposal drafting.
 
 5. **LinkedIn Direct Outreach & Automated Connection Dispatcher**:
    - **⚡ 1-Click Auto Send Invites**: Automated background dispatch of connection requests with personalized notes (<300 chars) using your authenticated session.

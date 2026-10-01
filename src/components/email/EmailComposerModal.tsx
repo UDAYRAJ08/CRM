@@ -61,6 +61,20 @@ interface TemplateChip {
 
 const TEMPLATE_CHIPS: TemplateChip[] = [
   {
+    id: 'agency_overflow',
+    label: 'Agency Overflow & CRO',
+    icon: '🎯',
+    iconBg: 'bg-indigo-100',
+    iconColor: 'text-indigo-600',
+    btnClass: 'border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold',
+    getSubject: (c) => `Specialist implementation capacity for ${c.company?.name || 'your team'}`,
+    getBody: (c, name) => {
+      const first = c.name.split(' ')[0];
+      const comp  = c.company?.name || 'your team';
+      return `Hi ${first},\n\nI’m reaching out because ${comp}’s Shopify Plus and commerce work appears to sit at the intersection of strategy, experience, and technical delivery. I wanted to ask whether your teams ever need additional specialist capacity for the implementation and experimentation layer of client work.\n\nIngversions Digital helps ecommerce teams execute Shopify CRO and A/B testing, conversion-focused theme and landing-page work, analytics QA, and storefront performance improvements. We can take an approved hypothesis or design direction, build the required change, verify tracking and cross-device behavior, and support the QA needed before launch.\n\nFor ${comp}, this could be useful as discreet overflow or a scoped delivery partner when internal teams are balancing larger commerce transformations. I’d be happy to share how we typically work alongside an existing agency team without interrupting its client relationship or process.\n\nWould a short conversation be relevant for your talent or delivery planning?\n\nBest regards,\n${name}\nIngversions Digital`;
+    },
+  },
+  {
     id: 'capabilities',
     label: 'Team & Capabilities',
     icon: '⚡',

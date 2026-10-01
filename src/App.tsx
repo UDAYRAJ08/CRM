@@ -15,6 +15,7 @@ import { ImportHistoryView } from './components/import/ImportHistoryView';
 import { EmailComposerModal } from './components/email/EmailComposerModal';
 import { BulkEmailModal, BulkTemplateKey } from './components/email/BulkEmailModal';
 import { EmailSettingsModal } from './components/email/EmailSettingsModal';
+import { AISettingsModal } from './components/email/AISettingsModal';
 import { DraftsView } from './components/email/DraftsView';
 import { RemindersDashboard } from './components/reminders/RemindersDashboard';
 import { ReminderFormModal } from './components/reminders/ReminderFormModal';
@@ -71,6 +72,7 @@ const CRMMain: React.FC = () => {
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [reminderTargetContact, setReminderTargetContact] = useState<Contact | null>(null);
   const [isEmailSettingsOpen, setIsEmailSettingsOpen] = useState(false);
+  const [isAISettingsOpen, setIsAISettingsOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [draftCount, setDraftCount] = useState(0);
   const [resumingDraft, setResumingDraft] = useState<EmailDraft | null>(null);
@@ -313,6 +315,7 @@ const CRMMain: React.FC = () => {
         inboxCount={inboxCount}
         dealCount={dealCount}
         draftCount={draftCount}
+        onOpenAISettings={() => setIsAISettingsOpen(true)}
       />
 
       {/* Main Workspace Area */}
@@ -325,6 +328,7 @@ const CRMMain: React.FC = () => {
           isSyncingInbox={isSyncingInbox}
           onOpenImport={() => setIsImportModalOpen(true)}
           onOpenEmailSettings={() => setIsEmailSettingsOpen(true)}
+          onOpenAISettings={() => setIsAISettingsOpen(true)}
           onOpenInvite={() => setIsInviteModalOpen(true)}
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
           onNavigateHome={() => handleNavigate('dashboard')}
@@ -534,6 +538,11 @@ const CRMMain: React.FC = () => {
       <EmailSettingsModal
         isOpen={isEmailSettingsOpen}
         onClose={() => setIsEmailSettingsOpen(false)}
+      />
+
+      <AISettingsModal
+        isOpen={isAISettingsOpen}
+        onClose={() => setIsAISettingsOpen(false)}
       />
 
       <InviteModal

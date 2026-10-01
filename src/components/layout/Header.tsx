@@ -21,12 +21,14 @@ import {
   Shield,
   Menu,
   Layers,
+  Sparkles,
 } from 'lucide-react';
 
 interface HeaderProps {
   onOpenImport: () => void;
   onOpenAddContact: () => void;
   onOpenEmailSettings?: () => void;
+  onOpenAISettings?: () => void;
   onOpenInvite?: () => void;
   onSyncInbox?: () => Promise<void>;
   isSyncingInbox?: boolean;
@@ -41,6 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenImport,
   onOpenAddContact,
   onOpenEmailSettings,
+  onOpenAISettings,
   onOpenInvite,
   onSyncInbox,
   isSyncingInbox = false,
@@ -194,6 +197,18 @@ export const Header: React.FC<HeaderProps> = ({
             title="Email & API Delivery Settings"
           >
             <Settings className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* AI Engine & API Keys button */}
+        {onOpenAISettings && (
+          <button
+            onClick={onOpenAISettings}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition text-xs font-bold shadow-2xs cursor-pointer"
+            title="Configure Multi-AI Systems (OpenAI, Claude, Gemini, Groq, DeepSeek) & Service Profile"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="hidden md:inline">AI Keys</span>
           </button>
         )}
 

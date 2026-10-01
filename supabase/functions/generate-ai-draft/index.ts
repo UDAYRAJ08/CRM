@@ -1,5 +1,6 @@
 // Supabase Edge Function: generate-ai-draft
-// Calls Anthropic Claude API (model: claude-sonnet-4-6 / claude-3-5-sonnet-latest)
+// Secure Multi-AI Backend Proxy (Anthropic, OpenAI, Gemini, Groq, DeepSeek)
+// Keeps all API keys safely stored on the server side so client browsers never expose raw keys.
 // Deno runtime
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -9,8 +10,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-interface AIDraftRequest {
-  contactName: string;
+interface AIProxyRequest {
+  provider?: "anthropic" | "openai" | "gemini" | "groq" | "deepseek" | "openrouter";
+  model?: string;
+  systemPrompt?: string;
+  userPrompt?: string;
+  temperature?: number;
+  maxTokens?: number;
+
+  // Legacy format compatibility
+  contactName?: string;
   contactEmail?: string;
   companyName?: string;
   contactTitle?: string;
@@ -20,8 +29,8 @@ interface AIDraftRequest {
     content: string;
     created_at: string;
   }>;
-  senderName: string;
-  goal: string; // e.g. "follow up after demo", "cold intro", "check in on proposal"
+  senderName?: string;
+  goal?: string;
   tone?: "professional" | "friendly" | "concise" | "persuasive";
   customInstructions?: string;
 }
@@ -33,118 +42,282 @@ serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({
-          error: "ANTHROPIC_API_KEY is not set in Supabase Edge Function secrets",
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const payload: AIProxyRequest = await req.json();
 
-    const payload: AIDraftRequest = await req.json();
+    // Determine target provider
+    const provider = payload.provider || "anthropic";
 
-    const interactionsContext = payload.recentInteractions && payload.recentInteractions.length > 0
-      ? payload.recentInteractions
-          .map(
-            (i) =>
-              `- [${new Date(i.created_at).toLocaleDateString()}] ${i.type.toUpperCase()}: ${i.content}`
-          )
-          .join("\n")
-      : "No previous interactions logged.";
+    // Build prompts if legacy parameters were passed
+    let systemPrompt = payload.systemPrompt || "";
+    let userPrompt = payload.userPrompt || "";
 
-    const systemPrompt = `You are an expert sales communication assistant writing high-converting, personalized B2B emails for a small team CRM.
-Key rules:
-1. Open the email with an engaging greeting like "Hyy [First Name]," followed immediately by a direct value hook: "If you are looking for a team to help you execute tasks and hit your upcoming project deadlines on time, we would love to connect..."
-2. NEVER use cliché openers like "I hope this email finds you well" or "I hope you are having a wonderful week".
-3. Focus on delivering execution speed, removing bottlenecks, meeting project milestones, and delivering high quality work.
-4. Output format: Return a JSON object with strictly two keys: "subject" and "body".
-Do not wrap in markdown quotes if possible, return valid JSON.`;
+    if (!userPrompt && payload.contactName) {
+      const interactionsContext = payload.recentInteractions && payload.recentInteractions.length > 0
+        ? payload.recentInteractions
+            .map(
+              (i) =>
+                `- [${new Date(i.created_at).toLocaleDateString()}] ${i.type.toUpperCase()}: ${i.content}`
+            )
+            .join("\n")
+        : "No previous interactions logged.";
 
-    const userPrompt = `Generate an email draft with the following context:
+      systemPrompt = `You are an expert sales communication assistant writing high-converting, personalized B2B emails for a small team CRM.
+Rules:
+1. Open with an engaging greeting like "Hi [First Name]," followed immediately by a direct value hook regarding helping them execute tasks and hit upcoming project deadlines on time.
+2. NEVER use cliché openers like "I hope this email finds you well".
+3. Return strictly a JSON object with two keys: "subject" and "body".`;
 
+      userPrompt = `Generate an email draft with the following context:
 Recipient:
 - Name: ${payload.contactName}
 - Title: ${payload.contactTitle || "Not specified"}
 - Company: ${payload.companyName || "Their organization"}
-- Status / Stage: ${payload.contactStatus || "General"}
+- Status: ${payload.contactStatus || "General"}
 
 Sender:
-- Name: ${payload.senderName}
+- Name: ${payload.senderName || "CRM Team"}
 
-Recent Interaction History:
+History:
 ${interactionsContext}
 
-Goal / Purpose:
-${payload.goal}
+Goal:
+${payload.goal || "Follow up on project deadlines"}
 
 Tone:
 ${payload.tone || "professional"}
 
-Additional Instructions:
+Additional Notes:
 ${payload.customInstructions || "None"}
 
-Please produce an appropriate, punchy subject line and email body (with paragraphs separated by standard line breaks). Make sure the opening leads with helping them handle tasks and meet project deadlines. Sign off with ${payload.senderName}.
-Return format:
+Return JSON format:
 {
   "subject": "...",
   "body": "..."
 }`;
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-3-5-sonnet-latest",
-        max_tokens: 1024,
-        temperature: 0.7,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return new Response(
-        JSON.stringify({ error: `Claude API Error: ${errorText}` }),
-        { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
-    const data = await response.json();
-    const rawContent = data.content?.[0]?.text || "";
+    let rawText = "";
 
-    // Parse JSON safely from Claude's response
-    let parsedResult;
+    // 1. ANTHROPIC CLAUDE PROXY
+    if (provider === "anthropic") {
+      const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({ error: "ANTHROPIC_API_KEY is not configured in server secrets" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const model = payload.model || "claude-3-5-sonnet-latest";
+      const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: payload.maxTokens || 2048,
+          temperature: payload.temperature ?? 0.7,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
+
+      if (!claudeRes.ok) {
+        const errText = await claudeRes.text();
+        return new Response(
+          JSON.stringify({ error: `Claude API Error: ${errText}` }),
+          { status: claudeRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const data = await claudeRes.json();
+      rawText = data.content?.[0]?.text || "";
+    }
+
+    // 2. OPENAI PROXY
+    else if (provider === "openai") {
+      const apiKey = Deno.env.get("OPENAI_API_KEY");
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({ error: "OPENAI_API_KEY is not configured in server secrets" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const model = payload.model || "gpt-4o";
+      const openAiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: payload.temperature ?? 0.7,
+          max_tokens: payload.maxTokens || 2048,
+        }),
+      });
+
+      if (!openAiRes.ok) {
+        const errText = await openAiRes.text();
+        return new Response(
+          JSON.stringify({ error: `OpenAI Error: ${errText}` }),
+          { status: openAiRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const data = await openAiRes.json();
+      rawText = data.choices?.[0]?.message?.content || "";
+    }
+
+    // 3. GOOGLE GEMINI PROXY
+    else if (provider === "gemini") {
+      const apiKey = Deno.env.get("GEMINI_API_KEY");
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({ error: "GEMINI_API_KEY is not configured in server secrets" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const model = payload.model || "gemini-1.5-flash";
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+      const geminiRes = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          generationConfig: {
+            temperature: payload.temperature ?? 0.7,
+            maxOutputTokens: payload.maxTokens || 2048,
+          },
+        }),
+      });
+
+      if (!geminiRes.ok) {
+        const errText = await geminiRes.text();
+        return new Response(
+          JSON.stringify({ error: `Gemini Error: ${errText}` }),
+          { status: geminiRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const data = await geminiRes.json();
+      rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    }
+
+    // 4. GROQ PROXY
+    else if (provider === "groq") {
+      const apiKey = Deno.env.get("GROQ_API_KEY");
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({ error: "GROQ_API_KEY is not configured in server secrets" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const model = payload.model || "llama-3.3-70b-versatile";
+      const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: payload.temperature ?? 0.7,
+          max_tokens: payload.maxTokens || 2048,
+        }),
+      });
+
+      if (!groqRes.ok) {
+        const errText = await groqRes.text();
+        return new Response(
+          JSON.stringify({ error: `Groq Error: ${errText}` }),
+          { status: groqRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const data = await groqRes.json();
+      rawText = data.choices?.[0]?.message?.content || "";
+    }
+
+    // 5. DEEPSEEK PROXY
+    else if (provider === "deepseek") {
+      const apiKey = Deno.env.get("DEEPSEEK_API_KEY");
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({ error: "DEEPSEEK_API_KEY is not configured in server secrets" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const model = payload.model || "deepseek-chat";
+      const deepseekRes = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: payload.temperature ?? 0.7,
+          max_tokens: payload.maxTokens || 2048,
+        }),
+      });
+
+      if (!deepseekRes.ok) {
+        const errText = await deepseekRes.text();
+        return new Response(
+          JSON.stringify({ error: `DeepSeek Error: ${errText}` }),
+          { status: deepseekRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const data = await deepseekRes.json();
+      rawText = data.choices?.[0]?.message?.content || "";
+    }
+
+    // Parse JSON safely from output if available
+    let parsedSubject = "";
+    let parsedBody = "";
+
     try {
-      // Find JSON block if formatted with markdown
-      const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        parsedResult = JSON.parse(jsonMatch[0]);
-      } else {
-        parsedResult = {
-          subject: `Follow up - ${payload.contactName}`,
-          body: rawContent,
-        };
+        const parsed = JSON.parse(jsonMatch[0]);
+        parsedSubject = parsed.subject || "";
+        parsedBody = parsed.body || "";
       }
     } catch {
-      parsedResult = {
-        subject: `Follow up - ${payload.contactName}`,
-        body: rawContent,
-      };
+      parsedSubject = "Project Support";
+      parsedBody = rawText;
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        subject: parsedResult.subject,
-        body: parsedResult.body,
-        raw: rawContent,
+        provider,
+        raw: rawText,
+        subject: parsedSubject || undefined,
+        body: parsedBody || rawText,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
