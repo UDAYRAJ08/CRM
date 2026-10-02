@@ -3,7 +3,8 @@ import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Contact, Interaction } from '../../types/crm';
-import { sendEmailDirectly } from '../../lib/emailService';
+import { sendEmailDirectly, resolveContactCompany } from '../../lib/emailService';
+import { cleanCompanyName, stripHtml } from '../../lib/utils';
 import { db, EmailDraft, DraftAttachment } from '../../lib/supabase';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -67,10 +68,10 @@ const TEMPLATE_CHIPS: TemplateChip[] = [
     iconBg: 'bg-indigo-100',
     iconColor: 'text-indigo-600',
     btnClass: 'border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold',
-    getSubject: (c) => `Specialist implementation capacity for ${c.company?.name || 'your team'}`,
+    getSubject: (c) => `Specialist implementation capacity for ${resolveContactCompany(c) || 'your team'}`,
     getBody: (c, name) => {
       const first = c.name.split(' ')[0];
-      const comp  = c.company?.name || 'your team';
+      const comp  = resolveContactCompany(c) || 'your team';
       return `Hi ${first},\n\nI’m reaching out because ${comp}’s Shopify Plus and commerce work appears to sit at the intersection of strategy, experience, and technical delivery. I wanted to ask whether your teams ever need additional specialist capacity for the implementation and experimentation layer of client work.\n\nIngversions Digital helps ecommerce teams execute Shopify CRO and A/B testing, conversion-focused theme and landing-page work, analytics QA, and storefront performance improvements. We can take an approved hypothesis or design direction, build the required change, verify tracking and cross-device behavior, and support the QA needed before launch.\n\nFor ${comp}, this could be useful as discreet overflow or a scoped delivery partner when internal teams are balancing larger commerce transformations. I’d be happy to share how we typically work alongside an existing agency team without interrupting its client relationship or process.\n\nWould a short conversation be relevant for your talent or delivery planning?\n\nBest regards,\n${name}\nIngversions Digital`;
     },
   },
@@ -81,7 +82,7 @@ const TEMPLATE_CHIPS: TemplateChip[] = [
     iconBg: 'bg-orange-100',
     iconColor: 'text-orange-600',
     btnClass: 'border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-700',
-    getSubject: (c) => `Team Capabilities & Task Execution Details for ${c.company?.name || 'your organization'}`,
+    getSubject: (c) => `Team Capabilities & Task Execution Details for ${resolveContactCompany(c) || 'your organization'}`,
     getBody: (c, name) => {
       const first = c.name.split(' ')[0];
       return `Hi ${first},\n\nIf you are looking for a dedicated team to help you execute your tasks and ensure you hit your upcoming project deadlines on time, here are the core details of how we can support you:\n\n1. What We Handle:\n- End-to-end task execution and deliverable management\n- Rapid sprint turnaround to meet tight deadlines\n- Ongoing technical and operational workflow support\n\n2. How We Work:\n- Dedicated point of contact and daily/weekly progress updates\n- Transparent milestone tracking with zero bandwidth strain on your team\n- Flexible scoping based on your immediate priorities\n\nWould you be open to a quick 10-minute call this week to review your current tasks and see how we can assist?\n\nBest regards,\n${name}\nIngversions Digital`;
@@ -94,10 +95,10 @@ const TEMPLATE_CHIPS: TemplateChip[] = [
     iconBg: 'bg-indigo-100',
     iconColor: 'text-indigo-600',
     btnClass: 'border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700',
-    getSubject: (c) => `Following up - ${c.company?.name || c.name}`,
+    getSubject: (c) => `Following up - ${resolveContactCompany(c) || c.name}`,
     getBody: (c, name) => {
       const first = c.name.split(' ')[0];
-      const comp  = c.company?.name || 'your team';
+      const comp  = resolveContactCompany(c) || 'your team';
       return `Hi ${first},\n\nI hope you're having a productive week.\n\nI wanted to quickly follow up on my previous note and see if you had a chance to review it. We'd love to explore how we can support you and ${comp} in executing your key initiatives and hitting your deadlines on schedule.\n\nDo you have 10-15 minutes for a brief call sometime this week?\n\nBest regards,\n${name}\nIngversions Digital`;
     },
   },
@@ -108,10 +109,10 @@ const TEMPLATE_CHIPS: TemplateChip[] = [
     iconBg: 'bg-emerald-100',
     iconColor: 'text-emerald-600',
     btnClass: 'border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700',
-    getSubject: (c) => `Project Scope & Execution Plan for ${c.company?.name || 'your company'}`,
+    getSubject: (c) => `Project Scope & Execution Plan for ${resolveContactCompany(c) || 'your company'}`,
     getBody: (c, name) => {
       const first = c.name.split(' ')[0];
-      const comp  = c.company?.name || 'your company';
+      const comp  = resolveContactCompany(c) || 'your company';
       return `Hi ${first},\n\nFollowing up on our recent conversation regarding your initiatives at ${comp}, here is a summary of the scope and deliverables we can handle for your team:\n\n• Objective: Accelerate project delivery and meet critical milestones.\n• Scope of Work: Complete execution of assigned tasks, QA review, and weekly delivery sprints.\n• Timeline: Ready to kick off immediately with dedicated allocation.\n\nPlease let me know if you would like any adjustments to this plan or if you have time for a brief sync tomorrow.\n\nBest regards,\n${name}\nIngversions Digital`;
     },
   },
@@ -461,6 +462,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
   // ── Send (immediate or scheduled) ──────────────────────────────────────────
   const executeSend = async (logOnly = false, overrideEmail?: string) => {
     const targetEmail = (overrideEmail || recipientEmail).trim();
+    const bodyContent = getEditorContent().trim();
     const bodyText    = getEditorText().trim();
     if (!targetEmail || !subject.trim() || !bodyText) {
       error('Missing information', 'Recipient email, subject, and body are required.');
@@ -485,9 +487,17 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
     setSandboxError(null);
     try {
       const result = await sendEmailDirectly({
-        contactId: contact.id, recipientEmail: targetEmail, recipientName: contact.name,
-        subject: subject.trim(), body: bodyText, senderId: activeMember?.id,
-        senderName: activeSenderName, senderEmail: activeSenderEmail, aiGenerated: isAiGenerated, logOnly,
+        contactId: contact.id,
+        recipientEmail: targetEmail,
+        recipientName: contact.name,
+        subject: subject.trim(),
+        body: bodyContent,
+        senderId: activeMember?.id,
+        senderName: activeSenderName,
+        senderEmail: activeSenderEmail,
+        aiGenerated: isAiGenerated,
+        logOnly,
+        attachments: attachments.length > 0 ? attachments : undefined,
       });
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       hasSentRef.current = true;
@@ -537,7 +547,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
                 {resumeDraft ? 'Resume Draft — ' : 'Compose Email to '}{contact.name}
               </h3>
               <p className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap">
-                {contact.company?.name ? `${contact.company.name} · ` : ''}{contact.email || 'No email set'}
+                {contact.company?.name ? `${cleanCompanyName(contact.company.name)} · ` : ''}{contact.email || 'No email set'}
                 {isSavingDraft ? (
                   <span className="text-amber-600 font-medium flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> Saving draft…
@@ -646,7 +656,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
                     <span className="uppercase tracking-wider text-[10px] px-1.5 rounded bg-slate-200/80 text-slate-700">{item.type}</span>
                     <span className="text-slate-400">{item.creator?.name ? `by ${item.creator.name} · ` : ''}{new Date(item.created_at).toLocaleDateString()}</span>
                   </div>
-                  <p className="text-slate-700 line-clamp-2 leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                  <p className="text-slate-700 line-clamp-2 leading-relaxed whitespace-pre-wrap">{stripHtml(item.content)}</p>
                 </div>
               ))}
             </div>

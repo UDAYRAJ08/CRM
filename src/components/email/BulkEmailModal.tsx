@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -8,9 +8,10 @@ import {
   substituteMergeFields,
   resolveContactCompany,
 } from '../../lib/emailService';
+import { DraftAttachment } from '../../lib/supabase';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
-import { Input, Textarea } from '../ui/Input';
+import { Input } from '../ui/Input';
 import {
   Mail,
   Send,
@@ -31,6 +32,15 @@ import {
   Cpu,
   Check,
   Building,
+  Bold,
+  Italic,
+  Underline,
+  List,
+  Type,
+  Paperclip,
+  Smile,
+  Link as LinkIcon,
+  X,
 } from 'lucide-react';
 import {
   generateProfessionalBulkEmails,
@@ -57,6 +67,27 @@ interface BulkEmailModalProps {
   onComplete: () => void;
   initialTemplate?: BulkTemplateKey;
 }
+
+// ── Emoji list ────────────────────────────────────────────────────────────────
+const EMOJI_LIST = [
+  '😊','😃','👋','🤝','✅','🎯','🚀','💡','📧','📋','👀','🙏','💪','🔥','⚡',
+  '📅','⏰','📈','💼','🏆','🌟','👍','❤️','🎉','✨','📝','💬','🔔','📌','🎓',
+  '😄','🤩','🤔','💭','📊','💰','🌍','🔑','🎁','📱','💻','🖥️','🔧','⚙️',
+];
+
+const FONT_SIZES = [
+  { label: 'Small',   value: '12px' },
+  { label: 'Normal',  value: '14px' },
+  { label: 'Medium',  value: '16px' },
+  { label: 'Large',   value: '18px' },
+  { label: 'X-Large', value: '22px' },
+];
+
+const formatBodyForEditor = (text: string): string => {
+  if (!text) return '';
+  if (/<[a-z][\s\S]*>/i.test(text)) return text;
+  return text.replace(/\n/g, '<br>');
+};
 
 const STATIC_TEMPLATES: Record<
   BulkTemplateKey,
@@ -111,10 +142,27 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
   // Core Template state
   const [activeTemplateKey, setActiveTemplateKey] = useState<BulkTemplateKey | 'ai_generated'>(initialTemplate);
   const [subjectTemplate, setSubjectTemplate] = useState(STATIC_TEMPLATES[initialTemplate].subject);
-  const [bodyTemplate, setBodyTemplate] = useState(STATIC_TEMPLATES[initialTemplate].body);
+  const [bodyTemplate, setBodyTemplate] = useState(formatBodyForEditor(STATIC_TEMPLATES[initialTemplate].body));
   const [previewIndex, setPreviewIndex] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const [progress, setProgress] = useState(0);
+
+  // Rich Text Editor & Toolbar state
+  const editorRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiRef = useRef<HTMLDivElement>(null);
+  const fontSizeRef = useRef<HTMLDivElement>(null);
+  const linkRef = useRef<HTMLDivElement>(null);
+
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showFontSizeMenu, setShowFontSizeMenu] = useState(false);
+  const [showLinkPopover, setShowLinkPopover] = useState(false);
+  const [linkUrl, setLinkUrl] = useState('https://');
+  const [linkText, setLinkText] = useState('');
+  const [savedRange, setSavedRange] = useState<Range | null>(null);
+
+  // Attachments state
+  const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
 
   // AI Bulk Generator Panel State
   const [showAIGenerator, setShowAIGenerator] = useState(true);
@@ -143,14 +191,40 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
     if (isOpen) {
       refreshAIInfo();
       setSubjectTemplate(STATIC_TEMPLATES[initialTemplate].subject);
-      setBodyTemplate(STATIC_TEMPLATES[initialTemplate].body);
+      const formatted = formatBodyForEditor(STATIC_TEMPLATES[initialTemplate].body);
+      setBodyTemplate(formatted);
+      if (editorRef.current) {
+        editorRef.current.innerHTML = formatted;
+      }
       setActiveTemplateKey(initialTemplate);
       setPreviewIndex(0);
       setProgress(0);
       setIsSending(false);
       setAiVariations([]);
+      setAttachments([]);
+      setShowEmojiPicker(false);
+      setShowFontSizeMenu(false);
+      setShowLinkPopover(false);
     }
   }, [isOpen, initialTemplate]);
+
+  // Keep editorRef innerHTML in sync when bodyTemplate changes externally
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== bodyTemplate) {
+      editorRef.current.innerHTML = bodyTemplate;
+    }
+  }, [bodyTemplate, isOpen]);
+
+  // Close toolbar popovers on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (emojiRef.current && !emojiRef.current.contains(e.target as Node)) setShowEmojiPicker(false);
+      if (fontSizeRef.current && !fontSizeRef.current.contains(e.target as Node)) setShowFontSizeMenu(false);
+      if (linkRef.current && !linkRef.current.contains(e.target as Node)) setShowLinkPopover(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   useEffect(() => {
     const handleAIChange = () => refreshAIInfo();
@@ -161,6 +235,131 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
       window.removeEventListener('crm_service_profile_updated', handleAIChange);
     };
   }, []);
+
+  // ── Rich Text Formatting Helpers ───────────────────────────────────────────
+  const execFormat = (cmd: string, val?: string) => {
+    document.execCommand(cmd, false, val);
+    if (editorRef.current) {
+      editorRef.current.focus();
+      setBodyTemplate(editorRef.current.innerHTML);
+    }
+  };
+
+  const insertEmoji = (emoji: string) => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+      document.execCommand('insertText', false, emoji);
+      setBodyTemplate(editorRef.current.innerHTML);
+    }
+    setShowEmojiPicker(false);
+  };
+
+  const applyFontSize = (px: string) => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+      document.execCommand('fontSize', false, '7');
+      editorRef.current.querySelectorAll('font[size="7"]').forEach((el) => {
+        (el as HTMLElement).removeAttribute('size');
+        (el as HTMLElement).style.fontSize = px;
+      });
+      setBodyTemplate(editorRef.current.innerHTML);
+    }
+    setShowFontSizeMenu(false);
+  };
+
+  const openLinkPopover = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
+      setSavedRange(sel.getRangeAt(0).cloneRange());
+      const selectedText = sel.toString();
+      if (selectedText) setLinkText(selectedText);
+    } else {
+      setSavedRange(null);
+    }
+    setLinkUrl('https://');
+    setShowLinkPopover(true);
+  };
+
+  const insertLink = () => {
+    if (!linkUrl || linkUrl === 'https://') {
+      error('URL required', 'Please enter a valid URL.');
+      return;
+    }
+
+    editorRef.current?.focus();
+
+    if (savedRange) {
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(savedRange);
+    }
+
+    const url = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
+    const sel = window.getSelection();
+    const hasSelection = sel && !sel.isCollapsed;
+
+    if (!hasSelection && linkText.trim()) {
+      document.execCommand(
+        'insertHTML',
+        false,
+        `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#4f46e5;text-decoration:underline;">${linkText}</a>`
+      );
+    } else {
+      document.execCommand('createLink', false, url);
+      editorRef.current?.querySelectorAll(`a[href="${url}"]`).forEach((el) => {
+        (el as HTMLElement).setAttribute('target', '_blank');
+        (el as HTMLElement).setAttribute('rel', 'noopener noreferrer');
+        (el as HTMLElement).style.color = '#4f46e5';
+        (el as HTMLElement).style.textDecoration = 'underline';
+      });
+    }
+
+    if (editorRef.current) {
+      setBodyTemplate(editorRef.current.innerHTML);
+    }
+    setShowLinkPopover(false);
+    setLinkUrl('https://');
+    setLinkText('');
+    setSavedRange(null);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    Array.from(e.target.files || []).forEach((file) => {
+      if (file.size > 5 * 1024 * 1024) {
+        error('File too large', `${file.name} exceeds 5 MB.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setAttachments((p) => [
+          ...p,
+          {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            dataUrl: ev.target?.result as string,
+          },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const insertVariable = (tag: string) => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && editorRef.current.contains(sel.anchorNode)) {
+        document.execCommand('insertText', false, tag);
+      } else {
+        editorRef.current.innerHTML = (editorRef.current.innerHTML ? editorRef.current.innerHTML + ' ' : '') + tag;
+      }
+      setBodyTemplate(editorRef.current.innerHTML);
+    } else {
+      setBodyTemplate((prev) => (prev ? prev + ' ' : '') + tag);
+    }
+  };
 
   const contactsWithEmail = selectedContacts.filter((c) => Boolean(c.email?.trim()));
   const contactsWithoutEmail = selectedContacts.length - contactsWithEmail.length;
@@ -177,7 +376,11 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
   const handleSelectStaticTemplate = (key: BulkTemplateKey) => {
     setActiveTemplateKey(key);
     setSubjectTemplate(STATIC_TEMPLATES[key].subject);
-    setBodyTemplate(STATIC_TEMPLATES[key].body);
+    const formatted = formatBodyForEditor(STATIC_TEMPLATES[key].body);
+    setBodyTemplate(formatted);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = formatted;
+    }
   };
 
   // Generate Professional Bulk Email with AI
@@ -201,7 +404,11 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
         // Automatically apply the first generated variation
         const first = result.variations[0];
         setSubjectTemplate(first.subject);
-        setBodyTemplate(first.body);
+        const formatted = formatBodyForEditor(first.body);
+        setBodyTemplate(formatted);
+        if (editorRef.current) {
+          editorRef.current.innerHTML = formatted;
+        }
         setActiveTemplateKey('ai_generated');
 
         success(
@@ -222,7 +429,11 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
     const variation = aiVariations[index];
     if (variation) {
       setSubjectTemplate(variation.subject);
-      setBodyTemplate(variation.body);
+      const formatted = formatBodyForEditor(variation.body);
+      setBodyTemplate(formatted);
+      if (editorRef.current) {
+        editorRef.current.innerHTML = formatted;
+      }
       setActiveTemplateKey('ai_generated');
       info('Variation Applied', `Loaded "${variation.title}" into campaign preview.`);
     }
@@ -230,7 +441,8 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
 
   // Send Bulk Email batch
   const handleSendBulk = async () => {
-    if (!subjectTemplate.trim() || !bodyTemplate.trim()) {
+    const rawBody = editorRef.current?.innerText.trim() || bodyTemplate.replace(/<[^>]*>/g, '').trim();
+    if (!subjectTemplate.trim() || !rawBody) {
       error('Missing content', 'Subject and body templates are required.');
       return;
     }
@@ -262,6 +474,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
           senderId: activeMember?.id,
           senderName: activeSenderName,
           aiGenerated: activeTemplateKey === 'ai_generated',
+          attachments: attachments.length > 0 ? attachments : undefined,
         });
         sentCount++;
       } catch (err) {
@@ -289,10 +502,6 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
 
     onComplete();
     onClose();
-  };
-
-  const insertVariable = (tag: string) => {
-    setBodyTemplate((prev) => prev + ` ${tag}`);
   };
 
   const activeProviderMeta = AI_PROVIDERS[activeAIProvider];
@@ -566,33 +775,306 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
               <button
                 key={tag}
                 type="button"
-                onClick={() => insertVariable(tag)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertVariable(tag);
+                }}
                 className="px-2 py-0.5 rounded bg-white hover:bg-indigo-100 hover:text-indigo-700 text-slate-700 font-mono text-[11px] border border-indigo-200/60 transition cursor-pointer"
-                title="Click to insert tag into message body"
+                title="Click to insert tag into message body at cursor"
               >
                 {tag}
               </button>
             ))}
           </div>
 
-          {/* Subject & Body Inputs */}
-          <div className="space-y-3">
-            <Input
-              label="Subject Line Template *"
-              value={subjectTemplate}
-              onChange={(e) => setSubjectTemplate(e.target.value)}
-              placeholder="e.g. Helping {{company}} hit upcoming project deadlines"
-              required
+          {/* Subject Line Input */}
+          <Input
+            label="Subject Line Template *"
+            value={subjectTemplate}
+            onChange={(e) => setSubjectTemplate(e.target.value)}
+            placeholder="e.g. Specialist implementation capacity for {{company}}"
+            required
+          />
+
+          {/* ── Rich Text Email Body Template & Formatting Toolbar ── */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Email Body Template *
+            </label>
+
+            {/* Formatting toolbar */}
+            <div className="flex items-center gap-0.5 px-2 py-1.5 bg-slate-50 border border-slate-200 border-b-0 rounded-t-xl flex-wrap">
+              {/* Bold */}
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  execFormat('bold');
+                }}
+                title="Bold (Ctrl+B)"
+                className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition cursor-pointer"
+              >
+                <Bold className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Italic */}
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  execFormat('italic');
+                }}
+                title="Italic (Ctrl+I)"
+                className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition cursor-pointer"
+              >
+                <Italic className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Underline */}
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  execFormat('underline');
+                }}
+                title="Underline (Ctrl+U)"
+                className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition cursor-pointer"
+              >
+                <Underline className="w-3.5 h-3.5" />
+              </button>
+
+              <div className="w-px h-5 bg-slate-200 mx-0.5" />
+
+              {/* Bullet list */}
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  execFormat('insertUnorderedList');
+                }}
+                title="Bullet list"
+                className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition cursor-pointer"
+              >
+                <List className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Font size */}
+              <div className="relative" ref={fontSizeRef}>
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setShowFontSizeMenu(!showFontSizeMenu);
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition flex items-center gap-0.5 cursor-pointer"
+                  title="Font size"
+                >
+                  <Type className="w-3.5 h-3.5" />
+                  <ChevronDown className="w-2.5 h-2.5" />
+                </button>
+                {showFontSizeMenu && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-50 min-w-[110px]">
+                    {FONT_SIZES.map((fs) => (
+                      <button
+                        key={fs.value}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          applyFontSize(fs.value);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-indigo-50 hover:text-indigo-700 font-medium transition cursor-pointer"
+                        style={{ fontSize: fs.value }}
+                      >
+                        {fs.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="w-px h-5 bg-slate-200 mx-0.5" />
+
+              {/* Insert Link */}
+              <div className="relative" ref={linkRef}>
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    if (showLinkPopover) {
+                      setShowLinkPopover(false);
+                    } else {
+                      openLinkPopover();
+                    }
+                  }}
+                  title="Insert link"
+                  className={`p-1.5 rounded-lg hover:bg-white hover:shadow-sm transition flex items-center cursor-pointer ${
+                    showLinkPopover ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600'
+                  }`}
+                >
+                  <LinkIcon className="w-3.5 h-3.5" />
+                </button>
+
+                {showLinkPopover && (
+                  <div className="absolute top-full left-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-50 w-72 animate-in fade-in zoom-in-95 duration-150">
+                    <p className="text-xs font-bold text-slate-700 mb-3 flex items-center gap-1.5">
+                      <LinkIcon className="w-3.5 h-3.5 text-indigo-500" /> Insert Link
+                    </p>
+                    <div className="space-y-2.5">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          URL *
+                        </label>
+                        <input
+                          type="url"
+                          value={linkUrl}
+                          onChange={(e) => setLinkUrl(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              insertLink();
+                            }
+                          }}
+                          placeholder="https://example.com"
+                          autoFocus
+                          className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Link Text (optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={linkText}
+                          onChange={(e) => setLinkText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              insertLink();
+                            }
+                          }}
+                          placeholder="Display text (uses selection if empty)"
+                          className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={insertLink}
+                          className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <LinkIcon className="w-3.5 h-3.5" /> Insert Link
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowLinkPopover(false)}
+                          className="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Emoji Picker */}
+              <div className="relative" ref={emojiRef}>
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setShowEmojiPicker(!showEmojiPicker);
+                  }}
+                  title="Emoji"
+                  className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition cursor-pointer"
+                >
+                  <Smile className="w-3.5 h-3.5" />
+                </button>
+                {showEmojiPicker && (
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 w-60">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                      Insert Emoji
+                    </p>
+                    <div className="grid grid-cols-8 gap-1">
+                      {EMOJI_LIST.map((emoji, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            insertEmoji(emoji);
+                          }}
+                          className="text-lg hover:bg-slate-100 rounded-lg p-0.5 transition leading-tight cursor-pointer"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* File Attachment */}
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }}
+                title="Attach file (max 5 MB)"
+                className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition flex items-center gap-0.5 cursor-pointer"
+              >
+                <Paperclip className="w-3.5 h-3.5" />
+                {attachments.length > 0 && (
+                  <span className="text-[10px] font-bold text-indigo-600">
+                    {attachments.length}
+                  </span>
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+            </div>
+
+            {/* Contenteditable Rich Text Editor */}
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={() => setBodyTemplate(editorRef.current?.innerHTML || '')}
+              className="min-h-[200px] max-h-[340px] p-4 bg-white border border-slate-200 rounded-b-xl focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 text-sm text-slate-800 leading-relaxed overflow-y-auto"
+              data-placeholder="Write your email body template here..."
             />
 
-            <Textarea
-              label="Email Body Template *"
-              value={bodyTemplate}
-              onChange={(e) => setBodyTemplate(e.target.value)}
-              rows={9}
-              className="font-normal text-slate-800 leading-relaxed font-sans"
-              required
-            />
+            {/* Attachment Chips */}
+            {attachments.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {attachments.map((att, idx) => (
+                  <div
+                    key={idx}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700 bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded-lg"
+                  >
+                    <Paperclip className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span className="max-w-[140px] truncate">{att.name}</span>
+                    <span className="text-slate-400 text-[10px]">
+                      ({(att.size / 1024).toFixed(0)} KB)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAttachments((p) => p.filter((_, i) => i !== idx))}
+                      className="ml-1 text-slate-400 hover:text-red-500 transition cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Live Preview Switcher */}
@@ -649,9 +1131,33 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                   <span className="text-slate-400 font-normal mr-1">Subject:</span>
                   {renderedSubject}
                 </div>
-                <div className="pt-2 border-t border-slate-100 whitespace-pre-wrap text-slate-700 leading-relaxed font-sans">
-                  {renderedBody}
-                </div>
+                <div
+                  className="pt-2 border-t border-slate-100 text-slate-700 leading-relaxed font-sans text-xs"
+                  dangerouslySetInnerHTML={{
+                    __html: /<[a-z][\s\S]*>/i.test(renderedBody)
+                      ? renderedBody
+                      : renderedBody.replace(/\n/g, '<br />'),
+                  }}
+                />
+
+                {/* Preview attachments */}
+                {attachments.length > 0 && (
+                  <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                      <Paperclip className="w-3 h-3 text-slate-400" />
+                      Attachments ({attachments.length}):
+                    </span>
+                    {attachments.map((att, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] text-slate-600 font-medium"
+                      >
+                        <Paperclip className="w-2.5 h-2.5 text-slate-400" />
+                        {att.name} ({(att.size / 1024).toFixed(0)} KB)
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -698,6 +1204,16 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Placeholder styling for contenteditable */}
+        <style>{`
+          [contenteditable][data-placeholder]:empty:before {
+            content: attr(data-placeholder);
+            color: #94a3b8;
+            pointer-events: none;
+            font-style: italic;
+          }
+        `}</style>
       </Modal>
 
       {/* Embedded AI Settings & Key Manager Modal */}

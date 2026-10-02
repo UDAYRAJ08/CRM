@@ -4,6 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import { Contact, ImportSummary, ParsedContactRow } from '../../types/crm';
 import { parseExcelOrCsv, generateSampleExcelTemplate } from '../../lib/excelParser';
 import { db } from '../../lib/supabase';
+import { cleanCompanyName, getCompanyUrl } from '../../lib/utils';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { ImportPreviewTable } from './ImportPreviewTable';
@@ -128,11 +129,17 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       for (const row of totalToInsert) {
         let companyId = null;
         if (row.company_name) {
-          const compKey = row.company_name.trim().toLowerCase();
+          const rawComp = row.company_name.trim();
+          const cleanName = cleanCompanyName(rawComp) || rawComp;
+          const compKey = cleanName.toLowerCase();
           if (companyMap.has(compKey)) {
             companyId = companyMap.get(compKey);
           } else {
-            const newComp = await db.addCompany({ name: row.company_name.trim() });
+            const websiteCandidate = rawComp.includes('.') ? getCompanyUrl({ name: rawComp }) : undefined;
+            const newComp = await db.addCompany({
+              name: cleanName,
+              website: websiteCandidate,
+            });
             companyId = newComp.id;
             companyMap.set(compKey, newComp.id);
           }

@@ -4,7 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { Contact, ContactStatus } from '../../types/crm';
 import { db } from '../../lib/supabase';
-import { getInitials } from '../../lib/utils';
+import { getInitials, cleanCompanyName } from '../../lib/utils';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import {
@@ -978,11 +978,11 @@ export const ContactList: React.FC<ContactListProps> = ({
                                               onClick={(e) => e.stopPropagation()}
                                               className="text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center gap-1"
                                             >
-                                              <span>{contact.company.name}</span>
+                                              <span>{cleanCompanyName(contact.company.name)}</span>
                                               <ExternalLink className="w-3 h-3 text-indigo-400" />
                                             </a>
                                           ) : (
-                                            <span>{contact.company.name}</span>
+                                            <span>{cleanCompanyName(contact.company.name)}</span>
                                           )}
                                         </div>
                                       ) : (
@@ -1285,11 +1285,11 @@ export const ContactList: React.FC<ContactListProps> = ({
                                 className="hover:text-indigo-600 hover:underline inline-flex items-center gap-1 transition-colors cursor-pointer text-indigo-700"
                                 title={`Open ${companyUrl} in new tab`}
                               >
-                                <span>{contact.company.name}</span>
+                                <span>{cleanCompanyName(contact.company.name)}</span>
                                 <ExternalLink className="w-3 h-3 text-indigo-400 shrink-0" />
                               </a>
                             ) : (
-                              <span>{contact.company.name}</span>
+                              <span>{cleanCompanyName(contact.company.name)}</span>
                             )}
                           </div>
                         ) : (
@@ -1484,11 +1484,11 @@ export const ContactList: React.FC<ContactListProps> = ({
                             onClick={(e) => e.stopPropagation()}
                             className="text-indigo-700 hover:text-indigo-900 hover:underline inline-flex items-center gap-1"
                           >
-                            <span>{contact.company.name}</span>
+                            <span>{cleanCompanyName(contact.company.name)}</span>
                             <ExternalLink className="w-3 h-3 text-indigo-400" />
                           </a>
                         ) : (
-                          <span>{contact.company.name}</span>
+                          <span>{cleanCompanyName(contact.company.name)}</span>
                         )}
                       </div>
                     )}

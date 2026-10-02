@@ -3,6 +3,8 @@ import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
 import { Contact } from '../../types/crm';
 import { db } from '../../lib/supabase';
+import { resolveContactCompany } from '../../lib/emailService';
+import { cleanCompanyName } from '../../lib/utils';
 import {
   fetchLinkedInQuota,
   sendLinkedInConnectionInvite,
@@ -73,12 +75,12 @@ export const LinkedInComposerModal: React.FC<LinkedInComposerModalProps> = ({
   const linkedInProfileUrl = getLinkedInUrl();
   const linkedInSearchUrl = contact
     ? `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(
-        `${contact.name} ${contact.company?.name || ''}`.trim()
+        `${contact.name} ${resolveContactCompany(contact) || ''}`.trim()
       )}`
     : 'https://www.linkedin.com';
 
   const firstName = contact?.name ? contact.name.split(' ')[0] : 'there';
-  const compName = contact?.company?.name || 'your company';
+  const compName = (contact ? resolveContactCompany(contact) : '') || 'your company';
 
   const applyTemplate = (type: 'connect' | 'pitch' | 'followup') => {
     setActiveTemplate(type);
@@ -229,7 +231,7 @@ export const LinkedInComposerModal: React.FC<LinkedInComposerModalProps> = ({
               </h3>
               <p className="text-xs text-slate-500">
                 {contact.title ? `${contact.title} • ` : ''}
-                {contact.company?.name || 'Professional Contact'}
+                {contact.company?.name ? cleanCompanyName(contact.company.name) : 'Professional Contact'}
               </p>
             </div>
           </div>

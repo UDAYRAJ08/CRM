@@ -8,6 +8,7 @@ import { Contact, Interaction } from '../types/crm';
 import { executeAICompletion } from './multiAiService';
 import { getCompanyServiceProfile } from './serviceProfile';
 import { getActiveAIProvider, getSelectedModel } from './aiConfig';
+import { resolveContactCompany } from './emailService';
 
 export interface GenerateAIDraftOptions {
   contact: Contact;
@@ -31,7 +32,7 @@ export interface AIDraftResponse {
 export async function generateAIEmailDraft(options: GenerateAIDraftOptions): Promise<AIDraftResponse> {
   const profile = getCompanyServiceProfile();
   const firstName = options.contact.name.split(' ')[0] || options.contact.name;
-  const company = options.contact.company?.name || 'your company';
+  const company = resolveContactCompany(options.contact) || 'your company';
   const role = options.contact.title ? `as ${options.contact.title}` : '';
   const lastInteraction = options.recentInteractions[0];
 

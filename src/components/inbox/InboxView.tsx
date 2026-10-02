@@ -403,9 +403,14 @@ export const InboxView: React.FC<InboxViewProps> = ({
                         <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
                         <span>Lead Message Content</span>
                       </div>
-                      <div className="text-xs sm:text-sm text-slate-800 whitespace-pre-wrap leading-relaxed font-sans font-medium">
-                        {msg.body}
-                      </div>
+                      <div
+                        className="text-xs sm:text-sm text-slate-800 leading-relaxed font-sans font-medium"
+                        dangerouslySetInnerHTML={{
+                          __html: /<[a-z][\s\S]*>/i.test(msg.body)
+                            ? msg.body
+                            : msg.body.replace(/\n/g, '<br />'),
+                        }}
+                      />
                     </div>
 
                     {/* Quick Action Bar */}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Company, Contact, Deal } from '../../types/crm';
 import { db } from '../../lib/supabase';
+import { cleanCompanyName, getCompanyUrl } from '../../lib/utils';
 import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { Button } from '../ui/Button';
@@ -58,12 +59,14 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
 
     setIsSaving(true);
     try {
+      const cleanName = cleanCompanyName(companyName) || companyName.trim();
+      const websiteUrl = website.trim() || (companyName.trim().includes('.') ? getCompanyUrl({ name: companyName }) : undefined);
       await db.addCompany({
-        name: companyName.trim(),
+        name: cleanName,
         industry: industry.trim() || undefined,
-        website: website.trim() || undefined,
+        website: websiteUrl,
       });
-      success('Company Added', `${companyName} was created.`);
+      success('Company Added', `${cleanName} was created.`);
       setCompanyName('');
       setIndustry('');
       setWebsite('');
@@ -103,6 +106,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
           const associatedContacts = contacts.filter((c) => c.company_id === comp.id);
           const compDeals = deals.filter((d) => d.company_id === comp.id);
           const compDealValue = compDeals.reduce((sum, d) => sum + Number(d.value || 0), 0);
+          const displayWebsite = comp.website || (comp.name.includes('.') ? getCompanyUrl(comp) : '');
 
           return (
             <div
@@ -115,18 +119,18 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                     <Building2 className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-slate-900">{comp.name}</h3>
+                    <h3 className="font-bold text-sm text-slate-900">{cleanCompanyName(comp.name)}</h3>
                     <p className="text-xs text-slate-500">{comp.industry || 'General Business'}</p>
                   </div>
                 </div>
 
-                {comp.website && (
+                {displayWebsite && (
                   <a
-                    href={comp.website.startsWith('http') ? comp.website : `https://${comp.website}`}
+                    href={displayWebsite.startsWith('http') ? displayWebsite : `https://${displayWebsite}`}
                     target="_blank"
                     rel="noreferrer"
                     className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                    title={comp.website}
+                    title={displayWebsite}
                   >
                     <ExternalLink className="w-4 h-4" />
                   </a>

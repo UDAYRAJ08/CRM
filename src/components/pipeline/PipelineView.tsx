@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Deal, DealStage, Contact } from '../../types/crm';
 import { db } from '../../lib/supabase';
+import { cleanCompanyName } from '../../lib/utils';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
 import { DealModal } from './DealModal';
@@ -705,7 +706,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                           </button>
                           {deal.company_name && (
                             <span className="block text-[11px] text-slate-400 truncate">
-                              {deal.company_name}
+                              {cleanCompanyName(deal.company_name)}
                             </span>
                           )}
                         </td>

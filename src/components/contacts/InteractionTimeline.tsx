@@ -2,6 +2,7 @@ import React from 'react';
 import { Interaction } from '../../types/crm';
 import { PhoneCall, FileText, Users, Mail, Clock, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { stripHtml } from '../../lib/utils';
 
 interface InteractionTimelineProps {
   interactions: Interaction[];
@@ -112,7 +113,7 @@ export const InteractionTimeline: React.FC<InteractionTimelineProps> = ({ intera
               </div>
 
               <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
-                {item.content}
+                {stripHtml(item.content)}
               </p>
             </div>
           </div>

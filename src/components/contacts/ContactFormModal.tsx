@@ -4,6 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { Contact, Company, ContactStatus } from '../../types/crm';
 import { db } from '../../lib/supabase';
+import { cleanCompanyName, getCompanyUrl } from '../../lib/utils';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input, Select } from '../ui/Input';
@@ -94,7 +95,13 @@ export const ContactFormModal: React.FC<ContactFormModalProps> = ({
       let finalCompanyId = companyId || null;
 
       if (newCompanyName.trim()) {
-        const createdComp = await db.addCompany({ name: newCompanyName.trim() });
+        const rawComp = newCompanyName.trim();
+        const cleanName = cleanCompanyName(rawComp) || rawComp;
+        const websiteCandidate = rawComp.includes('.') ? getCompanyUrl({ name: rawComp }) : undefined;
+        const createdComp = await db.addCompany({
+          name: cleanName,
+          website: websiteCandidate,
+        });
         finalCompanyId = createdComp.id;
       }
 

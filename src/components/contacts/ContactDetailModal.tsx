@@ -4,7 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import { Contact, Interaction, EmailRecord, Reminder, ContactStatus, Deal } from '../../types/crm';
 import { db } from '../../lib/supabase';
-import { getInitials } from '../../lib/utils';
+import { getInitials, cleanCompanyName, getCompanyUrl, stripHtml } from '../../lib/utils';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { InteractionLogger } from './InteractionLogger';
@@ -200,13 +200,8 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   const statuses: ContactStatus[] = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost', 'inactive'];
   const currentStatus = statusConfig[contact.status] || statusConfig.new;
 
-  // Normalize company website url (check website field or if name itself contains a domain/url)
-  const rawWebsite = contact.company?.website?.trim() || (contact.company?.name?.trim().includes('.') ? contact.company?.name?.trim() : '') || '';
-  const normalizedUrl = rawWebsite
-    ? rawWebsite.startsWith('http://') || rawWebsite.startsWith('https://')
-      ? rawWebsite
-      : `https://${rawWebsite}`
-    : '';
+  // Normalize company website url using shared utility
+  const normalizedUrl = getCompanyUrl(contact.company);
 
   // Calculate overdue status
   const contactDate = new Date(contact.updated_at || contact.created_at).getTime();
@@ -316,11 +311,11 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                           className="font-bold text-indigo-600 hover:text-indigo-800 hover:underline inline-flex items-center gap-1 transition-colors cursor-pointer"
                           title={`Open ${normalizedUrl} in a new tab`}
                         >
-                          <span>{contact.company.name}</span>
+                          <span>{cleanCompanyName(contact.company.name)}</span>
                           <ExternalLink className="w-3 h-3 text-indigo-500 shrink-0" />
                         </a>
                       ) : (
-                        <strong className="text-slate-800">{contact.company.name}</strong>
+                        <strong className="text-slate-800">{cleanCompanyName(contact.company.name)}</strong>
                       )}
                     </span>
                   )}
@@ -585,7 +580,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                           {format(new Date(em.sent_at || Date.now()), 'MMM d, h:mm a')}
                         </span>
                       </div>
-                      <p className="text-slate-600 line-clamp-3 whitespace-pre-wrap">{em.body}</p>
+                      <p className="text-slate-600 line-clamp-3 whitespace-pre-wrap">{stripHtml(em.body)}</p>
                     </div>
                   ))
                 )}

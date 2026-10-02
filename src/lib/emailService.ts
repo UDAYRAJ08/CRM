@@ -1,5 +1,6 @@
-import { db } from './supabase';
+import { db, DraftAttachment } from './supabase';
 import { EmailRecord, Contact } from '../types/crm';
+import { cleanCompanyName } from './utils';
 
 export interface SendEmailParams {
   contactId?: string;
@@ -13,6 +14,7 @@ export interface SendEmailParams {
   replyTo?: string;
   aiGenerated?: boolean;
   logOnly?: boolean;
+  attachments?: DraftAttachment[];
 }
 
 export interface SendEmailResult {
@@ -40,6 +42,13 @@ async function sendViaComposio(
         : 'https://connect.composio.dev/mcp';
 
     const isGmailSender = userEmail && /@(gmail\.com|googlemail\.com)$/i.test(userEmail);
+
+    const isHtml = /<[a-z][\s\S]*>/i.test(body);
+    let htmlContent = isHtml ? body : body.replace(/\n/g, '<br>');
+    if (!htmlContent.includes('<div') && !htmlContent.includes('<p') && !htmlContent.includes('<html')) {
+      htmlContent = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1e293b;">${htmlContent}</div>`;
+    }
+
     const toolsToAttempt = isGmailSender
       ? [
           {
@@ -47,7 +56,8 @@ async function sendViaComposio(
             arguments: {
               recipient_email: recipient.trim(),
               subject: subject.trim(),
-              body: body.trim(),
+              body: htmlContent,
+              is_html: true,
             },
           },
           {
@@ -55,7 +65,8 @@ async function sendViaComposio(
             arguments: {
               to: recipient.trim(),
               subject: subject.trim(),
-              body: body.trim(),
+              body: htmlContent,
+              is_html: true,
             },
           },
         ]
@@ -65,7 +76,17 @@ async function sendViaComposio(
             arguments: {
               to: recipient.trim(),
               subject: subject.trim(),
-              body: body.trim(),
+              body: htmlContent,
+              is_html: true,
+            },
+          },
+          {
+            tool_slug: 'GMAIL_SEND_EMAIL',
+            arguments: {
+              recipient_email: recipient.trim(),
+              subject: subject.trim(),
+              body: htmlContent,
+              is_html: true,
             },
           },
         ];
@@ -113,7 +134,8 @@ async function sendViaResend(
   to: string,
   replyTo: string,
   subject: string,
-  body: string
+  body: string,
+  attachments?: DraftAttachment[]
 ): Promise<{
   success: boolean;
   data?: any;
@@ -128,20 +150,46 @@ async function sendViaResend(
         ? '/api/resend/emails'
         : 'https://api.resend.com/emails';
 
+    const isHtml = /<[a-z][\s\S]*>/i.test(body);
+    const plainText = isHtml
+      ? body
+          .replace(/<br\s*[\/]?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n\n')
+          .replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/&lt;/gi, '<')
+          .replace(/&gt;/gi, '>')
+          .trim()
+      : body.trim();
+    const htmlBody = isHtml
+      ? `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; font-size: 14px;">${body}</div>`
+      : `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; font-size: 14px;">${body.replace(/\n/g, '<br>')}</div>`;
+
+    const payload: any = {
+      from: from.trim(),
+      to: [to.trim()],
+      reply_to: replyTo.trim(),
+      subject: subject.trim(),
+      text: plainText,
+      html: htmlBody,
+    };
+
+    if (attachments && attachments.length > 0) {
+      payload.attachments = attachments.map((att) => ({
+        filename: att.name,
+        content: att.dataUrl.includes('base64,') ? att.dataUrl.split('base64,')[1] : att.dataUrl,
+      }));
+    }
+
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey.trim()}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from: from.trim(),
-        to: [to.trim()],
-        reply_to: replyTo.trim(),
-        subject: subject.trim(),
-        text: body.trim(),
-        html: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; white-space: pre-wrap; font-size: 14px;">${body}</div>`,
-      }),
+      body: JSON.stringify(payload),
     });
 
     const data = await res.json();
@@ -269,7 +317,8 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
         params.recipientEmail,
         effectiveReplyTo,
         params.subject,
-        params.body
+        params.body,
+        params.attachments
       );
 
       // If failed due to unverified custom domain (e.g. ingversionsdigital.com not verified on resend.com/domains)
@@ -298,7 +347,8 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
             params.recipientEmail,
             effectiveReplyTo,
             params.subject,
-            params.body
+            params.body,
+            params.attachments
           );
           if (resendRes.success) {
             remoteSuccess = true;
@@ -425,10 +475,13 @@ const GENERIC_EMAIL_DOMAINS = new Set([
  * 3. Infers company from business email domain (e.g. hello@convertibles.dev -> Convertibles)
  */
 export function resolveContactCompany(contact: Contact): string {
+  // 1. Checks explicit contact.company.name
   if (contact.company?.name && contact.company.name.trim()) {
-    return contact.company.name.trim();
+    const cleaned = cleanCompanyName(contact.company.name);
+    if (cleaned) return cleaned;
   }
 
+  // 2. Checks contact.custom_fields (company, Company, company_name, organization, etc.)
   if (contact.custom_fields) {
     const cf =
       contact.custom_fields.company ||
@@ -438,30 +491,17 @@ export function resolveContactCompany(contact: Contact): string {
       contact.custom_fields.organization ||
       contact.custom_fields.business;
     if (typeof cf === 'string' && cf.trim()) {
-      return cf.trim();
+      const cleaned = cleanCompanyName(cf);
+      if (cleaned) return cleaned;
     }
   }
 
+  // 3. Infers company from business email domain (e.g. karel@radikal.io -> Radikal)
   if (contact.email && contact.email.includes('@')) {
     const domain = contact.email.split('@')[1]?.toLowerCase().trim();
     if (domain && !GENERIC_EMAIL_DOMAINS.has(domain)) {
-      const domainWithoutCcTld = domain.replace(/\.(co|com|org|net|gov|edu|ac)\.[a-z]{2,3}$/i, '');
-      const parts = domainWithoutCcTld.split('.');
-      let nameToken = parts.length > 1 ? parts[parts.length - 2] : parts[0];
-      if (
-        ['mail', 'email', 'app', 'portal', 'crm', 'cloud', 'support', 'contact', 'hello'].includes(
-          nameToken.toLowerCase()
-        ) &&
-        parts.length > 2
-      ) {
-        nameToken = parts[parts.length - 2];
-      }
-      if (nameToken && nameToken.length >= 2) {
-        return nameToken
-          .split(/[-_]/)
-          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(' ');
-      }
+      const cleaned = cleanCompanyName(domain);
+      if (cleaned) return cleaned;
     }
   }
 
