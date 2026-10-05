@@ -490,12 +490,40 @@ export const db = {
     notifyCRMEvent('crm_reminders_updated');
   },
 
+  async bulkToggleReminders(ids: string[], done: boolean): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    const completed_at = done ? new Date().toISOString() : null;
+    if (supabase) {
+      await supabase.from('reminders').update({ done, completed_at }).in('id', ids);
+    } else {
+      const idSet = new Set(ids);
+      const list = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
+      setLocal(
+        'reminders',
+        list.map((r) => (idSet.has(r.id) ? { ...r, done, completed_at } : r))
+      );
+    }
+    notifyCRMEvent('crm_reminders_updated');
+  },
+
   async deleteReminder(id: string): Promise<void> {
     if (supabase) {
       await supabase.from('reminders').delete().eq('id', id);
     } else {
       const list = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
       setLocal('reminders', list.filter((r) => r.id !== id));
+    }
+    notifyCRMEvent('crm_reminders_updated');
+  },
+
+  async bulkDeleteReminders(ids: string[]): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    if (supabase) {
+      await supabase.from('reminders').delete().in('id', ids);
+    } else {
+      const idSet = new Set(ids);
+      const list = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
+      setLocal('reminders', list.filter((r) => !idSet.has(r.id)));
     }
     notifyCRMEvent('crm_reminders_updated');
   },

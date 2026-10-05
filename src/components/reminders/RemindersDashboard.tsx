@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
 import { Reminder, Contact } from '../../types/crm';
@@ -15,8 +15,11 @@ import {
   ArrowUpRight,
   Mail,
   RotateCw,
+  RotateCcw,
+  Trash2,
+  X,
 } from 'lucide-react';
-import { isToday, isPast, isFuture, format, isThisWeek } from 'date-fns';
+import { isToday, isPast, format } from 'date-fns';
 
 interface RemindersDashboardProps {
   reminders: Reminder[];
@@ -36,10 +39,20 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
   onAddNewReminder,
 }) => {
   const { activeMember } = useTeam();
-  const { success } = useToast();
+  const { success, error } = useToast();
 
   const [filterAssignee, setFilterAssignee] = useState<'all' | 'mine'>('all');
   const [activeTab, setActiveTab] = useState<'today' | 'overdue' | 'upcoming' | 'completed'>('today');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+
+  const masterCheckboxRef = useRef<HTMLInputElement>(null);
+
+  // Clear selections when switching tab or assignee filter
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setLastSelectedIndex(null);
+  }, [activeTab, filterAssignee]);
 
   const filteredByAssignee = reminders.filter((r) => {
     if (filterAssignee === 'mine' && activeMember) {
@@ -64,16 +77,6 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
 
   const completedList = filteredByAssignee.filter((r) => r.done);
 
-  const handleToggle = async (reminder: Reminder) => {
-    const nextDone = !reminder.done;
-    await db.toggleReminder(reminder.id, nextDone);
-    success(
-      nextDone ? 'Task Completed!' : 'Task Reopened',
-      `"${reminder.note}"`
-    );
-    onRefresh();
-  };
-
   const getActiveList = () => {
     switch (activeTab) {
       case 'overdue':
@@ -90,10 +93,127 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
 
   const currentList = getActiveList();
 
+  // Prune any selectedIds that are no longer in currentList
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const currentIdSet = new Set(currentList.map((r) => r.id));
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (currentIdSet.has(id)) {
+          next.add(id);
+        }
+      }
+      return next.size === prev.size ? prev : next;
+    });
+  }, [currentList]);
+
+  const allSelected = currentList.length > 0 && selectedIds.size === currentList.length;
+  const isIndeterminate = selectedIds.size > 0 && selectedIds.size < currentList.length;
+
+  useEffect(() => {
+    if (masterCheckboxRef.current) {
+      masterCheckboxRef.current.indeterminate = isIndeterminate;
+    }
+  }, [isIndeterminate]);
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(currentList.map((r) => r.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleToggleSelect = (id: string, index: number, e: React.MouseEvent) => {
+    const next = new Set(selectedIds);
+    if (e.shiftKey && lastSelectedIndex !== null && lastSelectedIndex !== index) {
+      const start = Math.min(lastSelectedIndex, index);
+      const end = Math.max(lastSelectedIndex, index);
+      for (let i = start; i <= end; i++) {
+        if (currentList[i]) {
+          next.add(currentList[i].id);
+        }
+      }
+    } else {
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+    }
+    setLastSelectedIndex(index);
+    setSelectedIds(next);
+  };
+
+  const handleToggle = async (reminder: Reminder) => {
+    const nextDone = !reminder.done;
+    await db.toggleReminder(reminder.id, nextDone);
+    success(
+      nextDone ? 'Task Completed!' : 'Task Reopened',
+      `"${reminder.note}"`
+    );
+    if (selectedIds.has(reminder.id)) {
+      const next = new Set(selectedIds);
+      next.delete(reminder.id);
+      setSelectedIds(next);
+    }
+    onRefresh();
+  };
+
+  const handleBulkToggle = async (markAsDone: boolean, idsToToggle?: string[]) => {
+    const targetIds = idsToToggle || Array.from(selectedIds);
+    if (targetIds.length === 0) return;
+
+    if (targetIds.length > 10) {
+      const actionText = markAsDone ? 'complete' : 'reopen';
+      if (!window.confirm(`Are you sure you want to mark ${targetIds.length} reminders as ${actionText}d?`)) {
+        return;
+      }
+    }
+
+    try {
+      await db.bulkToggleReminders(targetIds, markAsDone);
+      success(
+        markAsDone ? 'Tasks Completed!' : 'Tasks Reopened!',
+        `Successfully updated ${targetIds.length} ${targetIds.length === 1 ? 'task' : 'tasks'}.`
+      );
+      setSelectedIds(new Set());
+      onRefresh();
+    } catch (err: any) {
+      error('Update Failed', err.message || 'Could not update reminders.');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const targetIds = Array.from(selectedIds);
+    if (targetIds.length === 0) return;
+
+    if (window.confirm(`Permanently delete ${targetIds.length} selected ${targetIds.length === 1 ? 'reminder' : 'reminders'}?`)) {
+      try {
+        await db.bulkDeleteReminders(targetIds);
+        success('Reminders Deleted', `Removed ${targetIds.length} reminders.`);
+        setSelectedIds(new Set());
+        onRefresh();
+      } catch (err: any) {
+        error('Delete Failed', err.message || 'Could not delete reminders.');
+      }
+    }
+  };
+
+  // Contacts associated with all current list items (for top bar)
   const pendingContactReminders = currentList
     .map((r) => r.contact)
     .filter((c): c is Contact => Boolean(c && c.email));
   const uniqueContacts = Array.from(new Map(pendingContactReminders.map((c) => [c.id, c])).values());
+
+  // Contacts associated with currently selected items (for bulk action bar)
+  const selectedReminders = currentList.filter((r) => selectedIds.has(r.id));
+  const selectedContactReminders = selectedReminders
+    .map((r) => r.contact)
+    .filter((c): c is Contact => Boolean(c && c.email));
+  const selectedUniqueContacts = Array.from(
+    new Map(selectedContactReminders.map((c) => [c.id, c])).values()
+  );
 
   return (
     <div className="space-y-5">
@@ -219,6 +339,110 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
         </button>
       </div>
 
+      {/* Bulk Selection Header / Master Tick Bar */}
+      {currentList.length > 0 && (
+        <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs select-none">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2.5 font-semibold text-slate-800 cursor-pointer">
+              <input
+                ref={masterCheckboxRef}
+                type="checkbox"
+                checked={allSelected}
+                onChange={(e) => handleSelectAll(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              />
+              <span>
+                {selectedIds.size === 0
+                  ? `Select all (${currentList.length})`
+                  : `${selectedIds.size} of ${currentList.length} selected`}
+              </span>
+            </label>
+
+            {selectedIds.size > 0 && selectedIds.size < currentList.length && (
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set(currentList.map((r) => r.id)))}
+                className="text-indigo-600 hover:text-indigo-800 font-bold underline transition cursor-pointer"
+              >
+                Select all {currentList.length}
+              </button>
+            )}
+
+            {selectedIds.size > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="text-slate-500 hover:text-slate-800 font-medium transition cursor-pointer"
+              >
+                Clear selection
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {selectedIds.size === 0 ? (
+              activeTab !== 'completed' ? (
+                <button
+                  type="button"
+                  onClick={() => handleBulkToggle(true, currentList.map((r) => r.id))}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  title={`Mark all ${currentList.length} tasks in this view as completed`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Mark All as Done ({currentList.length})</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleBulkToggle(false, currentList.map((r) => r.id))}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  title={`Reopen all ${currentList.length} completed tasks`}
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Reopen All ({currentList.length})</span>
+                </button>
+              )
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleBulkToggle(activeTab !== 'completed')}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>
+                    {activeTab === 'completed'
+                      ? `Reopen Selected (${selectedIds.size})`
+                      : `Mark Done (${selectedIds.size})`}
+                  </span>
+                </button>
+
+                {selectedUniqueContacts.length > 0 && onOpenBulkEmail && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenBulkEmail(selectedUniqueContacts, 'followup')}
+                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+                    title="Send follow-up emails to selected contacts"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Follow-up ({selectedUniqueContacts.length})</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition cursor-pointer"
+                  title="Delete selected reminders"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Reminders List */}
       <div className="space-y-2.5">
         {currentList.length === 0 ? (
@@ -238,16 +462,19 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
             </p>
           </div>
         ) : (
-          currentList.map((reminder) => {
+          currentList.map((reminder, index) => {
             const dueDateObj = new Date(reminder.due_date);
             const isDueToday = isToday(dueDateObj);
             const isPastDue = isPast(dueDateObj) && !isDueToday && !reminder.done;
+            const isSelected = selectedIds.has(reminder.id);
 
             return (
               <div
                 key={reminder.id}
                 className={`flex items-start justify-between p-4 rounded-2xl border transition-all bg-white hover:shadow-xs ${
-                  isPastDue
+                  isSelected
+                    ? 'border-indigo-400 ring-2 ring-indigo-500/20 bg-indigo-50/20'
+                    : isPastDue
                     ? 'border-rose-200/90 bg-rose-50/10'
                     : reminder.done
                     ? 'border-slate-200 bg-slate-50/60 opacity-75'
@@ -257,9 +484,11 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
                 <div className="flex items-start gap-3 min-w-0 flex-1">
                   <input
                     type="checkbox"
-                    checked={reminder.done}
-                    onChange={() => handleToggle(reminder)}
+                    checked={isSelected}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => handleToggleSelect(reminder.id, index, e.nativeEvent as any)}
                     className="mt-1 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                    title="Tick to select for bulk action (Shift-click for range)"
                   />
 
                   <div className="min-w-0 flex-1">
@@ -317,8 +546,8 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
                   </div>
                 </div>
 
-                {reminder.contact && onOpenEmailComposer && !reminder.done && (
-                  <div className="shrink-0 ml-3">
+                <div className="shrink-0 ml-3 flex items-center gap-2">
+                  {reminder.contact && onOpenEmailComposer && !reminder.done && (
                     <Button
                       size="sm"
                       variant={isPastDue ? 'danger' : 'outline'}
@@ -328,13 +557,93 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
                     >
                       {isPastDue ? 'Send Reminder' : 'Follow-up Email'}
                     </Button>
-                  </div>
-                )}
+                  )}
+
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleToggle(reminder)}
+                    leftIcon={
+                      reminder.done ? (
+                        <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      )
+                    }
+                    className="text-xs py-1 px-2.5 font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50"
+                    title={reminder.done ? 'Mark as incomplete' : 'Mark as completed'}
+                  >
+                    {reminder.done ? 'Reopen' : 'Done'}
+                  </Button>
+                </div>
               </div>
             );
           })
         )}
       </div>
+
+      {/* Floating Action Bar (Slides Up When Tasks Are Ticked / Selected) */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 inset-x-0 mx-auto max-w-2xl px-4 z-40 animate-in slide-in-from-bottom-5 duration-200">
+          <div className="bg-slate-900 text-white rounded-2xl p-3.5 shadow-2xl border border-slate-700/80 flex flex-wrap items-center justify-between gap-3">
+            {/* Counter */}
+            <div className="flex items-center gap-2.5">
+              <span className="px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-500/30 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
+                <span>{selectedIds.size} Selected</span>
+              </span>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleBulkToggle(activeTab !== 'completed')}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>
+                  {activeTab === 'completed'
+                    ? `Reopen (${selectedIds.size})`
+                    : `Mark as Completed (${selectedIds.size})`}
+                </span>
+              </button>
+
+              {selectedUniqueContacts.length > 0 && onOpenBulkEmail && (
+                <button
+                  type="button"
+                  onClick={() => onOpenBulkEmail(selectedUniqueContacts, 'followup')}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  title="Send bulk follow-up emails to selected contacts"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>Bulk Follow-up ({selectedUniqueContacts.length})</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                title="Delete selected reminders"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+
+              <div className="h-4 w-px bg-slate-700 mx-1" />
+
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="text-xs text-slate-400 hover:text-white transition flex items-center gap-1 cursor-pointer font-medium"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Deselect All</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
