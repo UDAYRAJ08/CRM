@@ -16,7 +16,7 @@ import { ActivityChart } from './ActivityChart';
 import { RecentActivityFeed } from './RecentActivityFeed';
 import { DayEmailsModal } from './DayEmailsModal';
 
-const AUTO_REFRESH_INTERVAL_MS = 60_000;
+const AUTO_REFRESH_INTERVAL_MS = 180_000; // 3 minutes
 
 function relativeSeconds(iso: string): string {
   const diffS = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -66,11 +66,24 @@ export const DashboardView: React.FC = () => {
     fetchStats(true);
   }, [fetchStats]);
 
-  // Auto-refresh every 60s
+  // Auto-refresh: every 3m, only when tab is active and visible
   useEffect(() => {
-    intervalRef.current = setInterval(() => fetchStats(true), AUTO_REFRESH_INTERVAL_MS);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchStats(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    intervalRef.current = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchStats(true);
+      }
+    }, AUTO_REFRESH_INTERVAL_MS);
+
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [fetchStats]);
 

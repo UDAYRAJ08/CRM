@@ -77,22 +77,10 @@ const CRMMain: React.FC = () => {
   const [draftCount, setDraftCount] = useState(0);
   const [resumingDraft, setResumingDraft] = useState<EmailDraft | null>(null);
 
-  const countInboundReplies = async (contactList: Contact[]) => {
+  const countInboundReplies = async (_contactList: Contact[]) => {
     try {
-      let count = 0;
       const emails = await db.getEmails();
-      count += emails.filter((e) => e.status === 'received' || e.is_inbound).length;
-
-      // Also check qualified contacts from inbound
-      for (const c of contactList) {
-        const inters = await db.getInteractions(c.id);
-        const replyInters = inters.filter(
-          (i) => i.content.includes('📥 Inbound Email Reply Received') || i.content.includes('Inbound Email')
-        );
-        if (replyInters.length > 0) {
-          count = Math.max(count, replyInters.length);
-        }
-      }
+      const count = emails.filter((e) => e.status === 'received' || e.is_inbound).length;
       setInboxCount(count);
     } catch (e) {
       console.warn('Error counting inbound replies:', e);
@@ -160,13 +148,28 @@ const CRMMain: React.FC = () => {
     }
   }, [isLoading]);
 
-  // Background inbox sync every 60 seconds (only when authenticated)
+  // Background inbox sync: every 5 minutes only when tab is active and visible
   useEffect(() => {
     if (!user) return;
+
+    // Check on tab refocus
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleSyncInbox(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     const interval = setInterval(() => {
-      handleSyncInbox(true);
-    }, 60000);
-    return () => clearInterval(interval);
+      if (document.visibilityState === 'visible') {
+        handleSyncInbox(true);
+      }
+    }, 5 * 60 * 1000);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user]);
 
   // Hash-based routing synchronization & 404 detection
@@ -400,6 +403,7 @@ const CRMMain: React.FC = () => {
 
               {activeView === 'reminders' && (
                 <RemindersDashboard
+                  contacts={contacts}
                   reminders={reminders}
                   onRefresh={refreshAllData}
                   onOpenContact={(c) => setSelectedContact(c)}

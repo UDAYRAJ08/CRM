@@ -4,10 +4,11 @@ import { useToast } from '../../context/ToastContext';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { ConfirmModal } from '../ui/ConfirmModal';
 import { db } from '../../lib/supabase';
 import { getInitials } from '../../lib/utils';
 import { usePermissions } from '../../hooks/usePermissions';
-import { UserCheck, Plus, Sparkles, Shield } from 'lucide-react';
+import { UserCheck, Plus, Sparkles, Shield, AlertTriangle } from 'lucide-react';
 
 export const TeamMemberModal: React.FC = () => {
   const { teamMembers, activeMember, setActiveMember, addTeamMember, updateMemberRole, isPickerOpen, setIsPickerOpen } = useTeam();
@@ -19,6 +20,7 @@ export const TeamMemberModal: React.FC = () => {
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState('Sales Lead');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
 
   const handleSelect = (memberId: string) => {
     const found = teamMembers.find((m) => m.id === memberId);
@@ -64,8 +66,9 @@ export const TeamMemberModal: React.FC = () => {
   };
 
   return (
-    <Modal
-      isOpen={isPickerOpen}
+    <>
+      <Modal
+        isOpen={isPickerOpen}
       onClose={() => {
         if (activeMember) {
           setIsPickerOpen(false);
@@ -172,12 +175,7 @@ export const TeamMemberModal: React.FC = () => {
             {isAdmin ? (
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm('Reset all local data and start fresh?')) {
-                    db.clearAllLocalData();
-                    window.location.reload();
-                  }
-                }}
+                onClick={() => setIsConfirmClearOpen(true)}
                 className="text-xs text-rose-500 hover:text-rose-700 font-medium hover:underline"
               >
                 Clear Local Data
@@ -242,6 +240,23 @@ export const TeamMemberModal: React.FC = () => {
           </div>
         </form>
       )}
-    </Modal>
+      </Modal>
+
+      {/* Modern In-App Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isConfirmClearOpen}
+        onClose={() => setIsConfirmClearOpen(false)}
+        title="Reset Local Data?"
+        message="Are you sure you want to reset all local storage data and start completely fresh? This will clear all offline cached contacts, tasks, and settings."
+        confirmText="Reset & Reload"
+        cancelText="Keep Data"
+        variant="danger"
+        icon={<AlertTriangle className="w-6 h-6" />}
+        onConfirm={() => {
+          db.clearAllLocalData();
+          window.location.reload();
+        }}
+      />
+    </>
   );
 };

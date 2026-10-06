@@ -80,7 +80,46 @@ function setLocal<T>(key: string, val: T): void {
   }
 }
 
+// ==============================================================================
+// IN-MEMORY SHORT-LIVED CACHE (SWR) & USAGE OPTIMIZATION
+// Prevents redundant Supabase queries, log ingestion spikes & egress usage.
+// Cache TTL: 45 seconds. Automatically wiped on any mutation event.
+// ==============================================================================
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const queryCache = new Map<string, CacheEntry<any>>();
+const CACHE_TTL_MS = 45_000; // 45 seconds
+
+function getCached<T>(key: string): T | null {
+  const entry = queryCache.get(key);
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL_MS) {
+    return entry.data;
+  }
+  return null;
+}
+
+function setCached<T>(key: string, data: T): void {
+  queryCache.set(key, { data, timestamp: Date.now() });
+}
+
+export function invalidateCache(prefix?: string): void {
+  if (!prefix) {
+    queryCache.clear();
+  } else {
+    for (const key of queryCache.keys()) {
+      if (key.startsWith(prefix)) {
+        queryCache.delete(key);
+      }
+    }
+  }
+}
+
 export function notifyCRMEvent(event: string): void {
+  invalidateCache();
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(event));
   }
@@ -89,11 +128,19 @@ export function notifyCRMEvent(event: string): void {
 // Unified Database Access Layer
 export const db = {
   async getTeamMembers(): Promise<TeamMember[]> {
+    const cached = getCached<TeamMember[]>('team_members');
+    if (cached) return cached;
+
     if (supabase) {
       const { data, error } = await supabase.from('team_members').select('*').order('name');
-      if (!error && data) return data;
+      if (!error && data) {
+        setCached('team_members', data);
+        return data;
+      }
     }
-    return getLocal('team_members', INITIAL_TEAM);
+    const local = getLocal('team_members', INITIAL_TEAM);
+    setCached('team_members', local);
+    return local;
   },
 
   async getTeamMemberByAuthId(authUserId: string): Promise<TeamMember | null> {
@@ -156,11 +203,19 @@ export const db = {
   },
 
   async getCompanies(): Promise<Company[]> {
+    const cached = getCached<Company[]>('companies');
+    if (cached) return cached;
+
     if (supabase) {
       const { data, error } = await supabase.from('companies').select('*').order('name');
-      if (!error && data) return data;
+      if (!error && data) {
+        setCached('companies', data);
+        return data;
+      }
     }
-    return getLocal('companies', INITIAL_COMPANIES);
+    const local = getLocal('companies', INITIAL_COMPANIES);
+    setCached('companies', local);
+    return local;
   },
 
   async addCompany(company: Partial<Company>): Promise<Company> {
@@ -184,23 +239,31 @@ export const db = {
   },
 
   async getContacts(): Promise<Contact[]> {
+    const cached = getCached<Contact[]>('contacts');
+    if (cached) return cached;
+
     if (supabase) {
       const { data, error } = await supabase
         .from('contacts')
         .select('*, company:companies(*), owner:team_members(*)')
         .order('created_at', { ascending: false });
-      if (!error && data) return data;
+      if (!error && data) {
+        setCached('contacts', data);
+        return data;
+      }
     }
 
     const contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
     const companies = getLocal<Company[]>('companies', INITIAL_COMPANIES);
     const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
 
-    return contacts.map((c) => ({
+    const result = contacts.map((c) => ({
       ...c,
       company: companies.find((comp) => comp.id === c.company_id) || null,
       owner: team.find((t) => t.id === c.owner_id) || null,
     }));
+    setCached('contacts', result);
+    return result;
   },
 
   async saveContact(contact: Partial<Contact>): Promise<Contact> {
@@ -351,12 +414,20 @@ export const db = {
 
   async deleteContact(id: string): Promise<void> {
     if (supabase) {
+      try {
+        await supabase.from('reminders').delete().eq('contact_id', id);
+      } catch (err) {
+        console.warn('Could not cascade delete reminders in Supabase:', err);
+      }
       await supabase.from('contacts').delete().eq('id', id);
     } else {
       const contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
       setLocal('contacts', contacts.filter((c) => c.id !== id));
+      const reminders = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
+      setLocal('reminders', reminders.filter((r) => r.contact_id !== id));
     }
     notifyCRMEvent('crm_contacts_updated');
+    notifyCRMEvent('crm_reminders_updated');
   },
 
   async getInteractions(contactId: string): Promise<Interaction[]> {
@@ -411,23 +482,31 @@ export const db = {
   },
 
   async getReminders(): Promise<Reminder[]> {
+    const cached = getCached<Reminder[]>('reminders');
+    if (cached) return cached;
+
     if (supabase) {
       const { data, error } = await supabase
         .from('reminders')
         .select('*, contact:contacts(*), assignee:team_members(*)')
         .order('due_date', { ascending: true });
-      if (!error && data) return data;
+      if (!error && data) {
+        setCached('reminders', data);
+        return data;
+      }
     }
 
     const reminders = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
     const contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
     const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
 
-    return reminders.map((r) => ({
+    const result = reminders.map((r) => ({
       ...r,
       contact: contacts.find((c) => c.id === r.contact_id) || null,
       assignee: team.find((t) => t.id === r.assigned_to) || null,
     }));
+    setCached('reminders', result);
+    return result;
   },
 
   async saveReminder(reminder: Partial<Reminder>): Promise<Reminder> {
@@ -528,7 +607,111 @@ export const db = {
     notifyCRMEvent('crm_reminders_updated');
   },
 
+  async deduplicateReminders(): Promise<{ removedCount: number }> {
+    let reminders: Reminder[] = [];
+    if (supabase) {
+      const { data } = await supabase.from('reminders').select('*').order('created_at', { ascending: false });
+      reminders = data || [];
+    } else {
+      reminders = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
+    }
+
+    // Keep only the newest open reminder for each contact_id
+    const seenActiveContactIds = new Set<string>();
+    const toDeleteIds: string[] = [];
+
+    // Sort: newest first by created_at or due_date
+    const sorted = [...reminders].sort((a, b) => {
+      const timeA = new Date(a.created_at || a.due_date).getTime();
+      const timeB = new Date(b.created_at || b.due_date).getTime();
+      return timeB - timeA;
+    });
+
+    const keptReminders: Reminder[] = [];
+    for (const r of sorted) {
+      if (!r.done && r.contact_id) {
+        if (seenActiveContactIds.has(r.contact_id)) {
+          toDeleteIds.push(r.id);
+        } else {
+          seenActiveContactIds.add(r.contact_id);
+          keptReminders.push(r);
+        }
+      } else {
+        keptReminders.push(r);
+      }
+    }
+
+    if (toDeleteIds.length > 0) {
+      if (supabase) {
+        await supabase.from('reminders').delete().in('id', toDeleteIds);
+      } else {
+        setLocal('reminders', keptReminders);
+      }
+      notifyCRMEvent('crm_reminders_updated');
+    }
+
+    return { removedCount: toDeleteIds.length };
+  },
+
+  async cleanupOrphanedReminders(): Promise<{ removedCount: number }> {
+    let contacts: Array<{ id: string }> = [];
+    if (supabase) {
+      const { data } = await supabase.from('contacts').select('id');
+      contacts = (data as Array<{ id: string }>) || [];
+    } else {
+      contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
+    }
+    const validContactIds = new Set(contacts.map((c) => c.id));
+
+    let reminders: Reminder[] = [];
+    if (supabase) {
+      const { data } = await supabase.from('reminders').select('*');
+      reminders = data || [];
+    } else {
+      reminders = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
+    }
+
+    const orphanedIds = reminders
+      .filter((r) => !r.contact_id || !validContactIds.has(r.contact_id))
+      .map((r) => r.id);
+
+    if (orphanedIds.length > 0) {
+      if (supabase) {
+        await supabase.from('reminders').delete().in('id', orphanedIds);
+      } else {
+        const orphanSet = new Set(orphanedIds);
+        setLocal('reminders', reminders.filter((r) => !orphanSet.has(r.id)));
+      }
+      notifyCRMEvent('crm_reminders_updated');
+    }
+
+    return { removedCount: orphanedIds.length };
+  },
+
+  async clearCompletedReminders(): Promise<{ removedCount: number }> {
+    if (supabase) {
+      const { data } = await supabase.from('reminders').select('id').eq('done', true);
+      const completedIds = (data || []).map((r: any) => r.id);
+      if (completedIds.length > 0) {
+        await supabase.from('reminders').delete().in('id', completedIds);
+      }
+      notifyCRMEvent('crm_reminders_updated');
+      return { removedCount: completedIds.length };
+    } else {
+      const reminders = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
+      const remaining = reminders.filter((r) => !r.done);
+      const removedCount = reminders.length - remaining.length;
+      setLocal('reminders', remaining);
+      notifyCRMEvent('crm_reminders_updated');
+      return { removedCount };
+    }
+  },
+
   async getEmails(contactId?: string): Promise<EmailRecord[]> {
+    const cacheKey = contactId ? `emails_${contactId}` : 'emails_all';
+    const cached = getCached<EmailRecord[]>(cacheKey);
+    if (cached) return cached;
+
     if (supabase) {
       try {
         let query = supabase.from('emails').select('*').order('created_at', { ascending: false });
@@ -538,10 +721,12 @@ export const db = {
         const { data, error } = await query;
         if (!error && data) {
           const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
-          return data.map((e: any) => ({
+          const result = data.map((e: any) => ({
             ...e,
             sender: team.find((t) => t.id === e.sent_by) || null,
           }));
+          setCached(cacheKey, result);
+          return result;
         }
       } catch (err) {
         console.warn('Supabase getEmails fallback to local:', err);
@@ -551,10 +736,12 @@ export const db = {
     const emails = getLocal<EmailRecord[]>('emails', []);
     const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
     const filtered = contactId ? emails.filter((e) => e.contact_id === contactId) : emails;
-    return filtered.map((e) => ({
+    const result = filtered.map((e) => ({
       ...e,
       sender: team.find((t) => t.id === e.sent_by) || null,
     }));
+    setCached(cacheKey, result);
+    return result;
   },
 
   async saveEmail(email: Partial<EmailRecord>): Promise<EmailRecord> {
@@ -729,6 +916,9 @@ export const db = {
       dailyBreakdown: dateSlots.map((date) => ({ date, sent: 0, replies: 0 })),
       recentActivity: [],
     };
+
+    const cachedStats = getCached<DashboardStats>('dashboard_stats');
+    if (cachedStats) return cachedStats;
 
     if (supabase) {
       try {
@@ -908,7 +1098,7 @@ export const db = {
           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
           .slice(0, 10);
 
-        return {
+        const resultStats: DashboardStats = {
           emailsSentToday,
           contactsAddedToday,
           emailsThisWeek,
@@ -920,6 +1110,8 @@ export const db = {
           dailyBreakdown,
           recentActivity,
         };
+        setCached('dashboard_stats', resultStats);
+        return resultStats;
       } catch (err) {
         console.error('getDashboardStats error', err);
         return emptyStats;
@@ -1065,6 +1257,12 @@ export const db = {
   },
 
   async getDeals(contactId?: string, companyId?: string): Promise<Deal[]> {
+    const isGlobal = !contactId && !companyId;
+    if (isGlobal) {
+      const cached = getCached<Deal[]>('deals_all');
+      if (cached) return cached;
+    }
+
     if (supabase) {
       let query = supabase
         .from('deals')
@@ -1085,12 +1283,14 @@ export const db = {
 
       const { data, error } = await query;
       if (!error && data) {
-        return data.map((d: any) => ({
+        const result = data.map((d: any) => ({
           ...d,
           contact_name: d.contact?.name,
           company_name: d.company?.name,
           owner_name: d.owner?.name,
         }));
+        if (isGlobal) setCached('deals_all', result);
+        return result;
       }
     }
 
@@ -1105,12 +1305,14 @@ export const db = {
     const contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
     const companies = getLocal<Company[]>('companies', INITIAL_COMPANIES);
     const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
-    return list.map((d) => ({
+    const result = list.map((d) => ({
       ...d,
       contact_name: contacts.find((c) => c.id === d.contact_id)?.name,
       company_name: companies.find((c) => c.id === d.company_id)?.name,
       owner_name: team.find((t) => t.id === d.owner_id)?.name,
     }));
+    if (isGlobal) setCached('deals_all', result);
+    return result;
   },
 
   async addDeal(deal: Partial<Deal>): Promise<Deal> {

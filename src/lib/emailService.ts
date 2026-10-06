@@ -414,15 +414,36 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
       status: 'contacted',
     });
 
-    // 2. Automatically schedule a 3-Day Follow-up Reminder if not already scheduled
-    const threeDaysLater = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
-    await db.saveReminder({
-      contact_id: params.contactId,
-      assigned_to: params.senderId || null,
-      due_date: threeDaysLater,
-      note: `Follow-up Step 1: Send reminder email if ${params.recipientName || 'lead'} does not reply within 3 days.`,
-      done: false,
-    });
+    // 2. Automatically schedule or refresh a 3-Day Follow-up Reminder (preventing duplicate open tasks)
+    try {
+      const threeDaysLater = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      const existingReminders = await db.getReminders();
+      const existingOpenReminder = existingReminders.find(
+        (r) => r.contact_id === params.contactId && !r.done
+      );
+
+      if (existingOpenReminder) {
+        // Refresh existing reminder due date instead of creating duplicate open tasks
+        await db.saveReminder({
+          id: existingOpenReminder.id,
+          contact_id: params.contactId,
+          assigned_to: params.senderId || existingOpenReminder.assigned_to || null,
+          due_date: threeDaysLater,
+          note: `Follow-up: Send reminder email if ${params.recipientName || 'lead'} does not reply within 3 days.`,
+          done: false,
+        });
+      } else {
+        await db.saveReminder({
+          contact_id: params.contactId,
+          assigned_to: params.senderId || null,
+          due_date: threeDaysLater,
+          note: `Follow-up Step 1: Send reminder email if ${params.recipientName || 'lead'} does not reply within 3 days.`,
+          done: false,
+        });
+      }
+    } catch (reminderErr) {
+      console.warn('Failed to auto-schedule follow-up reminder:', reminderErr);
+    }
   }
 
   // If live delivery was attempted and failed, throw error

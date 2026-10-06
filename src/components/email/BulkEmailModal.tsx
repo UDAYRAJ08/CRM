@@ -633,7 +633,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                 {/* Custom Offer or Instructions */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Special Focus or Offer (Optional)
+                    Special Context or offer(Optional)
                   </label>
                   <input
                     type="text"

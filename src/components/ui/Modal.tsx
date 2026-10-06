@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
-interface ModalProps {
+export interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title?: React.ReactNode;
@@ -9,6 +10,8 @@ interface ModalProps {
   children: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
   showCloseButton?: boolean;
+  noPadding?: boolean;
+  className?: string;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -19,6 +22,8 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   maxWidth = 'lg',
   showCloseButton = true,
+  noPadding = false,
+  className = '',
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -51,16 +56,19 @@ export const Modal: React.FC<ModalProps> = ({
     '5xl': 'max-w-5xl',
   }[maxWidth];
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 top-0 left-0 right-0 bottom-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200"
+      style={{ margin: 0 }}
       onClick={(e) => {
         e.stopPropagation();
       }}
     >
       {/* Background backdrop click */}
       <div
-        className="fixed inset-0"
+        className="fixed inset-0 top-0 left-0 right-0 bottom-0"
         onClick={(e) => {
           e.stopPropagation();
           e.preventDefault();
@@ -70,7 +78,7 @@ export const Modal: React.FC<ModalProps> = ({
 
       {/* Dialog container */}
       <div
-        className={`relative w-full ${maxWidthClasses} my-auto max-h-[92vh] flex flex-col bg-white rounded-3xl shadow-2xl shadow-slate-950/20 border border-slate-200/90 overflow-hidden z-10 transform animate-in zoom-in-95 duration-200`}
+        className={`relative w-full ${maxWidthClasses} my-auto max-h-[92vh] flex flex-col bg-white rounded-3xl shadow-2xl shadow-slate-950/30 border border-slate-200/90 overflow-hidden z-10 transform animate-in zoom-in-95 duration-200 ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* If title is provided, render top header bar */}
@@ -117,8 +125,9 @@ export const Modal: React.FC<ModalProps> = ({
           </button>
         ) : null}
 
-        <div className="p-5 sm:p-6 overflow-y-auto flex-1">{children}</div>
+        <div className={`overflow-y-auto flex-1 ${noPadding ? '' : 'p-5 sm:p-6'}`}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

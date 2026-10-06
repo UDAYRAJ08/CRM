@@ -7,6 +7,7 @@ import { db } from '../../lib/supabase';
 import { getInitials, cleanCompanyName, getCompanyUrl, stripHtml } from '../../lib/utils';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
+import { ConfirmModal } from '../ui/ConfirmModal';
 import { InteractionLogger } from './InteractionLogger';
 import { InteractionTimeline } from './InteractionTimeline';
 import { DealModal } from '../pipeline/DealModal';
@@ -172,22 +173,26 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
     }
   };
 
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+
   const handleToggleReminder = async (rem: Reminder) => {
     await db.toggleReminder(rem.id, !rem.done);
     fetchDetails();
   };
 
-  const handleDeleteContact = async () => {
+  const handleDeleteContact = () => {
     if (!canDeleteContacts) {
       error('Access Restricted', 'Only Administrators have permission to delete contacts from the CRM.');
       return;
     }
-    if (window.confirm(`Are you sure you want to delete ${contact.name}?`)) {
-      onClose();
-      await db.deleteContact(contact.id);
-      success('Contact Deleted', `${contact.name} was removed.`);
-      onContactUpdated();
-    }
+    setIsConfirmDeleteOpen(true);
+  };
+
+  const confirmDeleteContact = async () => {
+    onClose();
+    await db.deleteContact(contact.id);
+    success('Contact Deleted', `${contact.name} was removed.`);
+    onContactUpdated();
   };
 
   const copyToClipboard = (text: string, label: string, keyIdentifier: string) => {
@@ -714,6 +719,26 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
         dealToEdit={editingDeal}
         initialContact={contact}
         onSuccess={fetchDetails}
+      />
+
+      {/* Confirmation Modal for Contact Deletion */}
+      <ConfirmModal
+        isOpen={isConfirmDeleteOpen}
+        onClose={() => setIsConfirmDeleteOpen(false)}
+        onConfirm={confirmDeleteContact}
+        title="Delete Contact"
+        message={
+          <div>
+            <p>
+              Are you sure you want to permanently delete <strong>{contact.name}</strong>?
+            </p>
+            <p className="text-xs text-slate-500 mt-2">
+              All linked communication history, emails, deals, and follow-up tasks will also be removed.
+            </p>
+          </div>
+        }
+        confirmText="Delete Contact"
+        variant="danger"
       />
     </div>
   );

@@ -1,10 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
-import { Contact, Interaction } from '../../types/crm';
-import { generateAIEmailDraft } from '../../lib/aiService';
+import { Contact, Interaction, EmailRecord } from '../../types/crm';
+import { generateAIEmailDraft, buildConversationHistory } from '../../lib/aiService';
+import { db } from '../../lib/supabase';
 import { Button } from '../ui/Button';
-import { Sparkles, Bot, Wand2, Settings, Cpu } from 'lucide-react';
+import {
+  Sparkles,
+  Wand2,
+  Settings,
+  History,
+  MessagesSquare,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  CornerDownRight,
+  MailCheck,
+  Inbox,
+  FileText,
+} from 'lucide-react';
 import {
   AIProviderId,
   AI_PROVIDERS,
@@ -18,12 +32,14 @@ import { AISettingsModal } from './AISettingsModal';
 interface AIDraftAssistantProps {
   contact: Contact;
   interactions: Interaction[];
+  pastEmails?: EmailRecord[];
   onDraftGenerated: (draft: { subject: string; body: string }) => void;
 }
 
 export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
   contact,
   interactions,
+  pastEmails,
   onDraftGenerated,
 }) => {
   const { activeMember } = useTeam();
@@ -36,12 +52,41 @@ export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAISettingsOpen, setIsAISettingsOpen] = useState(false);
 
+  // Past conversation state
+  const [loadedEmails, setLoadedEmails] = useState<EmailRecord[]>(pastEmails || []);
+  const [readConversation, setReadConversation] = useState<boolean>(true);
+  const [showThreadPreview, setShowThreadPreview] = useState<boolean>(false);
+
   useEffect(() => {
     setProvider(getActiveAIProvider());
     const handleUpdate = () => setProvider(getActiveAIProvider());
     window.addEventListener('crm_ai_config_updated', handleUpdate);
     return () => window.removeEventListener('crm_ai_config_updated', handleUpdate);
   }, []);
+
+  // Sync or fetch past emails for the active contact
+  useEffect(() => {
+    if (pastEmails && pastEmails.length > 0) {
+      setLoadedEmails(pastEmails);
+    } else if (contact?.id) {
+      db.getEmails(contact.id)
+        .then((fetched) => setLoadedEmails(fetched || []))
+        .catch(() => setLoadedEmails([]));
+    }
+  }, [contact?.id, pastEmails]);
+
+  // Synthesize unified chronological conversation history
+  const conversation = useMemo(() => {
+    return buildConversationHistory(loadedEmails, interactions, contact?.name || 'Lead');
+  }, [loadedEmails, interactions, contact?.name]);
+
+  const inboundCount = useMemo(() => {
+    return conversation.filter((m) => m.direction === 'inbound').length;
+  }, [conversation]);
+
+  const outboundCount = useMemo(() => {
+    return conversation.filter((m) => m.direction === 'outbound').length;
+  }, [conversation]);
 
   const goalOptions = [
     { value: 'agency_overflow', label: 'Discreet Agency Overflow & Capacity' },
@@ -66,6 +111,9 @@ export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
       const draft = await generateAIEmailDraft({
         contact,
         recentInteractions: interactions,
+        pastEmails: loadedEmails,
+        conversationHistory: conversation,
+        includeConversationContext: readConversation,
         senderName: activeMember?.name || 'CRM Team',
         goal,
         tone,
@@ -80,9 +128,13 @@ export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
       });
 
       const providerLabel = draft.provider ? AI_PROVIDERS[draft.provider as AIProviderId]?.shortName || draft.provider : AI_PROVIDERS[provider].shortName;
+      const contextMsg = (readConversation && conversation.length > 0)
+        ? ` Continuously drafted by analyzing ${conversation.length} past conversation message${conversation.length > 1 ? 's' : ''}.`
+        : ` Generated based on contact profile and goal.`;
+
       success(
         'AI Draft Ready!',
-        `Generated using ${providerLabel} with ${interactions.length} past interaction notes.`
+        `Generated using ${providerLabel}.${contextMsg}`
       );
     } catch (err: any) {
       error('Failed to generate draft', err.message);
@@ -110,7 +162,9 @@ export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
                 </span>
               </div>
               <p className="text-[10px] text-indigo-700">
-                Synthesizes client profile, company services, and {interactions.length} past interactions.
+                {conversation.length > 0 && readConversation
+                  ? `Reading ${conversation.length} past conversation message${conversation.length > 1 ? 's' : ''} to create a continuous follow-up.`
+                  : `Synthesizes client profile, company services, and ${interactions.length} past interactions.`}
               </p>
             </div>
           </div>
@@ -125,6 +179,134 @@ export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
             <span>AI Keys</span>
           </button>
         </div>
+
+        {/* Past Conversation Reading Feature Card */}
+        {conversation.length > 0 ? (
+          <div className="bg-white/95 border border-indigo-200/90 rounded-xl p-3 shadow-2xs space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                    readConversation
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-400'
+                  }`}
+                >
+                  <MessagesSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-900">
+                      Read Past Conversation
+                    </span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      {conversation.length} total ({inboundCount} received, {outboundCount} sent)
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-600 mt-0.5">
+                    {readConversation
+                      ? 'AI will inspect full email & interaction history so the new email continues the thread naturally.'
+                      : 'Past conversation reading is turned off. AI will draft a cold introduction.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowThreadPreview(!showThreadPreview)}
+                  className="flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:text-indigo-800 underline decoration-indigo-300 hover:decoration-indigo-600 cursor-pointer"
+                >
+                  {showThreadPreview ? (
+                    <>
+                      <span>Hide Thread</span>
+                      <ChevronUp className="w-3 h-3" />
+                    </>
+                  ) : (
+                    <>
+                      <span>View Thread</span>
+                      <ChevronDown className="w-3 h-3" />
+                    </>
+                  )}
+                </button>
+
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={readConversation}
+                    onChange={(e) => setReadConversation(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-8 h-4.5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-indigo-600"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* Collapsible Thread Preview */}
+            {showThreadPreview && (
+              <div className="mt-2.5 pt-2.5 border-t border-slate-100 max-h-52 overflow-y-auto space-y-2 pr-1">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Chronological Conversation History (Oldest to Newest)
+                </div>
+                {conversation.map((msg, idx) => (
+                  <div
+                    key={idx}
+                    className={`text-[11px] p-2.5 rounded-xl border transition ${
+                      msg.direction === 'inbound'
+                        ? 'bg-amber-50/70 border-amber-200/80 text-amber-950'
+                        : msg.direction === 'outbound'
+                        ? 'bg-indigo-50/70 border-indigo-200/80 text-indigo-950'
+                        : 'bg-slate-50 border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[10px] font-semibold mb-1">
+                      <span className="flex items-center gap-1.5">
+                        {msg.direction === 'inbound' && (
+                          <span className="inline-flex items-center gap-1 text-amber-800 bg-amber-100/80 px-1.5 py-0.5 rounded">
+                            <Inbox className="w-3 h-3" /> Received from {msg.sender}
+                          </span>
+                        )}
+                        {msg.direction === 'outbound' && (
+                          <span className="inline-flex items-center gap-1 text-indigo-800 bg-indigo-100/80 px-1.5 py-0.5 rounded">
+                            <MailCheck className="w-3 h-3" /> Sent by {msg.sender}
+                          </span>
+                        )}
+                        {msg.direction === 'internal_note' && (
+                          <span className="inline-flex items-center gap-1 text-slate-700 bg-slate-200/80 px-1.5 py-0.5 rounded">
+                            <FileText className="w-3 h-3" /> {msg.sender}
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-slate-500 font-normal">
+                        {new Date(msg.date).toLocaleDateString([], {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+                    {msg.subject && (
+                      <p className="font-semibold text-[11px] text-slate-800 mb-0.5">
+                        Subject: {msg.subject}
+                      </p>
+                    )}
+                    <p className="line-clamp-3 text-slate-700 text-[11px] leading-relaxed whitespace-pre-line">
+                      {msg.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="bg-white/70 border border-slate-200/80 rounded-xl px-3 py-2 flex items-center justify-between text-[11px] text-slate-500">
+            <div className="flex items-center gap-2">
+              <History className="w-3.5 h-3.5 text-slate-400" />
+              <span>No prior conversation history recorded for {contact?.name || 'this contact'} (Cold outreach mode).</span>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           {/* AI Provider selector */}
@@ -182,10 +364,10 @@ export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
           </div>
         </div>
 
-        {/* Custom instructions */}
+        {/* Custom instructions / Special Context */}
         <div>
           <label className="block text-[11px] font-bold text-slate-700 mb-1">
-            Special Focus or Offer (Optional)
+            Special Context or offer(Optional)
           </label>
           <input
             type="text"
@@ -212,7 +394,7 @@ export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
             isLoading={isGenerating}
             leftIcon={<Wand2 className="w-3.5 h-3.5" />}
             onClick={handleGenerate}
-            className="bg-indigo-600 hover:bg-indigo-700 text-xs"
+            className="bg-indigo-600 hover:bg-indigo-700 text-xs shadow-xs"
           >
             Draft with {activeProviderMeta?.shortName}
           </Button>

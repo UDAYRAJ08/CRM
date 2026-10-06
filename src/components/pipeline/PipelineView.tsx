@@ -5,6 +5,7 @@ import { cleanCompanyName } from '../../lib/utils';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
 import { DealModal } from './DealModal';
+import { ConfirmModal } from '../ui/ConfirmModal';
 import {
   Filter,
   ArrowUpDown,
@@ -75,6 +76,24 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
   // Modals state
   const [isDealModalOpen, setIsDealModalOpen] = useState(false);
   const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
+
+  // Modern In-App Confirmation Modal state
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: React.ReactNode;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'primary' | 'success';
+    icon?: React.ReactNode;
+    badgeLabel?: string;
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   const loadDeals = async (showToast = false) => {
     setIsFetching(true);
@@ -175,33 +194,79 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
     );
   };
 
-  const handleDeleteDeal = async (deal: Deal) => {
-    if (!confirm(`Are you sure you want to delete "${deal.title}"?`)) return;
-    try {
-      setDeals((prev) => prev.filter((d) => d.id !== deal.id));
-      setSelectedDeals((prev) => prev.filter((item) => item !== deal.id));
-      await db.deleteDeal(deal.id);
-      success('Deal Deleted', `Removed "${deal.title}".`);
-      onRefresh?.();
-    } catch (err: any) {
-      loadDeals();
-      error('Failed to delete deal', err.message);
-    }
+  const handleDeleteDeal = (deal: Deal) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Deal',
+      badgeLabel: 'Permanent Deletion',
+      message: (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Permanently delete deal <strong className="text-slate-900 font-bold">&quot;{deal.title}&quot;</strong>? This action cannot be undone.
+          </p>
+          <div className="bg-rose-50/80 border border-rose-200/80 rounded-2xl p-3 flex items-center justify-between text-xs text-rose-700 shadow-2xs">
+            <span className="font-medium">Impact</span>
+            <span className="font-extrabold bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 shadow-2xs">
+              Irreversible
+            </span>
+          </div>
+        </div>
+      ),
+      confirmText: 'Delete Deal',
+      variant: 'danger',
+      icon: <Trash2 className="w-7 h-7 text-rose-600" />,
+      onConfirm: async () => {
+        try {
+          setDeals((prev) => prev.filter((d) => d.id !== deal.id));
+          setSelectedDeals((prev) => prev.filter((item) => item !== deal.id));
+          await db.deleteDeal(deal.id);
+          success('Deal Deleted', `Removed "${deal.title}".`);
+          onRefresh?.();
+        } catch (err: any) {
+          loadDeals();
+          error('Failed to delete deal', err.message);
+        }
+      },
+    });
   };
 
-  const handleBulkDelete = async () => {
-    if (!confirm(`Delete ${selectedDeals.length} selected deals?`)) return;
-    try {
-      const idsToDelete = [...selectedDeals];
-      setDeals((prev) => prev.filter((d) => !idsToDelete.includes(d.id)));
-      setSelectedDeals([]);
-      await Promise.all(idsToDelete.map((id) => db.deleteDeal(id)));
-      success('Deals Deleted', 'Selected deals have been deleted.');
-      onRefresh?.();
-    } catch (err: any) {
-      loadDeals();
-      error('Failed to delete deals', err.message);
-    }
+  const handleBulkDelete = () => {
+    if (selectedDeals.length === 0) return;
+
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Deals',
+      badgeLabel: 'Permanent Deletion',
+      message: (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Permanently delete <strong className="text-slate-900 font-bold">{selectedDeals.length} selected {selectedDeals.length === 1 ? 'deal' : 'deals'}</strong>? This action cannot be undone.
+          </p>
+          <div className="bg-rose-50/80 border border-rose-200/80 rounded-2xl p-3 flex items-center justify-between text-xs text-rose-700 shadow-2xs">
+            <span className="font-medium">Impact</span>
+            <span className="font-extrabold bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 shadow-2xs">
+              Irreversible
+            </span>
+          </div>
+        </div>
+      ),
+      confirmText: `Delete ${selectedDeals.length} ${selectedDeals.length === 1 ? 'Deal' : 'Deals'}`,
+      variant: 'danger',
+      icon: <Trash2 className="w-7 h-7 text-rose-600" />,
+      onConfirm: async () => {
+        try {
+          const idsToDelete = [...selectedDeals];
+          setDeals((prev) => prev.filter((d) => !idsToDelete.includes(d.id)));
+          setSelectedDeals([]);
+          await Promise.all(idsToDelete.map((id) => db.deleteDeal(id)));
+          success('Deals Deleted', 'Selected deals have been deleted.');
+          onRefresh?.();
+        } catch (err: any) {
+          loadDeals();
+          error('Failed to delete deals', err.message);
+        }
+      },
+    });
   };
 
   // Helper for stage formatting and badge colors matching the screenshot
@@ -845,6 +910,20 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
           loadDeals();
           onRefresh?.();
         }}
+      />
+
+      {/* Modern In-App Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmText={confirmConfig.confirmText}
+        cancelText={confirmConfig.cancelText}
+        variant={confirmConfig.variant}
+        icon={confirmConfig.icon}
+        badgeLabel={confirmConfig.badgeLabel}
       />
     </div>
   );

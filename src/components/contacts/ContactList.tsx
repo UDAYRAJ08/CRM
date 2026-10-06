@@ -7,6 +7,7 @@ import { db } from '../../lib/supabase';
 import { getInitials, cleanCompanyName } from '../../lib/utils';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
+import { ConfirmModal } from '../ui/ConfirmModal';
 import {
   Users,
   Search,
@@ -213,6 +214,24 @@ export const ContactList: React.FC<ContactListProps> = ({
 
   // Active open inline status dropdown contactId
   const [activeStatusDropdownId, setActiveStatusDropdownId] = useState<string | null>(null);
+
+  // Modern In-App Confirmation Modal state
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: React.ReactNode;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'primary' | 'success';
+    icon?: React.ReactNode;
+    badgeLabel?: string;
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // Save density preference
   const toggleDensity = () => {
@@ -484,19 +503,46 @@ export const ContactList: React.FC<ContactListProps> = ({
   };
 
   // Bulk Delete
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (!canBulkDelete) {
       error('Access Restricted', 'Only Administrators have permission to delete contacts from the CRM.');
       return;
     }
-    if (window.confirm(`Delete ${selectedContacts.length} selected contacts?`)) {
-      for (const c of selectedContacts) {
-        await db.deleteContact(c.id);
-      }
-      setSelectedIds(new Set());
-      success('Contacts Deleted', `Removed ${selectedContacts.length} contacts.`);
-      onRefresh();
-    }
+    if (selectedContacts.length === 0) return;
+
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Contacts',
+      badgeLabel: 'Permanent Deletion',
+      message: (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Permanently delete <strong className="text-slate-900 font-bold">{selectedContacts.length} selected {selectedContacts.length === 1 ? 'contact' : 'contacts'}</strong>? All associated tasks, emails, and activities will also be cleaned up.
+          </p>
+          <div className="bg-rose-50/80 border border-rose-200/80 rounded-2xl p-3 flex items-center justify-between text-xs text-rose-700 shadow-2xs">
+            <span className="font-medium">Impact</span>
+            <span className="font-extrabold bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 shadow-2xs">
+              Irreversible
+            </span>
+          </div>
+        </div>
+      ),
+      confirmText: `Delete ${selectedContacts.length} ${selectedContacts.length === 1 ? 'Contact' : 'Contacts'}`,
+      variant: 'danger',
+      icon: <Trash2 className="w-7 h-7 text-rose-600" />,
+      onConfirm: async () => {
+        try {
+          for (const c of selectedContacts) {
+            await db.deleteContact(c.id);
+          }
+          setSelectedIds(new Set());
+          success('Contacts Deleted', `Removed ${selectedContacts.length} contacts.`);
+          onRefresh();
+        } catch (err: any) {
+          error('Delete Failed', err.message || 'Could not delete contacts.');
+        }
+      },
+    });
   };
 
   // Inline Status Update (Optimistic UI Update)
@@ -1612,6 +1658,20 @@ export const ContactList: React.FC<ContactListProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modern In-App Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmText={confirmConfig.confirmText}
+        cancelText={confirmConfig.cancelText}
+        variant={confirmConfig.variant}
+        icon={confirmConfig.icon}
+        badgeLabel={confirmConfig.badgeLabel}
+      />
     </div>
   );
 };

@@ -4,6 +4,7 @@ import { useToast } from '../../context/ToastContext';
 import { Reminder, Contact } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { Button } from '../ui/Button';
+import { ConfirmModal, ConfirmVariant } from '../ui/ConfirmModal';
 import {
   CalendarCheck2,
   AlertCircle,
@@ -18,10 +19,12 @@ import {
   RotateCcw,
   Trash2,
   X,
+  Sparkles,
 } from 'lucide-react';
 import { isToday, isPast, format } from 'date-fns';
 
 interface RemindersDashboardProps {
+  contacts?: Contact[];
   reminders: Reminder[];
   onRefresh: () => void;
   onOpenContact: (contact: Contact) => void;
@@ -31,6 +34,7 @@ interface RemindersDashboardProps {
 }
 
 export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
+  contacts = [],
   reminders,
   onRefresh,
   onOpenContact,
@@ -41,10 +45,32 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
   const { activeMember } = useTeam();
   const { success, error } = useToast();
 
+  const [isCleaning, setIsCleaning] = useState(false);
   const [filterAssignee, setFilterAssignee] = useState<'all' | 'mine'>('all');
   const [activeTab, setActiveTab] = useState<'today' | 'overdue' | 'upcoming' | 'completed'>('today');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+
+  // Modern in-app confirmation modal state
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: React.ReactNode;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: ConfirmVariant;
+    icon?: React.ReactNode;
+    badgeLabel?: string;
+    checkboxLabel?: string;
+    checkboxDefaultChecked?: boolean;
+    onCheckboxChange?: (checked: boolean) => void;
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   const masterCheckboxRef = useRef<HTMLInputElement>(null);
 
@@ -160,17 +186,7 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
     onRefresh();
   };
 
-  const handleBulkToggle = async (markAsDone: boolean, idsToToggle?: string[]) => {
-    const targetIds = idsToToggle || Array.from(selectedIds);
-    if (targetIds.length === 0) return;
-
-    if (targetIds.length > 10) {
-      const actionText = markAsDone ? 'complete' : 'reopen';
-      if (!window.confirm(`Are you sure you want to mark ${targetIds.length} reminders as ${actionText}d?`)) {
-        return;
-      }
-    }
-
+  const executeBulkToggle = async (markAsDone: boolean, targetIds: string[]) => {
     try {
       await db.bulkToggleReminders(targetIds, markAsDone);
       success(
@@ -184,20 +200,271 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
     }
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkToggle = (markAsDone: boolean, idsToToggle?: string[]) => {
+    const targetIds = idsToToggle || Array.from(selectedIds);
+    if (targetIds.length === 0) return;
+
+    if (targetIds.length > 5) {
+      const actionText = markAsDone ? 'completed' : 'reopened';
+      setConfirmConfig({
+        isOpen: true,
+        title: markAsDone ? 'Complete Tasks' : 'Reopen Tasks',
+        badgeLabel: markAsDone ? 'Batch Completion' : 'Batch Reopen',
+        message: (
+          <div className="space-y-3.5">
+            <p className="text-slate-600 text-sm">
+              Are you sure you want to mark{' '}
+              <strong className="text-slate-900 font-bold">{targetIds.length} reminders</strong> as{' '}
+              <span className={markAsDone ? 'font-bold text-emerald-600' : 'font-bold text-indigo-600'}>
+                {actionText}
+              </span>?
+            </p>
+            <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-3.5 flex items-center justify-between text-xs text-slate-600 shadow-2xs">
+              <span className="font-medium text-slate-500">Selected Tasks</span>
+              <span className="font-extrabold text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                {targetIds.length} Records
+              </span>
+            </div>
+          </div>
+        ),
+        confirmText: markAsDone ? `Mark as Completed (${targetIds.length})` : `Reopen All (${targetIds.length})`,
+        variant: markAsDone ? 'success' : 'primary',
+        icon: markAsDone ? <CheckCircle2 className="w-7 h-7 text-emerald-600" /> : <RotateCcw className="w-7 h-7 text-indigo-600" />,
+        onConfirm: () => executeBulkToggle(markAsDone, targetIds),
+      });
+      return;
+    }
+
+    executeBulkToggle(markAsDone, targetIds);
+  };
+
+  const handleBulkDelete = () => {
     const targetIds = Array.from(selectedIds);
     if (targetIds.length === 0) return;
 
-    if (window.confirm(`Permanently delete ${targetIds.length} selected ${targetIds.length === 1 ? 'reminder' : 'reminders'}?`)) {
-      try {
-        await db.bulkDeleteReminders(targetIds);
-        success('Reminders Deleted', `Removed ${targetIds.length} reminders.`);
-        setSelectedIds(new Set());
-        onRefresh();
-      } catch (err: any) {
-        error('Delete Failed', err.message || 'Could not delete reminders.');
-      }
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Reminders',
+      badgeLabel: 'Permanent Deletion',
+      message: (
+        <div className="space-y-3.5">
+          <p className="text-slate-600 text-sm">
+            Permanently delete <strong className="text-slate-900 font-bold">{targetIds.length} selected {targetIds.length === 1 ? 'reminder' : 'reminders'}</strong>? This action cannot be undone.
+          </p>
+          <div className="bg-rose-50/80 border border-rose-200/80 rounded-2xl p-3.5 flex items-center justify-between text-xs text-rose-700 shadow-2xs">
+            <span className="font-medium">Impact</span>
+            <span className="font-extrabold bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 shadow-2xs">
+              Irreversible
+            </span>
+          </div>
+        </div>
+      ),
+      confirmText: `Delete ${targetIds.length} ${targetIds.length === 1 ? 'Reminder' : 'Reminders'}`,
+      variant: 'danger',
+      icon: <Trash2 className="w-7 h-7 text-rose-600" />,
+      onConfirm: async () => {
+        try {
+          await db.bulkDeleteReminders(targetIds);
+          success('Reminders Deleted', `Removed ${targetIds.length} reminders.`);
+          setSelectedIds(new Set());
+          onRefresh();
+        } catch (err: any) {
+          error('Delete Failed', err.message || 'Could not delete reminders.');
+        }
+      },
+    });
+  };
+
+  // Diagnostics & cleanup calculations
+  const totalContacts = contacts?.length || 0;
+  const validContactIds = new Set((contacts || []).map((c) => c.id));
+  const openReminders = reminders.filter((r) => !r.done);
+  const completedReminders = reminders.filter((r) => r.done);
+
+  // Group open reminders by contact_id to detect duplicates
+  const activeByContact = new Map<string, Reminder[]>();
+  for (const r of openReminders) {
+    if (r.contact_id) {
+      const list = activeByContact.get(r.contact_id) || [];
+      list.push(r);
+      activeByContact.set(r.contact_id, list);
     }
+  }
+  let duplicateCount = 0;
+  let contactsWithDuplicates = 0;
+  for (const list of activeByContact.values()) {
+    if (list.length > 1) {
+      duplicateCount += list.length - 1;
+      contactsWithDuplicates++;
+    }
+  }
+
+  // Orphaned reminders whose contact doesn't exist
+  const orphanedReminders = contacts && contacts.length > 0
+    ? reminders.filter((r) => !r.contact_id || !validContactIds.has(r.contact_id))
+    : [];
+  const orphanedCount = orphanedReminders.length;
+
+  const handleDeduplicate = async () => {
+    setIsCleaning(true);
+    try {
+      const res = await db.deduplicateReminders();
+      success(
+        'Deduplication Complete',
+        res.removedCount > 0
+          ? `Removed ${res.removedCount} duplicate tasks. Each contact now has at most 1 active follow-up.`
+          : 'No duplicate tasks found.'
+      );
+      onRefresh();
+    } catch (err: any) {
+      error('Deduplication Failed', err.message || 'Could not deduplicate tasks.');
+    } finally {
+      setIsCleaning(false);
+    }
+  };
+
+  const handleCleanOrphans = async () => {
+    setIsCleaning(true);
+    try {
+      const res = await db.cleanupOrphanedReminders();
+      success(
+        'Orphaned Tasks Cleaned',
+        res.removedCount > 0
+          ? `Cleaned up ${res.removedCount} tasks with no matching contacts.`
+          : 'No orphaned tasks found.'
+      );
+      onRefresh();
+    } catch (err: any) {
+      error('Cleanup Failed', err.message || 'Could not clean orphaned tasks.');
+    } finally {
+      setIsCleaning(false);
+    }
+  };
+
+  const handleClearCompleted = () => {
+    if (completedReminders.length === 0) return;
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Clear Completed Tasks History',
+      badgeLabel: 'Purge History',
+      message: (
+        <div className="space-y-3 text-left">
+          <p className="text-sm text-slate-600">
+            Permanently clear all <strong className="text-slate-900 font-bold">{completedReminders.length} completed tasks</strong> from CRM history?
+          </p>
+          <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-3.5 flex items-center justify-between text-xs text-slate-600 shadow-2xs">
+            <span className="font-medium text-slate-500">History Records</span>
+            <span className="font-extrabold text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+              {completedReminders.length} Tasks
+            </span>
+          </div>
+          <p className="text-xs text-slate-400">
+            This will reduce your total task count from {reminders.length} down to {openReminders.length} active tasks, keeping only pending follow-ups.
+          </p>
+        </div>
+      ),
+      confirmText: `Clear ${completedReminders.length} Completed`,
+      variant: 'danger',
+      icon: <Trash2 className="w-7 h-7 text-rose-600" />,
+      onConfirm: async () => {
+        setIsCleaning(true);
+        try {
+          const res = await db.clearCompletedReminders();
+          success('Completed Tasks Cleared', `Removed ${res.removedCount} completed task records.`);
+          onRefresh();
+        } catch (err: any) {
+          error('Clear Failed', err.message || 'Could not clear completed tasks.');
+        } finally {
+          setIsCleaning(false);
+        }
+      },
+    });
+  };
+
+  const handleCleanAll = () => {
+    let clearCompleted = true;
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Clean & Align Follow-up Tasks',
+      badgeLabel: '1-Click Optimization',
+      message: (
+        <div className="space-y-3.5 text-left">
+          <p className="text-xs text-slate-600">
+            The following optimizations will be applied to harmonize your follow-ups with your {totalContacts} contacts:
+          </p>
+          <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5 text-xs text-slate-700 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Deduplicate active tasks (keeps 1 active reminder per contact, removes {duplicateCount} duplicates)</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Remove {orphanedCount} orphaned tasks with missing contacts</span>
+            </div>
+          </div>
+        </div>
+      ),
+      checkboxLabel: completedReminders.length > 0 ? `Also clear all ${completedReminders.length} completed history records` : undefined,
+      checkboxDefaultChecked: true,
+      onCheckboxChange: (val) => {
+        clearCompleted = val;
+      },
+      confirmText: 'Run Clean & Align',
+      variant: 'primary',
+      icon: <Sparkles className="w-7 h-7 text-indigo-600" />,
+      onConfirm: async () => {
+        setIsCleaning(true);
+        try {
+          const dedupRes = await db.deduplicateReminders();
+          const orphanRes = await db.cleanupOrphanedReminders();
+          let completedRemoved = 0;
+          if (clearCompleted) {
+            const compRes = await db.clearCompletedReminders();
+            completedRemoved = compRes.removedCount;
+          }
+          success(
+            'Tasks Synchronized & Cleaned!',
+            `Cleaned ${dedupRes.removedCount} duplicates and ${orphanRes.removedCount} orphans${
+              completedRemoved > 0 ? `, and cleared ${completedRemoved} completed records` : ''
+            }.`
+          );
+          onRefresh();
+        } catch (err: any) {
+          error('Optimization Failed', err.message || 'Could not complete task optimization.');
+        } finally {
+          setIsCleaning(false);
+        }
+      },
+    });
+  };
+
+  const handleSingleDelete = (reminderId: string, reminderNote?: string) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Reminder',
+      message: (
+        <div className="text-slate-600 text-left">
+          <p>Are you sure you want to permanently delete this task?</p>
+          {reminderNote && (
+            <p className="mt-2 text-xs text-slate-500 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              &quot;{reminderNote}&quot;
+            </p>
+          )}
+        </div>
+      ),
+      confirmText: 'Delete Task',
+      variant: 'danger',
+      icon: <Trash2 className="w-6 h-6" />,
+      onConfirm: async () => {
+        try {
+          await db.deleteReminder(reminderId);
+          success('Task Deleted', 'Reminder was removed.');
+          onRefresh();
+        } catch (err: any) {
+          error('Delete Failed', err.message || 'Could not delete reminder.');
+        }
+      },
+    });
   };
 
   // Contacts associated with all current list items (for top bar)
@@ -273,6 +540,85 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
           </Button>
         </div>
       </div>
+
+      {/* Diagnostics & Alignment Banner */}
+      {(duplicateCount > 0 || orphanedCount > 0 || completedReminders.length > 0 || (totalContacts > 0 && reminders.length > totalContacts)) && (
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-lg border border-indigo-900/40 relative overflow-hidden">
+          <div className="absolute right-0 top-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="space-y-1.5 max-w-2xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-indigo-400" />
+                  Task Audit & Sync
+                </span>
+                <span className="text-xs font-semibold text-slate-300">
+                  {totalContacts > 0 ? `${totalContacts} Contacts in CRM` : ''} • {openReminders.length} Active Tasks • {completedReminders.length} Completed
+                </span>
+              </div>
+
+              <h3 className="text-sm sm:text-base font-bold text-white">
+                Task Count Optimization ({reminders.length} total tasks across {totalContacts} contacts)
+              </h3>
+              
+              <p className="text-xs text-slate-300 leading-relaxed">
+                You have {totalContacts} total contacts in the CRM. The {reminders.length} tasks in database include {openReminders.length} active/upcoming reminders and {completedReminders.length} completed task records.
+                {duplicateCount > 0 && ` Found ${duplicateCount} duplicate open task${duplicateCount === 1 ? '' : 's'} across ${contactsWithDuplicates} contact${contactsWithDuplicates === 1 ? '' : 's'}.`}
+                {orphanedCount > 0 && ` Found ${orphanedCount} orphaned task${orphanedCount === 1 ? '' : 's'} from removed contacts.`}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={isCleaning}
+                onClick={handleCleanAll}
+                className="px-3.5 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-200" />
+                <span>1-Click Clean & Align</span>
+              </button>
+
+              {duplicateCount > 0 && (
+                <button
+                  type="button"
+                  disabled={isCleaning}
+                  onClick={handleDeduplicate}
+                  className="px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-amber-300 border border-amber-500/30 font-semibold text-xs rounded-xl transition cursor-pointer disabled:opacity-50"
+                  title="Remove duplicate open tasks for the same contact"
+                >
+                  Deduplicate ({duplicateCount})
+                </button>
+              )}
+
+              {orphanedCount > 0 && (
+                <button
+                  type="button"
+                  disabled={isCleaning}
+                  onClick={handleCleanOrphans}
+                  className="px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-rose-300 border border-rose-500/30 font-semibold text-xs rounded-xl transition cursor-pointer disabled:opacity-50"
+                  title="Remove tasks linked to deleted contacts"
+                >
+                  Remove Orphans ({orphanedCount})
+                </button>
+              )}
+
+              {completedReminders.length > 0 && (
+                <button
+                  type="button"
+                  disabled={isCleaning}
+                  onClick={handleClearCompleted}
+                  className="px-3 py-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold text-xs rounded-xl transition cursor-pointer disabled:opacity-50"
+                  title="Purge completed task history from database"
+                >
+                  Clear Completed ({completedReminders.length})
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Categorized Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200">
@@ -382,25 +728,53 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
           <div className="flex items-center gap-2">
             {selectedIds.size === 0 ? (
               activeTab !== 'completed' ? (
-                <button
-                  type="button"
-                  onClick={() => handleBulkToggle(true, currentList.map((r) => r.id))}
-                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-                  title={`Mark all ${currentList.length} tasks in this view as completed`}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Mark All as Done ({currentList.length})</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleBulkToggle(true, currentList.map((r) => r.id))}
+                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                    title={`Mark all ${currentList.length} tasks in this view as completed`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Mark All as Done ({currentList.length})</span>
+                  </button>
+
+                  {duplicateCount > 0 && (
+                    <button
+                      type="button"
+                      disabled={isCleaning}
+                      onClick={handleDeduplicate}
+                      className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs disabled:opacity-50"
+                      title={`Remove ${duplicateCount} duplicate open tasks across your contacts`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Deduplicate ({duplicateCount})</span>
+                    </button>
+                  )}
+                </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => handleBulkToggle(false, currentList.map((r) => r.id))}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
-                  title={`Reopen all ${currentList.length} completed tasks`}
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Reopen All ({currentList.length})</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleBulkToggle(false, currentList.map((r) => r.id))}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+                    title={`Reopen all ${currentList.length} completed tasks`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Reopen All ({currentList.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isCleaning}
+                    onClick={handleClearCompleted}
+                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                    title={`Permanently delete all ${currentList.length} completed tasks from history`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Clear Completed ({currentList.length})</span>
+                  </button>
+                </div>
               )
             ) : (
               <>
@@ -503,7 +877,7 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
                     </p>
 
                     <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-slate-500">
-                      {reminder.contact && (
+                      {reminder.contact ? (
                         <button
                           type="button"
                           onClick={() => onOpenContact(reminder.contact!)}
@@ -517,6 +891,10 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
                           )}
                           <ArrowUpRight className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                         </button>
+                      ) : (
+                        <span className="text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded text-[11px] font-semibold">
+                          Contact Deleted / Not Found
+                        </span>
                       )}
 
                       <span className="flex items-center gap-1 font-medium">
@@ -575,6 +953,15 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
                   >
                     {reminder.done ? 'Reopen' : 'Done'}
                   </Button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSingleDelete(reminder.id, reminder.note)}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-lg transition cursor-pointer"
+                    title="Permanently delete this task"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );
@@ -644,6 +1031,23 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modern In-App Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmText={confirmConfig.confirmText}
+        cancelText={confirmConfig.cancelText}
+        variant={confirmConfig.variant}
+        icon={confirmConfig.icon}
+        badgeLabel={confirmConfig.badgeLabel}
+        checkboxLabel={confirmConfig.checkboxLabel}
+        checkboxDefaultChecked={confirmConfig.checkboxDefaultChecked}
+        onCheckboxChange={confirmConfig.onCheckboxChange}
+      />
     </div>
   );
 };

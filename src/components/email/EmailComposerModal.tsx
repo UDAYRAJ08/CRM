@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { Contact, Interaction } from '../../types/crm';
+import { Contact, Interaction, EmailRecord } from '../../types/crm';
 import { sendEmailDirectly, resolveContactCompany } from '../../lib/emailService';
 import { cleanCompanyName, stripHtml } from '../../lib/utils';
 import { db, EmailDraft, DraftAttachment } from '../../lib/supabase';
@@ -155,6 +155,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [isAiGenerated, setIsAiGenerated]   = useState(false);
   const [interactions, setInteractions]     = useState<Interaction[]>([]);
+  const [pastEmails, setPastEmails]         = useState<EmailRecord[]>([]);
   const [isSending, setIsSending]           = useState(false);
   const [sandboxError, setSandboxError]     = useState<string | null>(null);
 
@@ -228,6 +229,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
 
     setSandboxError(null);
     db.getInteractions(contact.id).then(setInteractions);
+    db.getEmails(contact.id).then((emails) => setPastEmails(emails || []));
   }, [isOpen, contact, activeMember, initialSubject, initialBody, resumeDraft]);
 
   // ── Close all popovers on outside click ────────────────────────────────────
@@ -621,7 +623,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
             className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-indigo-50/80 to-purple-50/80 hover:bg-indigo-100/60 transition text-left">
             <div className="flex items-center gap-2 text-xs font-bold text-indigo-950">
               <Sparkles className="w-4 h-4 text-indigo-600" />
-              AI Draft Assistant (Claude Sonnet)
+              AI Draft Assistant
               {isAiGenerated && (
                 <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                   <CheckCircle className="w-3 h-3" /> Applied
@@ -632,7 +634,12 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
           </button>
           {showAIAssistant && (
             <div className="p-3 bg-white border-t border-indigo-100">
-              <AIDraftAssistant contact={contact} interactions={interactions} onDraftGenerated={handleDraftGenerated} />
+              <AIDraftAssistant
+                contact={contact}
+                interactions={interactions}
+                pastEmails={pastEmails}
+                onDraftGenerated={handleDraftGenerated}
+              />
             </div>
           )}
         </div>
