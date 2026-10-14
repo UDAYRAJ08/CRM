@@ -118,8 +118,8 @@ export const DashboardView: React.FC = () => {
       {/* ── Page header ──────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Dashboard</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Dashboard</h1>
+          <p className="text-sm text-slate-500 mt-1">
             Organisation-wide snapshot · auto-refreshes every 60s
           </p>
         </div>
@@ -133,7 +133,7 @@ export const DashboardView: React.FC = () => {
           <button
             onClick={() => fetchStats(false)}
             disabled={isRefreshing}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 hover:text-indigo-700 hover:border-indigo-200 hover:bg-indigo-50 transition-all shadow-sm disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
           >
             <RefreshCw
               className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-indigo-500' : ''}`}
@@ -151,8 +151,8 @@ export const DashboardView: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <MetricCard
             icon={<Mail className="w-5 h-5" />}
-            iconBg="bg-indigo-100"
-            iconColor="text-indigo-600"
+            iconBg="bg-slate-100"
+            iconColor="text-slate-500"
             label="Emails Sent Today"
             value={stats?.emailsSentToday ?? 0}
             subValue={
@@ -168,8 +168,8 @@ export const DashboardView: React.FC = () => {
 
           <MetricCard
             icon={<UserPlus className="w-5 h-5" />}
-            iconBg="bg-amber-100"
-            iconColor="text-amber-600"
+            iconBg="bg-slate-100"
+            iconColor="text-slate-500"
             label="Contacts Added Today"
             value={stats?.contactsAddedToday ?? 0}
             emptyMessage="No new contacts added today"
@@ -178,8 +178,8 @@ export const DashboardView: React.FC = () => {
 
           <MetricCard
             icon={<BarChart2 className="w-5 h-5" />}
-            iconBg="bg-purple-100"
-            iconColor="text-purple-600"
+            iconBg="bg-slate-100"
+            iconColor="text-slate-500"
             label="Activity This Week"
             value={stats?.emailsThisWeek ?? 0}
             trend={weeklyTrend}
@@ -196,8 +196,8 @@ export const DashboardView: React.FC = () => {
 
           <MetricCard
             icon={<MessageSquare className="w-5 h-5" />}
-            iconBg="bg-emerald-100"
-            iconColor="text-emerald-600"
+            iconBg="bg-slate-100"
+            iconColor="text-slate-500"
             label="Replies Received Today"
             value={stats?.repliesReceivedToday ?? 0}
             subValue={
@@ -219,8 +219,8 @@ export const DashboardView: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <MetricCard
             icon={<TrendingUp className="w-5 h-5" />}
-            iconBg="bg-sky-100"
-            iconColor="text-sky-600"
+            iconBg="bg-slate-100"
+            iconColor="text-slate-500"
             label="Emails Sent This Week"
             value={stats?.emailsThisWeek ?? 0}
             trend={weeklyTrend}
@@ -230,8 +230,8 @@ export const DashboardView: React.FC = () => {
 
           <MetricCard
             icon={<Percent className="w-5 h-5" />}
-            iconBg="bg-rose-100"
-            iconColor="text-rose-600"
+            iconBg="bg-slate-100"
+            iconColor="text-slate-500"
             label="Reply Rate Today"
             value={stats?.replyRateToday ?? 0}
             suffix="%"
@@ -248,8 +248,8 @@ export const DashboardView: React.FC = () => {
 
           <MetricCard
             icon={<Percent className="w-5 h-5" />}
-            iconBg="bg-teal-100"
-            iconColor="text-teal-600"
+            iconBg="bg-slate-100"
+            iconColor="text-slate-500"
             label="Reply Rate This Week"
             value={stats?.replyRateThisWeek ?? 0}
             suffix="%"
@@ -260,8 +260,8 @@ export const DashboardView: React.FC = () => {
 
           <MetricCard
             icon={<MessageSquare className="w-5 h-5" />}
-            iconBg="bg-emerald-100"
-            iconColor="text-emerald-600"
+            iconBg="bg-slate-100"
+            iconColor="text-slate-500"
             label="Replies This Week"
             value={stats?.repliesReceivedThisWeek ?? 0}
             emptyMessage="No replies received this week"

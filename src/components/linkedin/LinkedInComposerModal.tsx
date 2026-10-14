@@ -226,7 +226,7 @@ export const LinkedInComposerModal: React.FC<LinkedInComposerModalProps> = ({
               <Share2 className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-slate-900">
+              <h3 className="text-base font-semibold text-slate-900">
                 LinkedIn Outreach to {contact.name}
               </h3>
               <p className="text-xs text-slate-500">
@@ -250,7 +250,7 @@ export const LinkedInComposerModal: React.FC<LinkedInComposerModalProps> = ({
         {/* Profile Target Info Banner */}
         <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center shrink-0 shadow-2xs">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center shrink-0 shadow-2xs">
               {contact.name.slice(0, 2).toUpperCase()}
             </div>
             <div className="min-w-0">
@@ -372,7 +372,7 @@ export const LinkedInComposerModal: React.FC<LinkedInComposerModalProps> = ({
         </div>
 
         {/* Workflow Tip Box */}
-        <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50/60 border border-blue-100 rounded-xl text-xs text-blue-900 leading-relaxed flex items-start gap-2.5">
+        <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-900 leading-relaxed flex items-start gap-2.5">
           <Zap className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
           <div className="text-[11px] text-blue-900 space-y-1">
             <p>

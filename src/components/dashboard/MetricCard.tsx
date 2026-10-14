@@ -30,7 +30,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
 }) => {
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm animate-pulse">
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 animate-pulse">
         <div className="flex items-start justify-between mb-4">
           <div className="w-10 h-10 rounded-xl bg-slate-100" />
           <div className="w-16 h-4 rounded bg-slate-100" />
@@ -63,7 +63,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
     trend === undefined || trend === 0 ? Minus : trend > 0 ? TrendingUp : TrendingDown;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm hover:shadow-md transition-shadow duration-200 group">
+    <div className="bg-white rounded-2xl border border-slate-200 p-6 transition-shadow duration-200 group">
       {/* Icon + trend row */}
       <div className="flex items-start justify-between mb-4">
         <div className={`w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center ${iconColor} flex-shrink-0`}>
@@ -87,7 +87,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
         </div>
       ) : (
         <div className="mb-1">
-          <p className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
+          <p className="text-3xl font-semibold text-slate-900 tracking-tight leading-none">
             {typeof value === 'number' ? value.toLocaleString() : value}
             {suffix && <span className="text-xl font-bold text-slate-500">{suffix}</span>}
           </p>
@@ -95,7 +95,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
       )}
 
       {/* Label */}
-      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-2">{label}</p>
+      <p className="text-xs font-medium text-slate-500 mt-2">{label}</p>
 
       {/* Sub-value */}
       {subValue && (

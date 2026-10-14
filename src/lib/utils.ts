@@ -190,6 +190,7 @@ export function getCompanyUrl(company?: { name?: string; website?: string } | nu
 export function stripHtml(html?: string | null): string {
   if (!html) return '';
   return html
+    .replace(/<(style|script|head)\b[\s\S]*?<\/\1>/gi, '')
     .replace(/<br\s*[\/]?>/gi, '\n')
     .replace(/<\/p>/gi, '\n\n')
     .replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1')

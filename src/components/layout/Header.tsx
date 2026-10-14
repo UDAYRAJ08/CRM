@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
 import { isSupabaseConfigured } from '../../lib/supabase';
@@ -13,22 +13,14 @@ import {
   UserPlus,
   Database,
   Search,
-  Settings,
   RefreshCw,
   Share2,
-  Crown,
-  Zap,
-  Shield,
   Menu,
-  Layers,
-  Sparkles,
 } from 'lucide-react';
 
 interface HeaderProps {
   onOpenImport: () => void;
   onOpenAddContact: () => void;
-  onOpenEmailSettings?: () => void;
-  onOpenAISettings?: () => void;
   onOpenInvite?: () => void;
   onSyncInbox?: () => Promise<void>;
   isSyncingInbox?: boolean;
@@ -39,11 +31,20 @@ interface HeaderProps {
   onNavigateHome?: () => void;
 }
 
+const VIEW_TITLES: Record<string, string> = {
+  dashboard: 'Dashboard',
+  pipeline: 'Pipeline',
+  inbox: 'Inbox',
+  drafts: 'Drafts',
+  reminders: 'Follow-ups',
+  companies: 'Companies',
+  imports: 'Import history',
+  linkedin: 'LinkedIn',
+};
+
 export const Header: React.FC<HeaderProps> = ({
   onOpenImport,
   onOpenAddContact,
-  onOpenEmailSettings,
-  onOpenAISettings,
   onOpenInvite,
   onSyncInbox,
   isSyncingInbox = false,
@@ -51,41 +52,36 @@ export const Header: React.FC<HeaderProps> = ({
   setSearchQuery,
   activeView,
   onOpenMobileMenu,
-  onNavigateHome,
 }) => {
   const { activeMember, setIsPickerOpen, logout } = useTeam();
   const { user } = useAuth();
   const { roleTitle, isAdmin, isManager, isEmployee } = usePermissions();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
+  useEffect(() => {
+    if (!isUserMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setIsUserMenuOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isUserMenuOpen]);
+
   const initials = getInitials(activeMember?.name || user?.email, 'U');
 
   return (
-    <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
+    <header className="sticky top-0 z-30 bg-white border-b border-slate-200 px-3 sm:px-6 h-16 shrink-0 flex items-center justify-between gap-2 sm:gap-4">
       {/* Mobile Hamburger Menu & Mobile Clickable Logo */}
       <div className="flex items-center gap-1.5 md:hidden">
         {onOpenMobileMenu && (
           <button
             type="button"
             onClick={onOpenMobileMenu}
-            className="p-1.5 sm:p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition cursor-pointer"
+            className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
             aria-label="Open navigation menu"
             title="Open Menu"
           >
             <Menu className="w-5 h-5 text-slate-700" />
           </button>
         )}
-        <button
-          type="button"
-          onClick={onNavigateHome}
-          className="flex items-center gap-1.5 cursor-pointer focus:outline-none hover:opacity-85 transition"
-          title="Return to Dashboard"
-        >
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-xs">
-            <Layers className="w-4 h-4" />
-          </div>
-          <span className="font-extrabold text-sm text-slate-900 tracking-tight hidden xs:inline">CRM</span>
-        </button>
       </div>
 
       {/* Search Input for Contacts or Section Header Title */}
@@ -98,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
               placeholder="Search by name, email, company, tag..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs sm:text-sm bg-slate-100/80 hover:bg-slate-100 focus:bg-white border border-transparent focus:border-indigo-500 rounded-xl pl-9 pr-3 py-1.5 sm:py-2 text-slate-900 placeholder:text-slate-400 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              className="w-full text-xs sm:text-sm bg-slate-100 focus:bg-white border border-transparent focus:border-indigo-500 rounded-lg pl-9 pr-3 py-1.5 sm:py-2 text-slate-900 placeholder:text-slate-400 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             />
             {searchQuery && (
               <button
@@ -110,48 +106,26 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
         ) : (
-          <div className="text-sm font-semibold text-slate-700 capitalize">
-            {activeView === 'inbox'
-              ? 'Inbox & Lead Email Replies'
-              : activeView === 'reminders'
-              ? 'Follow-up & Reminders Center'
-              : activeView === 'companies'
-              ? 'Companies & Accounts'
-              : activeView === 'pipeline'
-              ? 'Sales Pipeline & Opportunities'
-              : 'Excel Import History & Logs'}
+          // Page title lives in each view's own heading; show it here only on mobile.
+          <div className="md:hidden text-sm font-semibold text-slate-900 truncate">
+            {VIEW_TITLES[activeView] ?? ''}
           </div>
         )}
       </div>
 
       {/* Action Buttons & Team Member Badge */}
       <div className="flex items-center gap-2 sm:gap-2.5">
-        {/* Backend Status indicator */}
-        <div
-          title={
-            isSupabaseConfigured
-              ? 'Connected to Live Supabase Postgres Database'
-              : 'Operating in Local Storage / In-Memory Mode (Supabase URL not set)'
-          }
-          className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-[11px] font-medium text-slate-600 border border-slate-200/70"
-        >
-          <Database className={`w-3 h-3 ${isSupabaseConfigured ? 'text-emerald-500' : 'text-amber-500'}`} />
-          <span>{isSupabaseConfigured ? 'Supabase Live' : 'Local Mode'}</span>
-        </div>
-
         {/* Sync Inbox Button */}
         {onSyncInbox && (
-          <Button
-            variant="outline"
-            size="sm"
+          <button
             onClick={onSyncInbox}
             disabled={isSyncingInbox}
-            leftIcon={<RefreshCw className={`w-3.5 h-3.5 text-indigo-600 ${isSyncingInbox ? 'animate-spin text-indigo-500' : ''}`} />}
-            className="hidden sm:inline-flex"
-            title="Check connected Outlook mailbox for new replies from CRM contacts"
+            className="hidden sm:inline-flex p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+            title="Check mailbox for new replies"
+            aria-label="Sync inbox"
           >
-            {isSyncingInbox ? 'Syncing...' : 'Sync Inbox'}
-          </Button>
+            <RefreshCw className={`w-4 h-4 ${isSyncingInbox ? 'animate-spin' : ''}`} />
+          </button>
         )}
 
         {/* Import button */}
@@ -159,7 +133,7 @@ export const Header: React.FC<HeaderProps> = ({
           variant="outline"
           size="sm"
           onClick={onOpenImport}
-          leftIcon={<UploadCloud className="w-4 h-4 text-indigo-600" />}
+          leftIcon={<UploadCloud className="w-4 h-4" />}
           className="hidden md:inline-flex"
         >
           Import
@@ -171,46 +145,10 @@ export const Header: React.FC<HeaderProps> = ({
           size="sm"
           onClick={onOpenAddContact}
           leftIcon={<UserPlus className="w-4 h-4" />}
+          aria-label="Add contact"
         >
-          Add Contact
+          <span className="hidden sm:inline">Add Contact</span>
         </Button>
-
-        {/* Invite Team Button */}
-        {onOpenInvite && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onOpenInvite}
-            leftIcon={<Share2 className="w-3.5 h-3.5 text-[#1e4634]" />}
-            className="border-emerald-700/30 text-[#1e4634] hover:bg-emerald-50/50 hidden sm:inline-flex"
-            title="Invite teammates to try this CRM"
-          >
-            Invite Team
-          </Button>
-        )}
-
-        {/* Email Settings button */}
-        {onOpenEmailSettings && (
-          <button
-            onClick={onOpenEmailSettings}
-            className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-xl transition border border-slate-200 bg-white cursor-pointer"
-            title="Email & API Delivery Settings"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-        )}
-
-        {/* AI Engine & API Keys button */}
-        {onOpenAISettings && (
-          <button
-            onClick={onOpenAISettings}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition text-xs font-bold shadow-2xs cursor-pointer"
-            title="Configure Multi-AI Systems (OpenAI, Claude, Gemini, Groq, DeepSeek) & Service Profile"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-            <span className="hidden md:inline">AI Keys</span>
-          </button>
-        )}
 
         <div className="h-6 w-px bg-slate-200 mx-0.5 hidden sm:block" />
 
@@ -218,33 +156,19 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="relative">
           <button
             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-            className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition bg-white text-left shadow-xs cursor-pointer"
+            className="flex items-center gap-2 pl-1.5 pr-2 py-1 rounded-lg hover:bg-slate-100 transition-colors text-left cursor-pointer"
+            aria-haspopup="menu"
+            aria-expanded={isUserMenuOpen}
             title="Account & Persona Menu"
           >
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white font-bold text-xs flex items-center justify-center shadow-xs">
+            <div className="w-7 h-7 rounded-full bg-indigo-600 text-white font-medium text-xs flex items-center justify-center">
               {initials}
             </div>
             <div className="hidden lg:block text-left">
-              <div className="text-xs font-bold text-slate-900 leading-tight">
+              <div className="text-xs font-medium text-slate-900 leading-tight">
                 {activeMember?.name || 'Pick Name'}
               </div>
-              <div className="flex items-center gap-1 mt-0.5">
-                {isAdmin ? (
-                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.2 rounded-md">
-                    <Crown className="w-2.5 h-2.5 text-indigo-600" />
-                    <span>Admin</span>
-                  </span>
-                ) : isManager ? (
-                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.2 rounded-md">
-                    <Zap className="w-2.5 h-2.5 text-emerald-600" />
-                    <span>Manager</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-[9px] font-medium text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded-md">
-                    <span>{roleTitle}</span>
-                  </span>
-                )}
-              </div>
+              <div className="text-[11px] text-slate-500 leading-tight">{roleTitle}</div>
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           </button>
@@ -255,7 +179,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="fixed inset-0 z-40"
                 onClick={() => setIsUserMenuOpen(false)}
               />
-              <div className="absolute right-0 mt-2 w-60 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="absolute right-0 mt-2 w-60 bg-white border border-slate-200 rounded-xl shadow-lg z-50 p-1.5" role="menu">
                 <div className="p-2.5 border-b border-slate-100">
                   <div className="flex items-center justify-between gap-1 mb-1">
                     <p className="text-xs font-bold text-slate-900 truncate">
@@ -268,8 +192,9 @@ export const Header: React.FC<HeaderProps> = ({
                   <p className="text-[11px] text-slate-500 truncate">
                     {user?.email || activeMember?.email || 'Authenticated User'}
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-1 font-medium">
-                    {isAdmin ? '👑 Full Administrator permissions' : isManager ? '⚡ Manager (Edit, Create & Outreach)' : '👤 Standard access (Outreach & Create only)'}
+                  <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                    <Database className={`w-3 h-3 ${isSupabaseConfigured ? 'text-emerald-500' : 'text-amber-500'}`} />
+                    {isSupabaseConfigured ? 'Database connected' : 'Local mode (no database)'}
                   </p>
                 </div>
 
@@ -280,9 +205,9 @@ export const Header: React.FC<HeaderProps> = ({
                         setIsUserMenuOpen(false);
                         onOpenInvite();
                       }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 rounded-xl transition text-left cursor-pointer"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-lg transition text-left cursor-pointer"
                     >
-                      <Share2 className="w-4 h-4 text-emerald-700" />
+                      <Share2 className="w-4 h-4 text-slate-400" />
                       <span>Invite Colleagues</span>
                     </button>
                   )}
@@ -292,7 +217,7 @@ export const Header: React.FC<HeaderProps> = ({
                       setIsUserMenuOpen(false);
                       setIsPickerOpen(true);
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/60 rounded-xl transition text-left cursor-pointer"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-lg transition text-left cursor-pointer"
                   >
                     <Users className="w-4 h-4 text-slate-400" />
                     <span>Switch Persona</span>
@@ -303,9 +228,9 @@ export const Header: React.FC<HeaderProps> = ({
                       setIsUserMenuOpen(false);
                       await logout();
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition text-left cursor-pointer"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-lg transition text-left cursor-pointer"
                   >
-                    <User className="w-4 h-4 text-rose-500" />
+                    <User className="w-4 h-4" />
                     <span>Sign Out</span>
                   </button>
                 </div>

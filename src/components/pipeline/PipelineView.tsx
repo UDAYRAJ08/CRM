@@ -206,7 +206,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
           </p>
           <div className="bg-rose-50/80 border border-rose-200/80 rounded-2xl p-3 flex items-center justify-between text-xs text-rose-700 shadow-2xs">
             <span className="font-medium">Impact</span>
-            <span className="font-extrabold bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 shadow-2xs">
+            <span className="font-semibold bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 shadow-2xs">
               Irreversible
             </span>
           </div>
@@ -244,7 +244,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
           </p>
           <div className="bg-rose-50/80 border border-rose-200/80 rounded-2xl p-3 flex items-center justify-between text-xs text-rose-700 shadow-2xs">
             <span className="font-medium">Impact</span>
-            <span className="font-extrabold bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 shadow-2xs">
+            <span className="font-semibold bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 shadow-2xs">
               Irreversible
             </span>
           </div>
@@ -364,7 +364,12 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-[1700px] mx-auto min-h-[calc(100vh-65px)] flex flex-col font-sans">
+    <div className="space-y-4 flex flex-col">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Pipeline</h1>
+        <p className="text-sm text-slate-500 mt-1">Deals by stage, amount and closing date.</p>
+      </div>
+
       {/* ========================================================================= */}
       {/* 1. TOP SEGMENTED FILTER TABS                                              */}
       {/* ========================================================================= */}
@@ -405,7 +410,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <List className="w-3.5 h-3.5 text-blue-500" />
+          <List className="w-3.5 h-3.5 text-indigo-500" />
           <span>New Deals</span>
         </button>
 
@@ -468,12 +473,12 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
           <div className="relative">
             <button
               onClick={() => setIsFilterOpen(!isFilterOpen)}
-              className="px-3 py-1.5 rounded-xl bg-white border border-slate-200/90 hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition cursor-pointer"
             >
               <Filter className="w-3.5 h-3.5 text-slate-500" />
               <span>Filter</span>
               {selectedStageFilter !== 'all' && (
-                <span className="w-2 h-2 rounded-full bg-blue-600" />
+                <span className="w-2 h-2 rounded-full bg-indigo-600" />
               )}
             </button>
 
@@ -483,7 +488,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                   className="fixed inset-0 z-30"
                   onClick={() => setIsFilterOpen(false)}
                 />
-                <div className="absolute left-0 mt-1.5 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-40 p-3 space-y-2 animate-in fade-in duration-150">
+                <div className="absolute left-0 mt-1.5 w-56 bg-white border border-slate-200 rounded-2xl shadow-lg z-40 p-3 space-y-2 animate-in fade-in duration-150">
                   <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                     Filter by Stage
                   </div>
@@ -507,7 +512,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                         setSelectedStageFilter('all');
                         setIsFilterOpen(false);
                       }}
-                      className="text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer"
+                      className="text-[11px] font-semibold text-indigo-600 hover:underline cursor-pointer"
                     >
                       Reset Filter
                     </button>
@@ -527,7 +532,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                 setSortOrder('desc');
               }
             }}
-            className="px-3 py-1.5 rounded-xl bg-white border border-slate-200/90 hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+            className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition cursor-pointer"
           >
             <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
             <span>Sort {sortField === 'amount' ? `(${sortOrder.toUpperCase()})` : ''}</span>
@@ -540,7 +545,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
               onClick={() => setViewMode('table')}
               className={`p-1.5 rounded-lg transition cursor-pointer ${
                 viewMode === 'table'
-                  ? 'bg-white text-blue-600 shadow-2xs font-bold'
+                  ? 'bg-white text-indigo-600 shadow-2xs font-bold'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
               title="Table View"
@@ -553,7 +558,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
               onClick={() => setViewMode('kanban')}
               className={`p-1.5 rounded-lg transition cursor-pointer ${
                 viewMode === 'kanban'
-                  ? 'bg-white text-blue-600 shadow-2xs font-bold'
+                  ? 'bg-white text-indigo-600 shadow-2xs font-bold'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
               title="Kanban Board View"
@@ -602,7 +607,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
           <button
             onClick={() => loadDeals(true)}
             disabled={isFetching}
-            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 text-xs font-semibold text-slate-700 flex items-center gap-1.5 shadow-2xs transition cursor-pointer disabled:opacity-50"
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${isFetching ? 'animate-spin' : ''}`} />
             <span>Fetch Records</span>
@@ -615,7 +620,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                 setEditingDeal(null);
                 setIsDealModalOpen(true);
               }}
-              className="px-4 py-2 rounded-l-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs sm:text-sm font-semibold transition cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-2 rounded-l-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs sm:text-sm font-semibold transition cursor-pointer flex items-center gap-1.5"
             >
               <span>Create Deal</span>
             </button>
@@ -624,7 +629,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                 setEditingDeal(null);
                 setIsDealModalOpen(true);
               }}
-              className="px-2 py-2 rounded-r-xl bg-blue-700 hover:bg-blue-800 text-white border-l border-blue-500 transition cursor-pointer flex items-center justify-center"
+              className="px-2 py-2 rounded-r-xl bg-indigo-700 hover:bg-indigo-800 text-white border-l border-indigo-500 transition cursor-pointer flex items-center justify-center"
               title="More deal actions"
             >
               <ChevronDown className="w-4 h-4" />
@@ -643,7 +648,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
           )}
 
           <button
-            className="p-2 rounded-xl border border-slate-200/80 bg-white hover:bg-slate-50 text-slate-500 transition cursor-pointer"
+            className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 transition cursor-pointer"
             title="Options"
           >
             <MoreHorizontal className="w-4 h-4" />
@@ -655,7 +660,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
       {/* 3. TABLE VIEW (MATCHING REFERENCE SCREENSHOT)                            */}
       {/* ========================================================================= */}
       {viewMode === 'table' ? (
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden flex-1 flex flex-col">
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex-1 flex flex-col">
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-left border-collapse text-xs sm:text-sm">
               {/* Header Row */}
@@ -670,7 +675,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                         selectedDeals.length === filteredDeals.length
                       }
                       onChange={handleSelectAll}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                     />
                   </th>
 
@@ -723,7 +728,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                             setEditingDeal(null);
                             setIsDealModalOpen(true);
                           }}
-                          className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs"
+                          className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs"
                         >
                           + Create Deal
                         </button>
@@ -739,7 +744,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                       <tr
                         key={deal.id}
                         className={`hover:bg-slate-50/80 transition duration-100 group ${
-                          isSelected ? 'bg-blue-50/30' : ''
+                          isSelected ? 'bg-indigo-50/30' : ''
                         }`}
                       >
                         {/* Row Checkbox */}
@@ -748,7 +753,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => handleSelectRow(deal.id)}
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                           />
                         </td>
 
@@ -765,7 +770,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                               setEditingDeal(deal);
                               setIsDealModalOpen(true);
                             }}
-                            className="font-medium text-slate-900 hover:text-blue-600 text-left transition cursor-pointer"
+                            className="font-medium text-slate-900 hover:text-indigo-600 text-left transition cursor-pointer"
                           >
                             {deal.title}
                           </button>
@@ -805,7 +810,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                                 setEditingDeal(deal);
                                 setIsDealModalOpen(true);
                               }}
-                              className="p-1 text-slate-400 hover:text-blue-600 transition"
+                              className="p-1 text-slate-400 hover:text-indigo-600 transition"
                               title="Edit deal"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
@@ -848,14 +853,14 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                 key={col.id}
                 className="bg-slate-100/70 border border-slate-200/80 rounded-2xl p-3 flex flex-col min-h-[480px]"
               >
-                <div className={`p-2.5 rounded-xl border border-slate-200/60 bg-white mb-3 border-t-4 ${col.color}`}>
+                <div className={`p-2.5 rounded-xl border border-slate-200 bg-white mb-3 border-t-4 ${col.color}`}>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-900">{col.label}</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${col.badge}`}>
                       {colDeals.length}
                     </span>
                   </div>
-                  <div className="text-xs font-extrabold text-slate-700 mt-1">
+                  <div className="text-xs font-semibold text-slate-700 mt-1">
                     {formatAmount(colValue)}
                   </div>
                 </div>
@@ -868,12 +873,12 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                         setEditingDeal(deal);
                         setIsDealModalOpen(true);
                       }}
-                      className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs hover:shadow-xs transition cursor-pointer"
+                      className="bg-white border border-slate-200 rounded-xl p-3-xs transition cursor-pointer"
                     >
                       <h4 className="text-xs font-bold text-slate-900 leading-snug line-clamp-2">
                         {deal.title}
                       </h4>
-                      <div className="text-xs font-black text-slate-900 mt-2">
+                      <div className="text-xs font-semibold text-slate-900 mt-2">
                         {formatAmount(deal.value)}
                       </div>
                       {deal.expected_close_date && (

@@ -57,6 +57,8 @@ import {
 } from '../../lib/aiConfig';
 import { getCompanyServiceProfile, CompanyServiceProfile } from '../../lib/serviceProfile';
 import { AISettingsModal } from './AISettingsModal';
+import { useEditorFormatState, toolbarToggleClass } from './editorFormatting';
+import { FontSizeMenu } from './FontSizeMenu';
 
 export type BulkTemplateKey = 'agency_overflow' | 'capabilities' | 'followup' | 'scope' | 'intro';
 
@@ -73,14 +75,6 @@ const EMOJI_LIST = [
   '😊','😃','👋','🤝','✅','🎯','🚀','💡','📧','📋','👀','🙏','💪','🔥','⚡',
   '📅','⏰','📈','💼','🏆','🌟','👍','❤️','🎉','✨','📝','💬','🔔','📌','🎓',
   '😄','🤩','🤔','💭','📊','💰','🌍','🔑','🎁','📱','💻','🖥️','🔧','⚙️',
-];
-
-const FONT_SIZES = [
-  { label: 'Small',   value: '12px' },
-  { label: 'Normal',  value: '14px' },
-  { label: 'Medium',  value: '16px' },
-  { label: 'Large',   value: '18px' },
-  { label: 'X-Large', value: '22px' },
 ];
 
 const formatBodyForEditor = (text: string): string => {
@@ -237,12 +231,15 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
   }, []);
 
   // ── Rich Text Formatting Helpers ───────────────────────────────────────────
+  const { formatState, refreshFormatState } = useEditorFormatState(editorRef);
+
   const execFormat = (cmd: string, val?: string) => {
     document.execCommand(cmd, false, val);
     if (editorRef.current) {
       editorRef.current.focus();
       setBodyTemplate(editorRef.current.innerHTML);
     }
+    refreshFormatState();
   };
 
   const insertEmoji = (emoji: string) => {
@@ -516,7 +513,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
         title={
           <div className="flex items-center justify-between w-full pr-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold shadow-md shadow-indigo-500/20">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-md">
                 <Sparkles className="w-5 h-5" />
               </div>
               <div>
@@ -550,7 +547,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
       >
         <div className="space-y-4 max-h-[78vh] overflow-y-auto pr-1">
           {/* AI Bulk Outreach Writer Banner & Controls */}
-          <div className="rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-slate-50 p-4 space-y-3.5 shadow-2xs">
+          <div className="rounded-2xl border border-indigo-200/90 bg-indigo-50/70 p-4 space-y-3.5 shadow-2xs">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100 pb-2.5">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
@@ -599,7 +596,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                     <select
                       value={campaignGoal}
                       onChange={(e) => setCampaignGoal(e.target.value as any)}
-                      className="w-full text-xs bg-white border border-indigo-200/80 rounded-xl px-2.5 py-2 text-slate-800 font-medium focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+                      className="w-full text-xs bg-white border border-indigo-200/80 rounded-xl px-2.5 py-2 text-slate-800 font-medium focus:ring-1 focus:ring-indigo-500"
                     >
                       <option value="agency_overflow">Discreet Agency Overflow & Capacity</option>
                       <option value="shopify_cro">Shopify CRO & Experimentation Layer</option>
@@ -620,7 +617,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                     <select
                       value={tone}
                       onChange={(e) => setTone(e.target.value as any)}
-                      className="w-full text-xs bg-white border border-indigo-200/80 rounded-xl px-2.5 py-2 text-slate-800 font-medium focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+                      className="w-full text-xs bg-white border border-indigo-200/80 rounded-xl px-2.5 py-2 text-slate-800 font-medium focus:ring-1 focus:ring-indigo-500"
                     >
                       <option value="professional">Professional & Authoritative</option>
                       <option value="persuasive">Persuasive & ROI-Driven</option>
@@ -640,7 +637,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                     value={customInstructions}
                     onChange={(e) => setCustomInstructions(e.target.value)}
                     placeholder="e.g. Highlight senior React/Node engineers, offer 10% discount on first month sprint, mention mutual connection..."
-                    className="w-full text-xs bg-white border border-indigo-200/80 rounded-xl px-3 py-1.5 text-slate-800 placeholder:text-slate-400 focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+                    className="w-full text-xs bg-white border border-indigo-200/80 rounded-xl px-3 py-1.5 text-slate-800 placeholder:text-slate-400 focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
 
@@ -812,7 +809,8 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                   execFormat('bold');
                 }}
                 title="Bold (Ctrl+B)"
-                className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition cursor-pointer"
+                aria-pressed={formatState.bold}
+                className={toolbarToggleClass(formatState.bold)}
               >
                 <Bold className="w-3.5 h-3.5" />
               </button>
@@ -825,7 +823,8 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                   execFormat('italic');
                 }}
                 title="Italic (Ctrl+I)"
-                className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition cursor-pointer"
+                aria-pressed={formatState.italic}
+                className={toolbarToggleClass(formatState.italic)}
               >
                 <Italic className="w-3.5 h-3.5" />
               </button>
@@ -838,7 +837,8 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                   execFormat('underline');
                 }}
                 title="Underline (Ctrl+U)"
-                className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition cursor-pointer"
+                aria-pressed={formatState.underline}
+                className={toolbarToggleClass(formatState.underline)}
               >
                 <Underline className="w-3.5 h-3.5" />
               </button>
@@ -853,7 +853,8 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                   execFormat('insertUnorderedList');
                 }}
                 title="Bullet list"
-                className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition cursor-pointer"
+                aria-pressed={formatState.list}
+                className={toolbarToggleClass(formatState.list)}
               >
                 <List className="w-3.5 h-3.5" />
               </button>
@@ -872,24 +873,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                   <Type className="w-3.5 h-3.5" />
                   <ChevronDown className="w-2.5 h-2.5" />
                 </button>
-                {showFontSizeMenu && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-50 min-w-[110px]">
-                    {FONT_SIZES.map((fs) => (
-                      <button
-                        key={fs.value}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          applyFontSize(fs.value);
-                        }}
-                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-indigo-50 hover:text-indigo-700 font-medium transition cursor-pointer"
-                        style={{ fontSize: fs.value }}
-                      >
-                        {fs.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {showFontSizeMenu && <FontSizeMenu onSelect={applyFontSize} />}
               </div>
 
               <div className="w-px h-5 bg-slate-200 mx-0.5" />
@@ -915,7 +899,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                 </button>
 
                 {showLinkPopover && (
-                  <div className="absolute top-full left-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-50 w-72 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="absolute top-full left-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-4 z-50 w-72 animate-in fade-in zoom-in-95 duration-150">
                     <p className="text-xs font-bold text-slate-700 mb-3 flex items-center gap-1.5">
                       <LinkIcon className="w-3.5 h-3.5 text-indigo-500" /> Insert Link
                     </p>
@@ -992,7 +976,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                   <Smile className="w-3.5 h-3.5" />
                 </button>
                 {showEmojiPicker && (
-                  <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 w-60">
+                  <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg p-3 z-50 w-60">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
                       Insert Emoji
                     </p>
@@ -1084,7 +1068,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                 <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                   <Eye className="w-3.5 h-3.5 text-indigo-600" />
                   Live Preview ({previewIndex + 1} of {contactsWithEmail.length}):{' '}
-                  <span className="text-indigo-600 font-extrabold">{previewContact.name}</span>
+                  <span className="text-indigo-600 font-semibold">{previewContact.name}</span>
                   {resolveContactCompany(previewContact) && (
                     <span className="text-slate-400 font-normal">
                       ({resolveContactCompany(previewContact)})
@@ -1116,7 +1100,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                 </div>
               </div>
 
-              <div className="bg-white p-3.5 rounded-xl border border-slate-200/90 text-xs space-y-2 font-sans shadow-2xs">
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs space-y-2 font-sans">
                 <div className="flex items-center justify-between text-slate-500 border-b border-slate-100 pb-1.5">
                   <div>
                     <span className="font-semibold text-slate-600">To:</span>{' '}
@@ -1132,7 +1116,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                   {renderedSubject}
                 </div>
                 <div
-                  className="pt-2 border-t border-slate-100 text-slate-700 leading-relaxed font-sans text-xs"
+                  className="email-preview pt-2 border-t border-slate-100 text-slate-700 leading-relaxed font-sans text-xs"
                   dangerouslySetInnerHTML={{
                     __html: /<[a-z][\s\S]*>/i.test(renderedBody)
                       ? renderedBody
@@ -1174,7 +1158,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
               </div>
               <div className="w-full h-2.5 bg-indigo-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-indigo-600 to-emerald-500 transition-all duration-300 rounded-full"
+                  className="h-full bg-indigo-600 transition-all duration-300 rounded-full"
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -1213,6 +1197,16 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
             pointer-events: none;
             font-style: italic;
           }
+          /* Tailwind preflight strips list styling; restore it inside the editor */
+          [contenteditable][data-placeholder] ul { list-style: disc outside; padding-left: 1.5rem; margin: 0.25rem 0; }
+          [contenteditable][data-placeholder] ol { list-style: decimal outside; padding-left: 1.5rem; margin: 0.25rem 0; }
+          [contenteditable][data-placeholder] li { display: list-item; }
+          [contenteditable][data-placeholder] a { color: #4f46e5; text-decoration: underline; }
+          /* Preview mirrors how mail clients render lists (Tailwind preflight strips them) */
+          .email-preview ul { list-style: disc outside; padding-left: 1.5rem; margin: 0.75rem 0; }
+          .email-preview ol { list-style: decimal outside; padding-left: 1.5rem; margin: 0.75rem 0; }
+          .email-preview li { display: list-item; }
+          .email-preview a { color: #4f46e5; text-decoration: underline; }
         `}</style>
       </Modal>
 

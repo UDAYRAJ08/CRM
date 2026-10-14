@@ -55,7 +55,7 @@ const typeConfig: Record<
 export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({ items, isLoading }) => {
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
+      <div className="bg-white rounded-2xl border border-slate-200 p-6">
         <div className="w-36 h-4 rounded bg-slate-100 animate-pulse mb-5" />
         <div className="space-y-4">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -74,7 +74,7 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({ items, i
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
+    <div className="bg-white rounded-2xl border border-slate-200 p-6">
       <h3 className="text-sm font-bold text-slate-900 mb-5">Recent Activity</h3>
 
       {items.length === 0 ? (

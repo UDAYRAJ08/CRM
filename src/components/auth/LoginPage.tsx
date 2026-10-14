@@ -187,7 +187,7 @@ export const LoginPage: React.FC = () => {
                 <path d="M2 12l10 5 10-5" />
               </svg>
             </div>
-            <span className="text-lg font-extrabold text-slate-900 tracking-tight">
+            <span className="text-lg font-semibold text-slate-900 tracking-tight">
               InsideBox
             </span>
           </div>

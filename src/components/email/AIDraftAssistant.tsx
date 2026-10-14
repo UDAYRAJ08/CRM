@@ -148,7 +148,7 @@ export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
 
   return (
     <>
-      <div className="bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-slate-50 border border-indigo-200/80 rounded-2xl p-4 shadow-xs space-y-3.5">
+      <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-4 shadow-xs space-y-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
@@ -182,7 +182,7 @@ export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
 
         {/* Past Conversation Reading Feature Card */}
         {conversation.length > 0 ? (
-          <div className="bg-white/95 border border-indigo-200/90 rounded-xl p-3 shadow-2xs space-y-2">
+          <div className="bg-white/95 border border-indigo-200/90 rounded-xl p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
                 <div
@@ -300,7 +300,7 @@ export const AIDraftAssistant: React.FC<AIDraftAssistantProps> = ({
             )}
           </div>
         ) : (
-          <div className="bg-white/70 border border-slate-200/80 rounded-xl px-3 py-2 flex items-center justify-between text-[11px] text-slate-500">
+          <div className="bg-white/70 border border-slate-200 rounded-xl px-3 py-2 flex items-center justify-between text-[11px] text-slate-500">
             <div className="flex items-center gap-2">
               <History className="w-3.5 h-3.5 text-slate-400" />
               <span>No prior conversation history recorded for {contact?.name || 'this contact'} (Cold outreach mode).</span>

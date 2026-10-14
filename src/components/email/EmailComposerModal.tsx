@@ -10,6 +10,8 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { AIDraftAssistant } from './AIDraftAssistant';
+import { useEditorFormatState, toolbarToggleClass } from './editorFormatting';
+import { FontSizeMenu } from './FontSizeMenu';
 import {
   Mail, Sparkles, Send, CheckCircle, ChevronDown, ChevronUp, Clock,
   AlertTriangle, ExternalLink, Bold, Italic, Underline,
@@ -22,14 +24,6 @@ const EMOJI_LIST = [
   '😊','😃','👋','🤝','✅','🎯','🚀','💡','📧','📋','👀','🙏','💪','🔥','⚡',
   '📅','⏰','📈','💼','🏆','🌟','👍','❤️','🎉','✨','📝','💬','🔔','📌','🎓',
   '😄','🤩','🤔','💭','📊','💰','🌍','🔑','🎁','📱','💻','🖥️','🔧','⚙️',
-];
-
-const FONT_SIZES = [
-  { label: 'Small',   value: '12px' },
-  { label: 'Normal',  value: '14px' },
-  { label: 'Medium',  value: '16px' },
-  { label: 'Large',   value: '18px' },
-  { label: 'X-Large', value: '22px' },
 ];
 
 // Quick schedule presets shown in the dropdown
@@ -245,9 +239,12 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
   }, []);
 
   // ── Rich text commands ──────────────────────────────────────────────────────
+  const { formatState, refreshFormatState } = useEditorFormatState(editorRef);
+
   const execFormat = (cmd: string, val?: string) => {
     document.execCommand(cmd, false, val);
     editorRef.current?.focus();
+    refreshFormatState();
   };
 
   const insertEmoji = (emoji: string) => {
@@ -620,7 +617,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
         {/* AI Assistant accordion */}
         <div className="border border-indigo-100 rounded-2xl overflow-hidden">
           <button type="button" onClick={() => setShowAIAssistant(!showAIAssistant)}
-            className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-indigo-50/80 to-purple-50/80 hover:bg-indigo-100/60 transition text-left">
+            className="w-full flex items-center justify-between p-3 bg-indigo-50/80 hover:bg-indigo-100/60 transition text-left">
             <div className="flex items-center gap-2 text-xs font-bold text-indigo-950">
               <Sparkles className="w-4 h-4 text-indigo-600" />
               AI Draft Assistant
@@ -725,17 +722,17 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
           <div className="flex items-center gap-0.5 px-2 py-1.5 bg-slate-50 border border-slate-200 border-b-0 rounded-t-xl flex-wrap">
             {/* Bold */}
             <button type="button" onMouseDown={(e) => { e.preventDefault(); execFormat('bold'); }}
-              title="Bold (Ctrl+B)" className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition">
+              title="Bold (Ctrl+B)" aria-pressed={formatState.bold} className={toolbarToggleClass(formatState.bold)}>
               <Bold className="w-3.5 h-3.5" />
             </button>
             {/* Italic */}
             <button type="button" onMouseDown={(e) => { e.preventDefault(); execFormat('italic'); }}
-              title="Italic (Ctrl+I)" className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition">
+              title="Italic (Ctrl+I)" aria-pressed={formatState.italic} className={toolbarToggleClass(formatState.italic)}>
               <Italic className="w-3.5 h-3.5" />
             </button>
             {/* Underline */}
             <button type="button" onMouseDown={(e) => { e.preventDefault(); execFormat('underline'); }}
-              title="Underline (Ctrl+U)" className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition">
+              title="Underline (Ctrl+U)" aria-pressed={formatState.underline} className={toolbarToggleClass(formatState.underline)}>
               <Underline className="w-3.5 h-3.5" />
             </button>
 
@@ -743,7 +740,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
 
             {/* Bullet list */}
             <button type="button" onMouseDown={(e) => { e.preventDefault(); execFormat('insertUnorderedList'); }}
-              title="Bullet list" className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition">
+              title="Bullet list" aria-pressed={formatState.list} className={toolbarToggleClass(formatState.list)}>
               <List className="w-3.5 h-3.5" />
             </button>
 
@@ -754,18 +751,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
                 <Type className="w-3.5 h-3.5" />
                 <ChevronDown className="w-2.5 h-2.5" />
               </button>
-              {showFontSizeMenu && (
-                <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-50 min-w-[110px]">
-                  {FONT_SIZES.map((fs) => (
-                    <button key={fs.value} type="button"
-                      onMouseDown={(e) => { e.preventDefault(); applyFontSize(fs.value); }}
-                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-indigo-50 hover:text-indigo-700 font-medium transition"
-                      style={{ fontSize: fs.value }}>
-                      {fs.label}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {showFontSizeMenu && <FontSizeMenu onSelect={applyFontSize} />}
             </div>
 
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
@@ -781,7 +767,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
 
               {/* Link popover */}
               {showLinkPopover && (
-                <div className="absolute top-full left-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-50 w-72 animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute top-full left-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-4 z-50 w-72 animate-in fade-in zoom-in-95 duration-150">
                   <p className="text-xs font-bold text-slate-700 mb-3 flex items-center gap-1.5">
                     <Link className="w-3.5 h-3.5 text-indigo-500" /> Insert Link
                   </p>
@@ -831,7 +817,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
                 <Smile className="w-3.5 h-3.5" />
               </button>
               {showEmojiPicker && (
-                <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 z-50 w-60">
+                <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg p-3 z-50 w-60">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Insert Emoji</p>
                   <div className="grid grid-cols-8 gap-1">
                     {EMOJI_LIST.map((emoji, i) => (
@@ -961,7 +947,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
 
                 {/* Schedule dropdown */}
                 {showScheduleMenu && (
-                  <div className="absolute bottom-full right-0 mb-2 bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 z-50 w-72 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="absolute bottom-full right-0 mb-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-3 z-50 w-72 animate-in fade-in zoom-in-95 duration-150">
                     {/* Header */}
                     <div className="flex items-center gap-2 mb-3 pb-2.5 border-b border-slate-100">
                       <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center">
@@ -1047,6 +1033,11 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
           pointer-events: none;
           font-style: italic;
         }
+        /* Tailwind preflight strips list styling; restore it inside the editor */
+        [contenteditable][data-placeholder] ul { list-style: disc outside; padding-left: 1.5rem; margin: 0.25rem 0; }
+        [contenteditable][data-placeholder] ol { list-style: decimal outside; padding-left: 1.5rem; margin: 0.25rem 0; }
+        [contenteditable][data-placeholder] li { display: list-item; }
+        [contenteditable][data-placeholder] a { color: #4f46e5; text-decoration: underline; }
       `}</style>
     </Modal>
   );

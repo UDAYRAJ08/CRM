@@ -2,14 +2,17 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { TeamMember } from '../types/crm';
 import { db } from '../lib/supabase';
 import { useAuth } from './AuthContext';
+import { hashPassword } from '../lib/authCrypto';
 
 interface TeamContextValue {
   teamMembers: TeamMember[];
   activeMember: TeamMember | null;
   setActiveMember: (member: TeamMember) => void;
   logout: () => Promise<void>;
-  addTeamMember: (name: string, email?: string, role?: string, authUserId?: string) => Promise<TeamMember>;
+  addTeamMember: (name: string, email?: string, role?: string, authUserId?: string, pin?: string) => Promise<TeamMember>;
   updateMemberRole: (memberId: string, role: string) => Promise<void>;
+  updateMemberPin: (memberId: string, pin: string) => Promise<void>;
+  verifyMemberPin: (memberId: string, pin: string) => Promise<boolean>;
   isPickerOpen: boolean;
   setIsPickerOpen: (open: boolean) => void;
   refreshTeam: () => Promise<void>;
@@ -73,8 +76,18 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setTeamMembers((prev) => [...prev, matched!]);
       }
 
-      setActiveMemberState(matched);
-      localStorage.setItem(ACTIVE_MEMBER_KEY, matched.id);
+      // 4. Preserve currently active persona if selected in localStorage
+      const savedMemberId = localStorage.getItem(ACTIVE_MEMBER_KEY);
+      const savedMember = savedMemberId
+        ? members.find((m) => m.id === savedMemberId) || (matched && matched.id === savedMemberId ? matched : null)
+        : null;
+
+      if (savedMember) {
+        setActiveMemberState(savedMember);
+      } else if (matched) {
+        setActiveMemberState(matched);
+        localStorage.setItem(ACTIVE_MEMBER_KEY, matched.id);
+      }
     } catch (e) {
       console.error('Failed to resolve authenticated team member', e);
     } finally {
@@ -102,13 +115,16 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
     name: string,
     email?: string,
     role?: string,
-    authUserId?: string
+    authUserId?: string,
+    pin?: string
   ): Promise<TeamMember> => {
+    const hashedPin = pin?.trim() ? await hashPassword(pin.trim()) : undefined;
     const created = await db.addTeamMember({
       name: name.trim(),
       email: email ? email.trim() : undefined,
       role: role || 'Member',
       auth_user_id: authUserId,
+      pin: hashedPin,
     });
     setTeamMembers((prev) => [...prev, created]);
     return created;
@@ -124,6 +140,26 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateMemberPin = async (memberId: string, newPin: string) => {
+    const pinHash = newPin.trim() ? await hashPassword(newPin.trim()) : '';
+    await db.updateTeamMember(memberId, { pin: pinHash });
+    setTeamMembers((prev) =>
+      prev.map((m) => (m.id === memberId ? { ...m, pin: pinHash } : m))
+    );
+    if (activeMember?.id === memberId) {
+      setActiveMemberState((prev) => (prev ? { ...prev, pin: pinHash } : null));
+    }
+  };
+
+  const verifyMemberPin = async (memberId: string, inputPin: string): Promise<boolean> => {
+    const target = teamMembers.find((m) => m.id === memberId);
+    if (!target) return false;
+    // If no PIN is configured, allow passage (persona has no lock)
+    if (!target.pin || !target.pin.trim()) return true;
+    const inputHash = await hashPassword(inputPin.trim());
+    return target.pin === inputHash;
+  };
+
   return (
     <TeamContext.Provider
       value={{
@@ -133,6 +169,8 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         addTeamMember,
         updateMemberRole,
+        updateMemberPin,
+        verifyMemberPin,
         isPickerOpen,
         setIsPickerOpen,
         refreshTeam,

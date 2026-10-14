@@ -125,6 +125,30 @@ export function notifyCRMEvent(event: string): void {
   }
 }
 
+// ==============================================================================
+// PAGINATION
+// PostgREST caps a single response at 1000 rows by default, so an unpaginated
+// select silently drops everything after row 1000. This pulls every page.
+// Queries MUST have a deterministic order (add a unique column such as `id` as a
+// tie-breaker) or rows can repeat / go missing between pages.
+// ==============================================================================
+
+const PAGE_SIZE = 1000;
+
+export async function fetchAllPages<T = any>(
+  buildPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+): Promise<{ data: T[] | null; error: any }> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await buildPage(from, from + PAGE_SIZE - 1);
+    if (error) return { data: null, error };
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < PAGE_SIZE) break;
+  }
+  return { data: rows, error: null };
+}
+
 // Unified Database Access Layer
 export const db = {
   async getTeamMembers(): Promise<TeamMember[]> {
@@ -171,6 +195,7 @@ export const db = {
   },
 
   async updateTeamMember(memberId: string, updates: Partial<TeamMember>): Promise<TeamMember | null> {
+    invalidateCache('team_members');
     if (supabase) {
       const { data, error } = await supabase.from('team_members').update(updates).eq('id', memberId).select().single();
       if (!error && data) return data;
@@ -182,12 +207,14 @@ export const db = {
   },
 
   async addTeamMember(member: Partial<TeamMember>): Promise<TeamMember> {
+    invalidateCache('team_members');
     const newMember: TeamMember = {
       id: member.id || crypto.randomUUID(),
       name: member.name || 'New Member',
       email: member.email || '',
       role: member.role || 'Member',
       auth_user_id: member.auth_user_id,
+      pin: member.pin,
       created_at: new Date().toISOString(),
     };
 
@@ -207,7 +234,9 @@ export const db = {
     if (cached) return cached;
 
     if (supabase) {
-      const { data, error } = await supabase.from('companies').select('*').order('name');
+      const { data, error } = await fetchAllPages((from, to) =>
+        supabase!.from('companies').select('*').order('name').order('id').range(from, to)
+      );
       if (!error && data) {
         setCached('companies', data);
         return data;
@@ -243,10 +272,14 @@ export const db = {
     if (cached) return cached;
 
     if (supabase) {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('*, company:companies(*), owner:team_members(*)')
-        .order('created_at', { ascending: false });
+      const { data, error } = await fetchAllPages((from, to) =>
+        supabase!
+          .from('contacts')
+          .select('*, company:companies(*), owner:team_members(*)')
+          .order('created_at', { ascending: false })
+          .order('id')
+          .range(from, to)
+      );
       if (!error && data) {
         setCached('contacts', data);
         return data;
@@ -279,6 +312,7 @@ export const db = {
         if (contact.email !== undefined) updatePayload.email = contact.email;
         if (contact.phone !== undefined) updatePayload.phone = contact.phone;
         if (contact.title !== undefined) updatePayload.title = contact.title;
+        if (contact.linkedin_url !== undefined) updatePayload.linkedin_url = contact.linkedin_url;
         if (contact.company_id !== undefined) updatePayload.company_id = contact.company_id;
         if (contact.owner_id !== undefined) updatePayload.owner_id = contact.owner_id;
         if (contact.status !== undefined) updatePayload.status = contact.status;
@@ -295,12 +329,14 @@ export const db = {
         if (!error && data) return data;
       } else {
         // Insert new contact
-        const insertPayload = {
+        const insertPayload: Record<string, any> = {
           id,
           name: contact.name || '',
           email: contact.email || null,
           phone: contact.phone || null,
           title: contact.title || null,
+          // Only send linkedin_url when set: DBs without supabase/linkedin_schema.sql reject unknown columns
+          ...(contact.linkedin_url ? { linkedin_url: contact.linkedin_url } : {}),
           company_id: contact.company_id || null,
           owner_id: contact.owner_id || null,
           status: contact.status || 'new',
@@ -320,6 +356,8 @@ export const db = {
           notifyCRMEvent('crm_contacts_updated');
           return data;
         }
+        // Don't fall back to localStorage: the contact would never show up (lists read from Supabase)
+        if (error) throw new Error(error.message);
       }
     }
 
@@ -486,10 +524,14 @@ export const db = {
     if (cached) return cached;
 
     if (supabase) {
-      const { data, error } = await supabase
-        .from('reminders')
-        .select('*, contact:contacts(*), assignee:team_members(*)')
-        .order('due_date', { ascending: true });
+      const { data, error } = await fetchAllPages((from, to) =>
+        supabase!
+          .from('reminders')
+          .select('*, contact:contacts(*), assignee:team_members(*)')
+          .order('due_date', { ascending: true })
+          .order('id')
+          .range(from, to)
+      );
       if (!error && data) {
         setCached('reminders', data);
         return data;
@@ -610,7 +652,9 @@ export const db = {
   async deduplicateReminders(): Promise<{ removedCount: number }> {
     let reminders: Reminder[] = [];
     if (supabase) {
-      const { data } = await supabase.from('reminders').select('*').order('created_at', { ascending: false });
+      const { data } = await fetchAllPages<Reminder>((from, to) =>
+        supabase!.from('reminders').select('*').order('created_at', { ascending: false }).order('id').range(from, to)
+      );
       reminders = data || [];
     } else {
       reminders = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
@@ -656,7 +700,9 @@ export const db = {
   async cleanupOrphanedReminders(): Promise<{ removedCount: number }> {
     let contacts: Array<{ id: string }> = [];
     if (supabase) {
-      const { data } = await supabase.from('contacts').select('id');
+      const { data } = await fetchAllPages<{ id: string }>((from, to) =>
+        supabase!.from('contacts').select('id').order('id').range(from, to)
+      );
       contacts = (data as Array<{ id: string }>) || [];
     } else {
       contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
@@ -665,7 +711,9 @@ export const db = {
 
     let reminders: Reminder[] = [];
     if (supabase) {
-      const { data } = await supabase.from('reminders').select('*');
+      const { data } = await fetchAllPages<Reminder>((from, to) =>
+        supabase!.from('reminders').select('*').order('id').range(from, to)
+      );
       reminders = data || [];
     } else {
       reminders = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
@@ -707,6 +755,18 @@ export const db = {
     }
   },
 
+  /** Number of received (inbound) emails, counted server-side without downloading rows. */
+  async countInboundEmails(): Promise<number> {
+    if (supabase) {
+      const { count, error } = await supabase
+        .from('emails')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'received');
+      if (!error && count !== null) return count;
+    }
+    return getLocal<EmailRecord[]>('emails', []).filter((e) => e.status === 'received' || e.is_inbound).length;
+  },
+
   async getEmails(contactId?: string): Promise<EmailRecord[]> {
     const cacheKey = contactId ? `emails_${contactId}` : 'emails_all';
     const cached = getCached<EmailRecord[]>(cacheKey);
@@ -714,11 +774,13 @@ export const db = {
 
     if (supabase) {
       try {
-        let query = supabase.from('emails').select('*').order('created_at', { ascending: false });
-        if (contactId) {
-          query = query.eq('contact_id', contactId);
-        }
-        const { data, error } = await query;
+        const { data, error } = await fetchAllPages((from, to) => {
+          let query = supabase!.from('emails').select('*').order('created_at', { ascending: false }).order('id');
+          if (contactId) {
+            query = query.eq('contact_id', contactId);
+          }
+          return query.range(from, to);
+        });
         if (!error && data) {
           const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
           const result = data.map((e: any) => ({
@@ -848,10 +910,14 @@ export const db = {
 
   async getImportLogs(): Promise<ImportLog[]> {
     if (supabase) {
-      const { data, error } = await supabase
-        .from('import_logs')
-        .select('*, uploader:team_members(*)')
-        .order('created_at', { ascending: false });
+      const { data, error } = await fetchAllPages((from, to) =>
+        supabase!
+          .from('import_logs')
+          .select('*, uploader:team_members(*)')
+          .order('created_at', { ascending: false })
+          .order('id')
+          .range(from, to)
+      );
       if (!error && data) return data;
     }
 
@@ -1264,24 +1330,26 @@ export const db = {
     }
 
     if (supabase) {
-      let query = supabase
-        .from('deals')
-        .select(`
+      const { data, error } = await fetchAllPages((from, to) => {
+        let query = supabase!
+          .from('deals')
+          .select(`
           *,
           contact:contacts(id, name),
           company:companies(id, name),
           owner:team_members(id, name)
         `)
-        .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .order('id');
 
-      if (contactId) {
-        query = query.eq('contact_id', contactId);
-      }
-      if (companyId) {
-        query = query.eq('company_id', companyId);
-      }
-
-      const { data, error } = await query;
+        if (contactId) {
+          query = query.eq('contact_id', contactId);
+        }
+        if (companyId) {
+          query = query.eq('company_id', companyId);
+        }
+        return query.range(from, to);
+      });
       if (!error && data) {
         const result = data.map((d: any) => ({
           ...d,

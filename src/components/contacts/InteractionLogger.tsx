@@ -62,7 +62,7 @@ export const InteractionLogger: React.FC<InteractionLoggerProps> = ({
     <div className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-3">
       <div className="flex items-center justify-between">
         {/* Interaction Type Tabs */}
-        <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200">
           {tabs.map((tab) => {
             const isActive = type === tab.id;
             return (
@@ -100,7 +100,7 @@ export const InteractionLogger: React.FC<InteractionLoggerProps> = ({
               ? 'Key takeaways from meeting, attendees, next steps...'
               : 'Add an internal note about this contact or deal (Cmd/Ctrl + Enter to save)...'
           }
-          className="w-full text-xs sm:text-sm bg-white border border-slate-200 rounded-xl p-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all resize-none h-20 shadow-2xs"
+          className="w-full text-xs sm:text-sm bg-white border border-slate-200 rounded-xl p-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all resize-none h-20"
         />
 
         <div className="flex items-center justify-between">

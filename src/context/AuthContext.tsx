@@ -17,6 +17,12 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const LOCAL_AUTH_USER_KEY = 'crm_local_auth_user';
 
+// The no-backend mock login is a development convenience only. In a production
+// build a missing Supabase config must fail closed instead of letting anyone in.
+const ALLOW_LOCAL_MOCK_AUTH = import.meta.env.DEV;
+const MISSING_BACKEND_MESSAGE =
+  'Authentication backend is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.';
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -32,7 +38,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
 
     if (!isSupabaseConfigured || !supabase) {
-      // Offline / Local development fallback
+      // Offline / Local development fallback (never in production builds)
+      if (!ALLOW_LOCAL_MOCK_AUTH) {
+        localStorage.removeItem(LOCAL_AUTH_USER_KEY);
+        setAuthError(MISSING_BACKEND_MESSAGE);
+        setIsLoading(false);
+        return;
+      }
       const savedLocalUser = localStorage.getItem(LOCAL_AUTH_USER_KEY);
       if (savedLocalUser) {
         try {
@@ -86,6 +98,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthError(null);
 
     if (!isSupabaseConfigured || !supabase) {
+      if (!ALLOW_LOCAL_MOCK_AUTH) {
+        setAuthError(MISSING_BACKEND_MESSAGE);
+        throw new Error(MISSING_BACKEND_MESSAGE);
+      }
       // Local fallback mock user
       const mockId = 'local-user-' + email.replace(/[^a-zA-Z0-9]/g, '-');
       const mockUser = {
@@ -120,6 +136,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthError(null);
 
     if (!isSupabaseConfigured || !supabase) {
+      if (!ALLOW_LOCAL_MOCK_AUTH) {
+        setAuthError(MISSING_BACKEND_MESSAGE);
+        throw new Error(MISSING_BACKEND_MESSAGE);
+      }
       const mockId = 'local-user-' + email.replace(/[^a-zA-Z0-9]/g, '-');
       const mockUser = {
         id: mockId,

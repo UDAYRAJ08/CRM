@@ -82,7 +82,7 @@ const ClickableBar = (props: any) => {
 export const ActivityChart: React.FC<ActivityChartProps> = ({ data, isLoading, onBarClick }) => {
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
+      <div className="bg-white rounded-2xl border border-slate-200 p-6">
         <div className="w-40 h-4 rounded bg-slate-100 animate-pulse mb-1" />
         <div className="w-56 h-3 rounded bg-slate-100 animate-pulse mb-6" />
         <div className="flex items-end gap-3 h-44 px-2">
@@ -114,7 +114,7 @@ export const ActivityChart: React.FC<ActivityChartProps> = ({ data, isLoading, o
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
+    <div className="bg-white rounded-2xl border border-slate-200 p-6">
       {/* Header */}
       <div className="flex items-start justify-between mb-5">
         <div>

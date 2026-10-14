@@ -27,6 +27,22 @@ export interface SendEmailResult {
   verifiedEmail?: string;
 }
 
+const EMAIL_WRAPPER_STYLE =
+  "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; font-size: 14px;";
+
+// Builds the HTML email body: one base font for all text, and <p> margins zeroed so
+// blank lines from the editor are the only paragraph gaps (otherwise gaps double).
+export function buildEmailHtml(body: string): string {
+  if (!/<[a-z][\s\S]*>/i.test(body)) {
+    return `<div style="${EMAIL_WRAPPER_STYLE}">${body.replace(/\n/g, '<br>')}</div>`;
+  }
+  const doc = new DOMParser().parseFromString(body, 'text/html');
+  doc.body.querySelectorAll<HTMLElement>('p').forEach((p) => {
+    if (!p.style.margin) p.style.margin = '0';
+  });
+  return `<div style="${EMAIL_WRAPPER_STYLE}">${doc.body.innerHTML}</div>`;
+}
+
 // Helper: Dispatch via Composio (supports both Gmail & Outlook)
 async function sendViaComposio(
   apiKey: string,
@@ -43,11 +59,7 @@ async function sendViaComposio(
 
     const isGmailSender = userEmail && /@(gmail\.com|googlemail\.com)$/i.test(userEmail);
 
-    const isHtml = /<[a-z][\s\S]*>/i.test(body);
-    let htmlContent = isHtml ? body : body.replace(/\n/g, '<br>');
-    if (!htmlContent.includes('<div') && !htmlContent.includes('<p') && !htmlContent.includes('<html')) {
-      htmlContent = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1e293b;">${htmlContent}</div>`;
-    }
+    const htmlContent = buildEmailHtml(body);
 
     const toolsToAttempt = isGmailSender
       ? [
@@ -163,9 +175,7 @@ async function sendViaResend(
           .replace(/&gt;/gi, '>')
           .trim()
       : body.trim();
-    const htmlBody = isHtml
-      ? `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; font-size: 14px;">${body}</div>`
-      : `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; font-size: 14px;">${body.replace(/\n/g, '<br>')}</div>`;
+    const htmlBody = buildEmailHtml(body);
 
     const payload: any = {
       from: from.trim(),

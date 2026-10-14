@@ -125,6 +125,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
 
   const fetchDetails = async () => {
     if (!contact) return;
@@ -173,8 +174,6 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
     }
   };
 
-  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
-
   const handleToggleReminder = async (rem: Reminder) => {
     await db.toggleReminder(rem.id, !rem.done);
     fetchDetails();
@@ -222,7 +221,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
       />
 
       {/* Slide-over Drawer entering from Right */}
-      <div className="fixed inset-y-0 right-0 w-full max-w-xl bg-white shadow-2xl z-50 flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-250">
+      <div className="fixed inset-y-0 right-0 w-full max-w-xl bg-white shadow-lg z-50 flex flex-col border-l border-slate-200 animate-in slide-in-from-right duration-250">
         
         {/* Drawer Header */}
         <div className="p-5 border-b border-slate-200/80 bg-slate-50/70 flex items-center justify-between">
@@ -270,9 +269,9 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
           
           {/* Hero Lead Card */}
-          <div className="rounded-2xl bg-gradient-to-b from-slate-50/90 to-white p-5 border border-slate-200/90 shadow-xs space-y-4">
+          <div className="rounded-2xl bg-slate-50/90 p-5 border border-slate-200/90 shadow-xs space-y-4">
             <div className="flex items-start gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white font-extrabold text-lg flex items-center justify-center shrink-0 shadow-md shadow-indigo-500/20">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-semibold text-lg flex items-center justify-center shrink-0 shadow-md">
                 {getInitials(contact.name, 'C')}
               </div>
 
@@ -338,7 +337,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                     size="sm"
                     leftIcon={<Send className="w-3.5 h-3.5" />}
                     onClick={() => onOpenEmail(contact)}
-                    className="flex-1 shadow-md shadow-indigo-600/20"
+                    className="flex-1 shadow-md"
                   >
                     Compose 1st Outreach Email
                   </Button>
@@ -359,7 +358,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenEmail(contact)}
-                    className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition shadow-md shadow-rose-600/25 flex items-center justify-center gap-2 cursor-pointer"
+                    className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>Send Overdue Follow-up Message ({diffDays}d ago)</span>
@@ -408,7 +407,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
           </div>
 
           {/* Contact Information & Channels */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs space-y-3">
+          <div className="bg-white rounded-2xl p-4 border border-slate-200 space-y-3">
             <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
               Communication Channels
             </h4>
@@ -478,7 +477,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                   return (
                     <div
                       key={key}
-                      className="p-3 bg-white rounded-xl border border-amber-200/60 shadow-2xs text-xs"
+                      className="p-3 bg-white rounded-xl border border-amber-200/60 text-xs"
                     >
                       <div className="flex items-center justify-between text-slate-500 text-[11px] mb-1 font-semibold uppercase tracking-wider">
                         <span>{key.replace(/_/g, ' ')}</span>
@@ -673,7 +672,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                           setEditingDeal(deal);
                           setIsDealModalOpen(true);
                         }}
-                        className="p-3 bg-white border border-slate-200 hover:border-emerald-300 rounded-xl transition shadow-2xs hover:shadow-xs cursor-pointer flex items-center justify-between gap-3"
+                        className="p-3 bg-white border border-slate-200 hover:border-emerald-300 rounded-xl transition-xs cursor-pointer flex items-center justify-between gap-3"
                       >
                         <div className="min-w-0">
                           <h5 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
@@ -691,7 +690,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                         </div>
 
                         <div className="text-right shrink-0">
-                          <span className="text-sm font-black text-slate-900">
+                          <span className="text-sm font-semibold text-slate-900">
                             ${deal.value.toLocaleString()}
                           </span>
                           <span className="block text-[10px] text-slate-400 uppercase font-bold">

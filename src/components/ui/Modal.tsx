@@ -60,7 +60,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 top-0 left-0 right-0 bottom-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 top-0 left-0 right-0 bottom-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-6 bg-slate-900/40"
       style={{ margin: 0 }}
       onClick={(e) => {
         e.stopPropagation();
@@ -78,15 +78,17 @@ export const Modal: React.FC<ModalProps> = ({
 
       {/* Dialog container */}
       <div
-        className={`relative w-full ${maxWidthClasses} my-auto max-h-[92vh] flex flex-col bg-white rounded-3xl shadow-2xl shadow-slate-950/30 border border-slate-200/90 overflow-hidden z-10 transform animate-in zoom-in-95 duration-200 ${className}`}
+        className={`relative w-full ${maxWidthClasses} my-auto max-h-[92vh] flex flex-col bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden z-10 ${className}`}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
       >
         {/* If title is provided, render top header bar */}
         {title ? (
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70 shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
             <div className="min-w-0 flex-1 mr-4">
               {typeof title === 'string' ? (
-                <h3 className="text-base sm:text-lg font-extrabold text-slate-900 truncate">{title}</h3>
+                <h3 className="text-base font-semibold text-slate-900 truncate">{title}</h3>
               ) : (
                 title
               )}
@@ -102,7 +104,8 @@ export const Modal: React.FC<ModalProps> = ({
                   e.preventDefault();
                   onClose();
                 }}
-                className="text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 p-2 rounded-xl transition-all shrink-0 cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-2 rounded-lg transition-colors shrink-0 cursor-pointer"
+                aria-label="Close dialog"
                 title="Close dialog (Esc)"
               >
                 <X className="w-5 h-5" />
@@ -118,7 +121,8 @@ export const Modal: React.FC<ModalProps> = ({
               e.preventDefault();
               onClose();
             }}
-            className="absolute top-4 right-4 z-20 text-slate-400 hover:text-slate-800 bg-white/90 hover:bg-white shadow-xs border border-slate-200/80 p-2 rounded-2xl transition-all cursor-pointer"
+            className="absolute top-4 right-4 z-20 text-slate-400 hover:text-slate-800 bg-white/90 hover:bg-white border border-slate-200 p-2 rounded-lg transition-colors cursor-pointer"
+            aria-label="Close dialog"
             title="Close dialog (Esc)"
           >
             <X className="w-5 h-5" />

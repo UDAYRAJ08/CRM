@@ -28,9 +28,9 @@ export const ImportHistoryView: React.FC<{ onRefreshNeeded?: () => void }> = () 
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Excel Import Logs & Audit</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Audit history of all spreadsheets uploaded to the CRM with attribution.
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Imports</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Every spreadsheet uploaded to the CRM, and who uploaded it.
           </p>
         </div>
         <button
@@ -42,7 +42,7 @@ export const ImportHistoryView: React.FC<{ onRefreshNeeded?: () => void }> = () 
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         {logs.length === 0 ? (
           <div className="p-12 text-center">
             <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">

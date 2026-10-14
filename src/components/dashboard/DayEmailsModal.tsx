@@ -66,7 +66,7 @@ export const DayEmailsModal: React.FC<DayEmailsModalProps> = ({ isOpen, onClose,
       maxWidth="xl"
       title={
         <div>
-          <h3 className="text-base font-extrabold text-slate-900">
+          <h3 className="text-base font-semibold text-slate-900">
             Emails Sent — {displayDate}
           </h3>
           {!isLoading && emails.length > 0 && (

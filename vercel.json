@@ -9,7 +9,7 @@
       "destination": "https://api.resend.com/:match*"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]

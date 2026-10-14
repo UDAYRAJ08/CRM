@@ -90,7 +90,7 @@ export const STATUS_CONFIG: Record<
     label: 'Closed / Won',
     dot: 'bg-emerald-600',
     bg: 'bg-emerald-100/90',
-    text: 'text-emerald-900 font-extrabold',
+    text: 'text-emerald-900 font-semibold',
     border: 'border-emerald-400',
   },
   lost: {
@@ -148,7 +148,7 @@ function getFollowUpInfo(contact: Contact) {
 
     if (diffDays >= 3) {
       return {
-        label: `🚨 3-Day Follow-up Due (${diffDays}d ago)`,
+        label: `3-Day Follow-up Due (${diffDays}d ago)`,
         badgeClass: 'bg-rose-50 text-rose-800 border-rose-300 font-semibold shadow-2xs',
         actionText: 'Send Follow-up Message',
         isOverdue: true,
@@ -521,7 +521,7 @@ export const ContactList: React.FC<ContactListProps> = ({
           </p>
           <div className="bg-rose-50/80 border border-rose-200/80 rounded-2xl p-3 flex items-center justify-between text-xs text-rose-700 shadow-2xs">
             <span className="font-medium">Impact</span>
-            <span className="font-extrabold bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 shadow-2xs">
+            <span className="font-semibold bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-800 shadow-2xs">
               Irreversible
             </span>
           </div>
@@ -560,19 +560,23 @@ export const ContactList: React.FC<ContactListProps> = ({
 
   return (
     <div className="space-y-4 relative">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Contacts</h1>
+        <p className="text-sm text-slate-500 mt-1">Everyone you are working with, by stage and owner.</p>
+      </div>
       {/* ===================================================================== */}
       {/* 1. TOP PIPELINE WORKFLOW TABS & TOOLBAR                               */}
       {/* ===================================================================== */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 space-y-3">
         {/* Row 1: Pipeline Stage Segmented Tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* Segmented Control */}
           <div className="inline-flex p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 overflow-x-auto no-scrollbar max-w-full">
             <button
               onClick={() => setPipelineTab('all')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
                 pipelineTab === 'all'
-                  ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                  ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
             >
@@ -580,7 +584,7 @@ export const ContactList: React.FC<ContactListProps> = ({
               <span
                 className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                   pipelineTab === 'all'
-                    ? 'bg-indigo-100 text-indigo-700'
+                    ? 'bg-slate-100 text-slate-700'
                     : 'bg-slate-200/80 text-slate-600'
                 }`}
               >
@@ -590,17 +594,17 @@ export const ContactList: React.FC<ContactListProps> = ({
 
             <button
               onClick={() => setPipelineTab('uncontacted')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
                 pipelineTab === 'uncontacted'
-                  ? 'bg-white text-blue-700 shadow-xs font-bold'
+                  ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
             >
-              <span>🆕 Uncontacted</span>
+              <span>Uncontacted</span>
               <span
                 className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                   pipelineTab === 'uncontacted'
-                    ? 'bg-blue-100 text-blue-700'
+                    ? 'bg-slate-100 text-slate-700'
                     : 'bg-slate-200/80 text-slate-600'
                 }`}
               >
@@ -610,17 +614,17 @@ export const ContactList: React.FC<ContactListProps> = ({
 
             <button
               onClick={() => setPipelineTab('due')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
                 pipelineTab === 'due'
-                  ? 'bg-white text-rose-700 shadow-xs font-bold'
+                  ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
             >
-              <span>🚨 Due Follow-ups</span>
+              <span>Due Follow-ups</span>
               <span
                 className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                   pipelineTab === 'due'
-                    ? 'bg-rose-100 text-rose-700'
+                    ? 'bg-slate-100 text-slate-700'
                     : 'bg-slate-200/80 text-slate-600'
                 }`}
               >
@@ -630,17 +634,17 @@ export const ContactList: React.FC<ContactListProps> = ({
 
             <button
               onClick={() => setPipelineTab('replied')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
                 pipelineTab === 'replied'
-                  ? 'bg-white text-emerald-700 shadow-xs font-bold'
+                  ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
               }`}
             >
-              <span>📥 Replied / Active</span>
+              <span>Replied / Active</span>
               <span
                 className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                   pipelineTab === 'replied'
-                    ? 'bg-emerald-100 text-emerald-700'
+                    ? 'bg-slate-100 text-slate-700'
                     : 'bg-slate-200/80 text-slate-600'
                 }`}
               >
@@ -668,7 +672,7 @@ export const ContactList: React.FC<ContactListProps> = ({
               <select
                 value={tagFilter}
                 onChange={(e) => setTagFilter(e.target.value)}
-                className="bg-slate-50 hover:bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer shadow-2xs transition-colors"
+                className="bg-slate-50 hover:bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer transition-colors"
               >
                 <option value="all">All Tags</option>
                 {allTags.map((tag) => (
@@ -683,7 +687,7 @@ export const ContactList: React.FC<ContactListProps> = ({
             <select
               value={ownerFilter}
               onChange={(e) => setOwnerFilter(e.target.value)}
-              className="bg-slate-50 hover:bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer shadow-2xs transition-colors"
+              className="bg-slate-50 hover:bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer transition-colors"
             >
               <option value="all">All Owners</option>
               <option value="unassigned">Unassigned</option>
@@ -775,7 +779,7 @@ export const ContactList: React.FC<ContactListProps> = ({
       {/* 2. MAIN TABLE VIEW OR CARDS                                           */}
       {/* ===================================================================== */}
       {filteredContacts.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
             <Users className="w-6 h-6" />
           </div>
@@ -1066,7 +1070,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                                               className="fixed inset-0 z-30"
                                               onClick={() => setActiveStatusDropdownId(null)}
                                             />
-                                            <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-40 p-1 animate-in fade-in zoom-in-95 duration-100">
+                                            <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-xl shadow-lg border border-slate-200 z-40 p-1 animate-in fade-in zoom-in-95 duration-100">
                                               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1">
                                                 Set Status
                                               </div>
@@ -1167,7 +1171,7 @@ export const ContactList: React.FC<ContactListProps> = ({
           </div>
         </div>
       ) : viewMode === 'table' ? (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs min-w-[960px]">
               <thead className="bg-slate-50/90 text-slate-600 font-semibold border-b border-slate-200 sticky top-0 z-10 select-none">
@@ -1374,7 +1378,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                                 className="fixed inset-0 z-30"
                                 onClick={() => setActiveStatusDropdownId(null)}
                               />
-                              <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-40 p-1 animate-in fade-in zoom-in-95 duration-100">
+                              <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-xl shadow-lg border border-slate-200 z-40 p-1 animate-in fade-in zoom-in-95 duration-100">
                                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1">
                                   Set Status
                                 </div>
@@ -1573,7 +1577,7 @@ export const ContactList: React.FC<ContactListProps> = ({
       {/* ===================================================================== */}
       {selectedIds.size > 0 && (
         <div className="fixed bottom-6 inset-x-0 mx-auto max-w-2xl px-4 z-40 animate-in slide-in-from-bottom-5 duration-200">
-          <div className="bg-slate-900 text-white rounded-2xl p-3.5 shadow-2xl border border-slate-700/80 flex flex-wrap items-center justify-between gap-3">
+          <div className="bg-slate-900 text-white rounded-2xl p-3.5 shadow-lg border border-slate-700/80 flex flex-wrap items-center justify-between gap-3">
 
             {/* Counter */}
             <div className="flex items-center gap-2.5">

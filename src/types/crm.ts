@@ -16,6 +16,7 @@ export interface TeamMember {
   role?: string;
   avatar_url?: string;
   auth_user_id?: string;
+  pin?: string;
   created_at?: string;
 }
 

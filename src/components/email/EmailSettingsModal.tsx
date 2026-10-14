@@ -492,7 +492,7 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
         </div>
 
         {/* Multi-AI System & API Key Engine */}
-        <div className="p-3.5 bg-gradient-to-br from-indigo-50/80 via-purple-50/50 to-white border border-indigo-200/90 rounded-2xl space-y-3">
+        <div className="p-3.5 bg-indigo-50/80 border border-indigo-200/90 rounded-2xl space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">

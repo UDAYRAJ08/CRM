@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CRM LinkedIn Connector</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#fff; --fg:#0f172a; --muted:#64748b; --line:#e2e8f0; --brand:#2563eb; --ok:#059669; --warn:#d97706; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#0f172a; --fg:#e2e8f0; --muted:#94a3b8; --line:#1e293b; } }
+    * { box-sizing: border-box; }
+    body { margin:0; width:320px; padding:16px; background:var(--bg); color:var(--fg); font:13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    h1 { font-size:14px; margin:0 0 2px; }
+    .sub { color:var(--muted); font-size:12px; margin:0 0 12px; }
+    .card { border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:10px; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; background:var(--muted); }
+    .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); }
+    .label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-bottom:4px; }
+    button { font:inherit; font-weight:600; border:0; border-radius:9px; padding:7px 12px; cursor:pointer; background:var(--brand); color:#fff; }
+    button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); padding:4px 8px; font-weight:500; }
+    button:disabled { opacity:.5; cursor:default; }
+    .origin { word-break:break-all; font-size:12px; }
+    .msg { font-size:12px; color:var(--muted); margin-top:6px; }
+    .msg.err { color:#dc2626; }
+    ul { list-style:none; margin:0; padding:0; } li { margin:6px 0; }
+  </style>
+</head>
+<body>
+  <h1>CRM LinkedIn Connector</h1>
+  <p class="sub">Connects your logged-in LinkedIn session to your CRM with one click.</p>
+
+  <div class="card">
+    <div class="label">LinkedIn</div>
+    <div id="li-status" class="row"><span>Checking...</span></div>
+  </div>
+
+  <div class="card" id="site-card" hidden>
+    <div class="label">This site</div>
+    <div class="origin" id="site-origin"></div>
+    <div class="row" style="margin-top:8px">
+      <span id="site-state"></span>
+      <button id="site-btn"></button>
+    </div>
+    <div class="msg" id="site-msg"></div>
+  </div>
+
+  <div class="card" id="linked-card" hidden>
+    <div class="label">Linked CRM sites</div>
+    <ul id="linked-list"></ul>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

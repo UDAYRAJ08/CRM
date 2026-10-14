@@ -63,10 +63,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
 
           const borderColors = {
-            success: 'border-emerald-200 bg-white dark:bg-zinc-900 shadow-emerald-500/10',
-            error: 'border-rose-200 bg-white dark:bg-zinc-900 shadow-rose-500/10',
-            warning: 'border-amber-200 bg-white dark:bg-zinc-900 shadow-amber-500/10',
-            info: 'border-indigo-200 bg-white dark:bg-zinc-900 shadow-indigo-500/10',
+            success: 'border-emerald-200 bg-white dark:bg-zinc-900',
+            error: 'border-rose-200 bg-white dark:bg-zinc-900',
+            warning: 'border-amber-200 bg-white dark:bg-zinc-900',
+            info: 'border-indigo-200 bg-white dark:bg-zinc-900',
           };
 
           return (

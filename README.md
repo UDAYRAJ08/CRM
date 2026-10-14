@@ -42,7 +42,7 @@ A lightweight, collaborative internal CRM web app for small teams (3–10 people
 5. **LinkedIn Direct Outreach & Automated Connection Dispatcher**:
    - **⚡ 1-Click Auto Send Invites**: Automated background dispatch of connection requests with personalized notes (<300 chars) using your authenticated session.
    - **AI Templates & Character Guard**: Connection notes, task & deadline support pitch, and warm check-ins.
-   - **Daily Quota Safety Guard**: Enforces a strict 20 invites/day safety limit to protect against LinkedIn rate limits.
+   - **Daily Quota Safety Guard**: Enforces a daily invite safety limit (configurable per account) to protect against LinkedIn rate limits.
    - **1-Click Assist Workflow**: Instant clipboard copy and auto-open profile in LinkedIn.
    - Chronological logging to the contact's CRM timeline under the **`in`** badge.
 
@@ -55,7 +55,7 @@ A lightweight, collaborative internal CRM web app for small teams (3–10 people
 
 ## Tech Stack
 
-- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, Lucide Icons, SheetJS (`xlsx`), Date-fns
+- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons, Recharts, SheetJS (`xlsx`), Date-fns
 - **Backend & Database**: Supabase (PostgreSQL with live real-time sync)
 - **Email Delivery & Inbound Tracking**: Microsoft 365 Outlook via Composio MCP & Resend API
 - **Social Outreach**: LinkedIn Voyager Engine with session-based dispatching and daily safety caps
@@ -75,6 +75,73 @@ cp .env.example .env
 npm run dev
 ```
 
+### Scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Vite dev server (also serves the local `/api/linkedin/*` endpoints) |
+| `npm run lint` | oxlint. `react/rules-of-hooks` is an **error**, so conditional hooks fail CI |
+| `npm run typecheck` | `tsc -b` |
+| `npm test` | Vitest unit tests (`src/**/*.test.ts`) |
+| `npm run build` | Typecheck + production build (also packs the LinkedIn extension zip) |
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests and build on every push and pull request.
+
+### Authentication
+
+Sign-in uses **Supabase Auth**. If `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are missing, a
+no-backend mock login is available **only in `npm run dev`**; production builds fail closed.
+
+---
+
+## Connecting LinkedIn (Chrome extension)
+
+The LinkedIn tab connects like HeyReach: a small Chrome extension reads the session from **your own
+logged-in Chrome** and hands it to the CRM. It works on localhost and in production (no server-side
+browser, no password, no cookie copying).
+
+1. In the CRM go to **LinkedIn Outreach > Accounts** and press **Connect with Chrome Extension**.
+   The guide downloads `linkedin-connector.zip` (built from `extensions/linkedin-connector`).
+2. Unzip it, open `chrome://extensions`, enable **Developer mode**, **Load unpacked**, pick the folder.
+3. On the CRM tab click the extension icon and press **Link this CRM** (Chrome asks you to allow this one site).
+4. Be signed in at linkedin.com in the same Chrome, then press **Connect** again.
+
+How it stays safe: the extension only talks to CRM sites you linked (each needs Chrome's own host
+permission), re-checks the calling site on every request, and never sends the session anywhere else.
+`npm run pack:extension` rebuilds the zip (it also runs before `dev` and `build`). The old
+"Dev: open Chrome" launcher only exists in `npm run dev` and is hidden in production.
+
+---
+
+## Security notes (read before deploying)
+
+- **Anything prefixed `VITE_` is compiled into the public JavaScript bundle.** That includes the
+  `VITE_*_API_KEY` values in `.env.example`. Use them only for local development. For a real
+  deployment, keep AI / Resend / Composio keys as server-side secrets (Supabase Edge Function
+  secrets or Vercel serverless env vars) and call them through a function, and **rotate any key that
+  has ever been in a deployed bundle**.
+- `LINKEDIN_LI_AT` / `LINKEDIN_JSESSIONID` are full account credentials. Never prefix them with
+  `VITE_`, never commit them, and prefer per-user accounts stored server-side.
+- Apply `supabase/security_hardening.sql` (and review `supabase/persona_pin_and_rls.sql`) in the
+  Supabase SQL editor. The default policies let any authenticated user read and write every table;
+  tighten them to roles before onboarding people outside the core team.
+
+---
+
+## Project layout
+
+```
+src/components/   UI, grouped by feature (contacts, email, linkedin, pipeline, ...)
+src/context/      Auth, Team and Toast providers
+src/lib/          Services: supabase data layer, email, AI, LinkedIn, parsing
+src/lib/__tests__ Unit tests for pure logic
+api/              Vercel serverless functions (LinkedIn)
+supabase/         SQL schemas / migrations and Edge Functions
+```
+
+Heavy views (Dashboard, Pipeline, LinkedIn, Inbox...) and large modals (Excel import, composers)
+are lazy-loaded with `React.lazy`, so the initial bundle stays small.
+
 ---
 
 ## Deploying to Production (Vercel / Netlify)
@@ -83,11 +150,9 @@ npm run dev
 2. Connect your repo in [Vercel](https://vercel.com) or [Netlify](https://netlify.com).
 3. Set your **Environment Variables** in the project settings:
    - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_COMPOSIO_API_KEY`
-   - `VITE_EMAIL_PROVIDER` (`composio`)
-   - `LINKEDIN_LI_AT` (Optional for automated LinkedIn dispatch)
-   - `LINKEDIN_JSESSIONID` (Optional)
+   - `VITE_SUPABASE_ANON_KEY` (public by design; protected by RLS)
+   - `LINKEDIN_LI_AT` / `LINKEDIN_JSESSIONID` (optional, server-side only)
+   - See *Security notes* above before adding any other `VITE_` key.
 4. Deploy! Build command: `npm run build`, Output directory: `dist`.
 
 ---

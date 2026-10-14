@@ -83,9 +83,9 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Companies & Organizations</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Manage account portfolios and associate key stakeholder contacts.
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Companies</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Accounts and the contacts linked to them.
           </p>
         </div>
 
@@ -111,7 +111,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
           return (
             <div
               key={comp.id}
-              className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-slate-300 shadow-xs hover:shadow-sm transition-all space-y-3.5"
+              className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-slate-300-sm transition-all space-y-3.5"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-3">
@@ -144,7 +144,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                     <DollarSign className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <span>{compDeals.length} {compDeals.length === 1 ? 'Opportunity' : 'Opportunities'}</span>
                   </div>
-                  <span className="font-black text-emerald-700">${compDealValue.toLocaleString()}</span>
+                  <span className="font-semibold text-emerald-700">${compDealValue.toLocaleString()}</span>
                 </div>
               )}
 

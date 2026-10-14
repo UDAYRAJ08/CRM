@@ -309,7 +309,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       maxWidth="4xl"
       title={
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/25">
+          <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-md">
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
@@ -386,10 +386,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
             )}
 
             {/* Failover / Preference Bar */}
-            <div className="p-3 bg-gradient-to-r from-indigo-50 to-purple-50/60 border border-indigo-100 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-slate-700">Primary AI Engine:</span>
-                <span className="font-extrabold text-indigo-700 uppercase tracking-wide bg-white px-2 py-0.5 rounded-lg border border-indigo-200">
+                <span className="font-semibold text-indigo-700 uppercase tracking-wide bg-white px-2 py-0.5 rounded-lg border border-indigo-200">
                   {AI_PROVIDERS[activeProvider]?.name}
                 </span>
                 <span className="text-[11px] text-slate-500 font-mono">
@@ -440,7 +440,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-slate-900 text-xs">{meta.name}</span>
                             {isActive && (
-                              <span className="text-[10px] font-extrabold uppercase tracking-wide px-1.5 py-0.2 rounded bg-indigo-600 text-white">
+                              <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.2 rounded bg-indigo-600 text-white">
                                 Active Default
                               </span>
                             )}
@@ -891,7 +891,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
             </div>
 
             {testOutput && (
-              <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-2 font-sans text-xs">
+              <div className="p-4 bg-white border border-slate-200 rounded-2xl space-y-2 font-sans text-xs">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <div className="font-bold text-slate-800">
                     <span className="text-slate-400 font-normal mr-1">Generated Subject:</span>

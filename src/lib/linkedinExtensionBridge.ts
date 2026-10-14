@@ -1,0 +1,128 @@
+/**
+ * Client for the "CRM LinkedIn Connector" Chrome extension (extensions/linkedin-connector).
+ *
+ * The extension reads the LinkedIn session from the user's own logged-in browser and
+ * replies to this page via window.postMessage. It only injects its bridge on CRM sites
+ * the user explicitly linked from the extension popup, so on an unlinked site every
+ * request simply times out ("not detected").
+ */
+
+const PAGE_SOURCE = 'crm-page';
+const EXTENSION_SOURCE = 'crm-linkedin-extension';
+
+export interface ExtensionProfile {
+  name?: string;
+  headline?: string;
+  publicIdentifier?: string;
+  avatarUrl?: string;
+}
+
+export interface ExtensionSession {
+  liAt: string;
+  jsessionId: string;
+  rawCookie: string;
+  profile: ExtensionProfile | null;
+}
+
+export interface ExtensionStatus {
+  installed: boolean;
+  loggedIn?: boolean;
+  version?: string;
+}
+
+export type ExtensionErrorCode =
+  | 'EXTENSION_NOT_DETECTED'
+  | 'NOT_LOGGED_IN'
+  | 'NO_CSRF_TOKEN'
+  | 'ORIGIN_NOT_LINKED'
+  | 'UNKNOWN';
+
+export class ExtensionBridgeError extends Error {
+  code: ExtensionErrorCode;
+  constructor(code: ExtensionErrorCode, message: string) {
+    super(message);
+    this.name = 'ExtensionBridgeError';
+    this.code = code;
+  }
+}
+
+const ERROR_MESSAGES: Record<ExtensionErrorCode, string> = {
+  EXTENSION_NOT_DETECTED:
+    'The LinkedIn Connector extension was not detected on this site. Install it and link this CRM from the extension popup.',
+  NOT_LOGGED_IN: 'You are not signed in to LinkedIn in this browser. Log in at linkedin.com, then try again.',
+  NO_CSRF_TOKEN: 'LinkedIn did not return a session token. Open linkedin.com once, then try again.',
+  ORIGIN_NOT_LINKED: 'This CRM site is not linked in the extension. Open the extension popup on this tab and press "Link this CRM".',
+  UNKNOWN: 'The extension returned an unexpected response.',
+};
+
+interface ExtensionReply {
+  source: string;
+  requestId: string;
+  ok: boolean;
+  error?: string;
+  [key: string]: unknown;
+}
+
+let counter = 0;
+
+function request(
+  type: 'PING' | 'GET_SESSION',
+  timeoutMs: number,
+  win: Window = window
+): Promise<ExtensionReply> {
+  return new Promise((resolve, reject) => {
+    const requestId = `${Date.now()}-${++counter}`;
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      win.removeEventListener('message', onMessage);
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== win || event.origin !== win.location.origin) return;
+      const data = event.data as ExtensionReply | undefined;
+      if (!data || data.source !== EXTENSION_SOURCE || data.requestId !== requestId) return;
+      cleanup();
+      resolve(data);
+    };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new ExtensionBridgeError('EXTENSION_NOT_DETECTED', ERROR_MESSAGES.EXTENSION_NOT_DETECTED));
+    }, timeoutMs);
+
+    win.addEventListener('message', onMessage);
+    win.postMessage({ source: PAGE_SOURCE, type, requestId }, win.location.origin);
+  });
+}
+
+function toBridgeError(code: string | undefined): ExtensionBridgeError {
+  const known = (code && code in ERROR_MESSAGES ? code : 'UNKNOWN') as ExtensionErrorCode;
+  return new ExtensionBridgeError(known, ERROR_MESSAGES[known]);
+}
+
+/** Is the extension installed AND linked to this site? Never throws. */
+export async function pingExtension(timeoutMs = 1000, win: Window = window): Promise<ExtensionStatus> {
+  try {
+    const reply = await request('PING', timeoutMs, win);
+    if (!reply.ok) return { installed: false };
+    return { installed: true, loggedIn: Boolean(reply.loggedIn), version: reply.version as string | undefined };
+  } catch {
+    return { installed: false };
+  }
+}
+
+/** Ask the extension for the user's LinkedIn session. Throws ExtensionBridgeError. */
+export async function requestLinkedInSession(timeoutMs = 10000, win: Window = window): Promise<ExtensionSession> {
+  const reply = await request('GET_SESSION', timeoutMs, win);
+  if (!reply.ok) throw toBridgeError(reply.error);
+  const liAt = String(reply.liAt || '');
+  const jsessionId = String(reply.jsessionId || '');
+  if (!liAt || !jsessionId) throw toBridgeError('NOT_LOGGED_IN');
+  return {
+    liAt,
+    jsessionId,
+    rawCookie: String(reply.rawCookie || ''),
+    profile: (reply.profile as ExtensionProfile | null) || null,
+  };
+}

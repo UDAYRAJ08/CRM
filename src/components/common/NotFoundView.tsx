@@ -13,7 +13,7 @@ export const NotFoundView: React.FC<NotFoundViewProps> = ({
 }) => {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center animate-in fade-in zoom-in-95 duration-200">
-      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm mb-6">
+      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm mb-6">
         <Compass className="w-8 h-8 sm:w-10 sm:h-10 animate-pulse" />
       </div>
 
@@ -23,7 +23,7 @@ export const NotFoundView: React.FC<NotFoundViewProps> = ({
         <span>Route Not Found</span>
       </div>
 
-      <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+      <h2 className="text-xl sm:text-2xl font-semibold text-slate-900 tracking-tight">
         Lost in the CRM Workspace?
       </h2>
 

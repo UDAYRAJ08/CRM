@@ -92,41 +92,34 @@ export const DraftsView: React.FC<DraftsViewProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Hero Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-radial from-white/10 to-transparent pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-semibold text-slate-200 mb-3">
-              <FileEdit className="w-3.5 h-3.5 text-amber-400" />
-              <span>Auto-Saved Drafts</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-              <span>Email Drafts</span>
-              <span className="text-sm font-bold px-2.5 py-0.5 rounded-full bg-slate-500/40 text-slate-100 border border-slate-400/30">
-                {drafts.length} {drafts.length === 1 ? 'Draft' : 'Drafts'}
-              </span>
-            </h1>
-            <p className="text-slate-300/90 text-sm mt-2 max-w-xl leading-relaxed">
-              Emails you started but haven't sent yet are automatically saved here. Pick up right where you left off.
-            </p>
-          </div>
-
-          <Button
-            variant="white"
-            size="md"
-            onClick={() => loadDrafts(true)}
-            disabled={isLoading}
-            leftIcon={<RefreshCw className={`w-4 h-4 text-slate-600 ${isLoading ? 'animate-spin' : ''}`} />}
-            className="border-0 shadow-lg font-bold shrink-0"
-          >
-            Refresh
-          </Button>
+      {/* Page header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 flex items-center gap-2.5">
+            <span>Drafts</span>
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              {drafts.length}
+            </span>
+          </h1>
+          <p className="text-slate-500 text-sm mt-1 max-w-xl">
+            Unsent emails are saved here automatically.
+          </p>
         </div>
+
+        <Button
+          variant="outline"
+          size="md"
+          onClick={() => loadDrafts(true)}
+          disabled={isLoading}
+          leftIcon={<RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />}
+          className="shrink-0"
+        >
+          Refresh
+        </Button>
       </div>
 
       {/* Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200">
         <div className="relative w-full md:w-96">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -141,12 +134,12 @@ export const DraftsView: React.FC<DraftsViewProps> = ({
 
       {/* Drafts List */}
       {isLoading ? (
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-12 flex flex-col items-center justify-center gap-3 text-slate-400">
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 flex flex-col items-center justify-center gap-3 text-slate-400">
           <RefreshCw className="w-8 h-8 animate-spin text-indigo-600" />
           <p className="text-sm font-medium">Loading drafts...</p>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-dashed border-slate-300 p-12 text-center max-w-2xl mx-auto shadow-xs">
+        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center max-w-2xl mx-auto">
           <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto mb-4">
             <FileEdit className="w-8 h-8" />
           </div>
@@ -167,16 +160,16 @@ export const DraftsView: React.FC<DraftsViewProps> = ({
             return (
               <div
                 key={draft.id}
-                className="bg-white rounded-2xl border border-slate-200/80 hover:border-indigo-300 hover:shadow-md transition-all duration-150 overflow-hidden"
+                className="bg-white rounded-2xl border border-slate-200 hover:border-indigo-300 transition-all duration-150 overflow-hidden"
               >
                 <div className="p-4 sm:p-5 flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 sm:gap-4 min-w-0">
-                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-amber-400 via-amber-500 to-orange-500 text-white font-black text-sm flex items-center justify-center shrink-0 shadow-xs">
+                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-amber-400 text-white font-semibold text-sm flex items-center justify-center shrink-0 shadow-xs">
                       <FileEdit className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-extrabold text-sm text-slate-900 truncate max-w-xs">
+                        <span className="font-semibold text-sm text-slate-900 truncate max-w-xs">
                           {draft.subject || '(No subject)'}
                         </span>
                         {hasAttachments && (

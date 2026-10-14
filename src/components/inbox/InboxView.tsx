@@ -3,27 +3,14 @@ import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
 import { Contact, EmailRecord, Interaction } from '../../types/crm';
 import { db } from '../../lib/supabase';
-import { formatDate, formatRelativeTime, getInitials, getStatusColor } from '../../lib/utils';
+import { formatDate, formatRelativeTime, getInitials, stripHtml } from '../../lib/utils';
 import { Button } from '../ui/Button';
-import {
-  Inbox,
-  Mail,
-  RefreshCw,
-  Search,
-  ExternalLink,
-  Reply,
-  Calendar,
-  Sparkles,
-  CheckCircle2,
-  Clock,
-  Building2,
-  ChevronDown,
-  ChevronUp,
-  MessageSquare,
-  ArrowUpRight,
-  ShieldCheck,
-  Share2,
-} from 'lucide-react';
+import { StatusBadge } from '../ui/Badge';
+import { Inbox, RefreshCw, Search, Reply, Calendar, User } from 'lucide-react';
+import { Linkedin } from '../linkedin/LinkedInIcon';
+
+const STAGE_FILTERS = ['all', 'qualified', 'contacted', 'proposal', 'won'];
+const PLACEHOLDER_SUBJECTS = new Set(['no subject', 'email reply', '']);
 
 export interface InboundMessageItem {
   id: string;
@@ -201,283 +188,197 @@ export const InboxView: React.FC<InboxViewProps> = ({
     });
   }, [messages, searchQuery, selectedStatusFilter]);
 
+  const handleSync = async () => {
+    await onSyncInbox();
+    await loadInboundMessages();
+  };
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Top Banner / Hero Card */}
-      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-indigo-950/15 relative overflow-hidden">
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-radial from-white/10 to-transparent pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-xs font-semibold text-indigo-100 mb-3">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Live Outlook Inbound Feed</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-              <span>Lead Replies & Inbox</span>
-              <span className="text-sm font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/40 text-indigo-100 border border-indigo-400/30">
-                {messages.length} {messages.length === 1 ? 'Reply' : 'Replies'}
-              </span>
-            </h1>
-            <p className="text-indigo-200/90 text-sm mt-2 max-w-xl leading-relaxed">
-              When leads reply to your emails sent from <strong className="text-white">{activeUserEmail}</strong>, they automatically sync here and update lead stage.
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
-            <div className="text-right hidden md:block mr-2">
-              <div className="text-xs text-indigo-200 font-medium">Active Mailbox Account</div>
-              <div className="text-xs font-bold text-white">{activeUserEmail}</div>
-              {lastSyncTime && (
-                <div className="text-[10px] text-indigo-300 flex items-center justify-end gap-1 mt-0.5">
-                  <Clock className="w-2.5 h-2.5" />
-                  <span>Synced {formatRelativeTime(lastSyncTime)}</span>
-                </div>
-              )}
-            </div>
-
-            <Button
-              variant="white"
-              size="md"
-              onClick={async () => {
-                await onSyncInbox();
-                await loadInboundMessages();
-              }}
-              disabled={isSyncing}
-              leftIcon={<RefreshCw className={`w-4 h-4 text-indigo-600 ${isSyncing ? 'animate-spin' : ''}`} />}
-              className="border-0 shadow-lg font-bold"
-            >
-              {isSyncing ? 'Checking Outlook...' : 'Sync Outlook Now'}
-            </Button>
-          </div>
+    <div className="space-y-5">
+      {/* Page header */}
+      <div className="flex items-start sm:items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 flex items-center gap-2.5">
+            Inbox
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 tabular-nums">
+              {messages.length}
+            </span>
+          </h1>
+          <p className="text-sm text-slate-500 mt-1 truncate">
+            Replies to {activeUserEmail}
+            {lastSyncTime && <> · synced {formatRelativeTime(lastSyncTime)}</>}
+          </p>
         </div>
+
+        <Button
+          variant="outline"
+          onClick={handleSync}
+          disabled={isSyncing}
+          leftIcon={<RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />}
+          className="shrink-0"
+        >
+          {isSyncing ? 'Syncing...' : 'Sync'}
+        </Button>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
-        <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative w-full sm:w-72">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
-            type="text"
-            placeholder="Search lead replies, email or subject..."
+            type="search"
+            placeholder="Search replies"
+            aria-label="Search replies"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full text-xs sm:text-sm bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl pl-9 pr-3 py-2 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            className="w-full text-sm bg-white border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
-          <span className="text-xs font-bold text-slate-500 shrink-0">Stage:</span>
-          {['all', 'qualified', 'contacted', 'proposal', 'won'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setSelectedStatusFilter(status)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize transition cursor-pointer whitespace-nowrap ${
-                selectedStatusFilter === status
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
-              }`}
-            >
-              {status}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Messages List */}
-      {isLoading ? (
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-12 flex flex-col items-center justify-center gap-3 text-slate-400">
-          <RefreshCw className="w-8 h-8 animate-spin text-indigo-600" />
-          <p className="text-sm font-medium">Scanning for lead replies...</p>
-        </div>
-      ) : filteredMessages.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-dashed border-slate-300 p-12 text-center max-w-2xl mx-auto shadow-xs">
-          <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 mx-auto mb-4">
-            <Inbox className="w-8 h-8" />
-          </div>
-          <h3 className="text-lg font-bold text-slate-900">
-            {searchQuery ? 'No matching replies found' : 'No lead replies in inbox yet'}
-          </h3>
-          <p className="text-sm text-slate-500 mt-2 leading-relaxed">
-            {searchQuery
-              ? `No messages matched "${searchQuery}". Try clearing your search filter.`
-              : 'When prospects reply to your cold emails or follow-ups, their responses will automatically show up here and qualify your contact.'}
-          </p>
-          <div className="mt-6 flex items-center justify-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                await onSyncInbox();
-                await loadInboundMessages();
-              }}
-              disabled={isSyncing}
-              leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />}
-            >
-              {isSyncing ? 'Syncing...' : 'Sync Mailbox Now'}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredMessages.map((msg) => {
-            const isExpanded = expandedMessageId === msg.id;
-            const initials = getInitials(msg.senderName, 'L');
-            const contact = msg.contact;
-            const statusColor = getStatusColor(contact.status);
-
+        <div
+          role="tablist"
+          aria-label="Filter by stage"
+          className="inline-flex p-0.5 bg-slate-100 rounded-lg overflow-x-auto no-scrollbar self-start sm:self-auto"
+        >
+          {STAGE_FILTERS.map((status) => {
+            const isActive = selectedStatusFilter === status;
             return (
-              <div
-                key={msg.id}
-                className={`bg-white rounded-2xl border transition-all duration-150 overflow-hidden ${
-                  isExpanded
-                    ? 'border-indigo-300 shadow-md ring-1 ring-indigo-500/10'
-                    : 'border-slate-200/80 hover:border-slate-300 shadow-xs'
+              <button
+                key={status}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setSelectedStatusFilter(status)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize whitespace-nowrap transition-colors cursor-pointer ${
+                  isActive ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                {/* Header Row */}
-                <div
-                  onClick={() => setExpandedMessageId(isExpanded ? null : msg.id)}
-                  className="p-4 sm:p-5 flex items-start justify-between gap-4 cursor-pointer select-none hover:bg-slate-50/50 transition"
-                >
-                  <div className="flex items-start gap-3 sm:gap-4 min-w-0">
-                    {/* Avatar */}
-                    <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 text-white font-black text-sm sm:text-base flex items-center justify-center shrink-0 shadow-xs">
-                      {initials}
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-extrabold text-sm sm:text-base text-slate-900">
-                          {msg.senderName}
-                        </span>
-                        {contact.company?.name && (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/60">
-                            <Building2 className="w-3 h-3 text-slate-400" />
-                            {contact.company.name}
-                          </span>
-                        )}
-                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${statusColor}`}>
-                          {contact.status}
-                        </span>
-                      </div>
-
-                      <div className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-2 flex-wrap">
-                        <span>{msg.senderEmail}</span>
-                        <span>•</span>
-                        <span className="text-indigo-600 font-semibold flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {formatRelativeTime(msg.receivedAt)}
-                        </span>
-                        <span>•</span>
-                        <span className="text-slate-400">{formatDate(msg.receivedAt)}</span>
-                      </div>
-
-                      <div className="font-bold text-xs sm:text-sm text-slate-800 mt-2 truncate">
-                        {msg.subject}
-                      </div>
-
-                      {!isExpanded && (
-                        <p className="text-xs text-slate-500 mt-1 line-clamp-1 leading-relaxed">
-                          {msg.body.replace(/\n+/g, ' ')}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0 pt-1">
-                    <button
-                      type="button"
-                      className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-                    >
-                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expanded Details & Actions */}
-                {isExpanded && (
-                  <div className="px-4 sm:px-5 pb-5 pt-2 border-t border-slate-100 bg-slate-50/40 space-y-4">
-                    {/* Message Body Box */}
-                    <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/80 shadow-xs">
-                      <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                        <MessageSquare className="w-3.5 h-3.5 text-indigo-500" />
-                        <span>Lead Message Content</span>
-                      </div>
-                      <div
-                        className="text-xs sm:text-sm text-slate-800 leading-relaxed font-sans font-medium"
-                        dangerouslySetInnerHTML={{
-                          __html: /<[a-z][\s\S]*>/i.test(msg.body)
-                            ? msg.body
-                            : msg.body.replace(/\n/g, '<br />'),
-                        }}
-                      />
-                    </div>
-
-                    {/* Quick Action Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenEmailComposer(contact, `Re: ${msg.subject.replace(/^re:\s*/i, '')}`);
-                          }}
-                          leftIcon={<Reply className="w-3.5 h-3.5" />}
-                          className="font-bold"
-                        >
-                          Reply to {contact.name.split(' ')[0]}
-                        </Button>
-
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectContact(contact);
-                          }}
-                          leftIcon={<ExternalLink className="w-3.5 h-3.5 text-slate-500" />}
-                        >
-                          View Contact Profile
-                        </Button>
-
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenAddReminder(contact);
-                          }}
-                          leftIcon={<Calendar className="w-3.5 h-3.5 text-slate-500" />}
-                        >
-                          Set Follow-up Task
-                        </Button>
-
-                        {contact.linkedin_url && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenLinkedIn(contact);
-                            }}
-                            leftIcon={<Share2 className="w-3.5 h-3.5 text-blue-600" />}
-                          >
-                            LinkedIn Outreach
-                          </Button>
-                        )}
-                      </div>
-
-                      <div className="text-[11px] text-slate-400 italic">
-                        Contact ID: {contact.id.slice(0, 8)}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+                {status}
+              </button>
             );
           })}
         </div>
+      </div>
+
+      {/* Messages */}
+      {isLoading ? (
+        <div className="bg-white rounded-xl border border-slate-200 py-16 flex items-center justify-center gap-2 text-sm text-slate-500">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          Loading replies...
+        </div>
+      ) : filteredMessages.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 py-16 px-6 text-center">
+          <Inbox className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-sm font-medium text-slate-900">
+            {searchQuery || selectedStatusFilter !== 'all' ? 'No matching replies' : 'No replies yet'}
+          </h3>
+          <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">
+            {searchQuery || selectedStatusFilter !== 'all'
+              ? 'Try a different search or stage.'
+              : 'When leads reply to your emails, they show up here.'}
+          </p>
+        </div>
+      ) : (
+        <ul className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+          {filteredMessages.map((msg) => {
+            const isExpanded = expandedMessageId === msg.id;
+            const contact = msg.contact;
+            const text = stripHtml(msg.body);
+            const hasSubject = !PLACEHOLDER_SUBJECTS.has(msg.subject.trim().toLowerCase());
+
+            return (
+              <li key={msg.id} className={isExpanded ? 'bg-slate-50/60' : ''}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedMessageId(isExpanded ? null : msg.id)}
+                  aria-expanded={isExpanded}
+                  className="w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 text-xs font-medium flex items-center justify-center shrink-0">
+                    {getInitials(msg.senderName, 'L')}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-medium text-slate-900 truncate">{msg.senderName}</span>
+                        {contact.company?.name && (
+                          <span className="text-xs text-slate-400 truncate hidden sm:inline">{contact.company.name}</span>
+                        )}
+                        <span className="shrink-0">
+                          <StatusBadge status={contact.status} />
+                        </span>
+                      </div>
+                      <time
+                        dateTime={msg.receivedAt}
+                        title={formatDate(msg.receivedAt)}
+                        className="text-xs text-slate-400 shrink-0 tabular-nums"
+                      >
+                        {formatRelativeTime(msg.receivedAt)}
+                      </time>
+                    </div>
+
+                    <p className="text-sm mt-0.5 truncate">
+                      <span className={hasSubject ? 'text-slate-800' : 'text-slate-400 italic'}>
+                        {hasSubject ? msg.subject : 'No subject'}
+                      </span>
+                      {!isExpanded && text && (
+                        <span className="text-slate-500"> — {text.replace(/\s+/g, ' ')}</span>
+                      )}
+                    </p>
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <div className="pl-16 pr-4 pb-4">
+                    <p className="text-xs text-slate-400 mb-2 break-all">
+                      {msg.senderEmail} · {formatDate(msg.receivedAt)}
+                    </p>
+                    {/* Inbound mail is untrusted: render as escaped text, never as HTML. */}
+                    <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line break-words max-h-96 overflow-y-auto">
+                      {text || 'No message body.'}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 mt-4">
+                      <Button
+                        size="sm"
+                        onClick={() => onOpenEmailComposer(contact, `Re: ${msg.subject.replace(/^re:\s*/i, '')}`)}
+                        leftIcon={<Reply className="w-3.5 h-3.5" />}
+                      >
+                        Reply
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onSelectContact(contact)}
+                        leftIcon={<User className="w-3.5 h-3.5" />}
+                      >
+                        Contact
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onOpenAddReminder(contact)}
+                        leftIcon={<Calendar className="w-3.5 h-3.5" />}
+                      >
+                        Follow-up
+                      </Button>
+                      {contact.linkedin_url && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onOpenLinkedIn(contact)}
+                          leftIcon={<Linkedin className="w-3.5 h-3.5" />}
+                        >
+                          LinkedIn
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

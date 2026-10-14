@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { TeamProvider, useTeam } from './context/TeamContext';
 import { ToastProvider, useToast } from './context/ToastContext';
@@ -10,29 +10,40 @@ import { TeamMemberModal } from './components/layout/TeamMemberModal';
 import { ContactList } from './components/contacts/ContactList';
 import { ContactFormModal } from './components/contacts/ContactFormModal';
 import { ContactDetailModal } from './components/contacts/ContactDetailModal';
-import { ExcelImportModal } from './components/import/ExcelImportModal';
-import { ImportHistoryView } from './components/import/ImportHistoryView';
-import { EmailComposerModal } from './components/email/EmailComposerModal';
-import { BulkEmailModal, BulkTemplateKey } from './components/email/BulkEmailModal';
-import { EmailSettingsModal } from './components/email/EmailSettingsModal';
-import { AISettingsModal } from './components/email/AISettingsModal';
-import { DraftsView } from './components/email/DraftsView';
-import { RemindersDashboard } from './components/reminders/RemindersDashboard';
 import { ReminderFormModal } from './components/reminders/ReminderFormModal';
-import { CompaniesView } from './components/companies/CompaniesView';
-import { InboxView } from './components/inbox/InboxView';
 import { syncOutlookInbox } from './lib/inboundSyncService';
-import { LinkedInComposerModal } from './components/linkedin/LinkedInComposerModal';
 import { LoginPage } from './components/auth/LoginPage';
-import { InviteModal } from './components/team/InviteModal';
-import { DashboardView } from './components/dashboard/DashboardView';
-import { PipelineView } from './components/pipeline/PipelineView';
 import { MobileNavDrawer } from './components/layout/MobileNavDrawer';
 import { Footer } from './components/layout/Footer';
 import { NotFoundView } from './components/common/NotFoundView';
 import { Loader2 } from 'lucide-react';
+import type { BulkTemplateKey } from './components/email/BulkEmailModal';
 
-export type ViewType = 'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'drafts' | 'reminders' | 'companies' | 'imports' | '404';
+// Heavy views and rarely-opened modals are split into their own chunks
+const ExcelImportModal = lazy(() => import('./components/import/ExcelImportModal').then((m) => ({ default: m.ExcelImportModal })));
+const ImportHistoryView = lazy(() => import('./components/import/ImportHistoryView').then((m) => ({ default: m.ImportHistoryView })));
+const EmailComposerModal = lazy(() => import('./components/email/EmailComposerModal').then((m) => ({ default: m.EmailComposerModal })));
+const BulkEmailModal = lazy(() => import('./components/email/BulkEmailModal').then((m) => ({ default: m.BulkEmailModal })));
+const EmailSettingsModal = lazy(() => import('./components/email/EmailSettingsModal').then((m) => ({ default: m.EmailSettingsModal })));
+const AISettingsModal = lazy(() => import('./components/email/AISettingsModal').then((m) => ({ default: m.AISettingsModal })));
+const DraftsView = lazy(() => import('./components/email/DraftsView').then((m) => ({ default: m.DraftsView })));
+const RemindersDashboard = lazy(() => import('./components/reminders/RemindersDashboard').then((m) => ({ default: m.RemindersDashboard })));
+const CompaniesView = lazy(() => import('./components/companies/CompaniesView').then((m) => ({ default: m.CompaniesView })));
+const InboxView = lazy(() => import('./components/inbox/InboxView').then((m) => ({ default: m.InboxView })));
+const LinkedInComposerModal = lazy(() => import('./components/linkedin/LinkedInComposerModal').then((m) => ({ default: m.LinkedInComposerModal })));
+const LinkedInView = lazy(() => import('./components/linkedin/LinkedInView').then((m) => ({ default: m.LinkedInView })));
+const InviteModal = lazy(() => import('./components/team/InviteModal').then((m) => ({ default: m.InviteModal })));
+const DashboardView = lazy(() => import('./components/dashboard/DashboardView').then((m) => ({ default: m.DashboardView })));
+const PipelineView = lazy(() => import('./components/pipeline/PipelineView').then((m) => ({ default: m.PipelineView })));
+
+export type ViewType = 'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'drafts' | 'reminders' | 'companies' | 'imports' | 'linkedin' | '404';
+
+const ViewFallback: React.FC = () => (
+  <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400">
+    <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+    <p className="text-xs font-medium">Loading...</p>
+  </div>
+);
 
 const CRMMain: React.FC = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -79,9 +90,7 @@ const CRMMain: React.FC = () => {
 
   const countInboundReplies = async (_contactList: Contact[]) => {
     try {
-      const emails = await db.getEmails();
-      const count = emails.filter((e) => e.status === 'received' || e.is_inbound).length;
-      setInboxCount(count);
+      setInboxCount(await db.countInboundEmails());
     } catch (e) {
       console.warn('Error counting inbound replies:', e);
     }
@@ -176,7 +185,7 @@ const CRMMain: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '').trim();
-  const validViews: ViewType[] = ['dashboard', 'pipeline', 'contacts', 'inbox', 'drafts', 'reminders', 'companies', 'imports'];
+  const validViews: ViewType[] = ['dashboard', 'pipeline', 'contacts', 'inbox', 'drafts', 'reminders', 'companies', 'imports', 'linkedin'];
       if (!hash) {
         setActiveView('dashboard');
       } else if (validViews.includes(hash as ViewType)) {
@@ -209,6 +218,7 @@ const CRMMain: React.FC = () => {
       reminders: activeRemindersCount > 0 ? `Tasks (${activeRemindersCount} Due) | Team CRM` : 'Tasks & Reminders | Team CRM',
       companies: 'Companies & Accounts | Team CRM',
       imports: 'Import History | Team CRM',
+      linkedin: 'LinkedIn Outreach | Team CRM',
       '404': '404 Not Found | Team CRM',
     };
     document.title = titles[activeView] || 'Team CRM - Collaborative Workspace';
@@ -292,7 +302,7 @@ const CRMMain: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50/80 overflow-x-hidden w-full">
+    <div className="flex min-h-screen bg-slate-50 overflow-x-hidden w-full">
       {/* Name Picker Modal (triggered on load or manually) */}
       <TeamMemberModal />
 
@@ -307,6 +317,8 @@ const CRMMain: React.FC = () => {
         inboxCount={inboxCount}
         dealCount={dealCount}
         draftCount={draftCount}
+        onOpenAISettings={() => setIsAISettingsOpen(true)}
+        onOpenEmailSettings={() => setIsEmailSettingsOpen(true)}
       />
 
       {/* Sidebar for Desktop */}
@@ -319,6 +331,7 @@ const CRMMain: React.FC = () => {
         dealCount={dealCount}
         draftCount={draftCount}
         onOpenAISettings={() => setIsAISettingsOpen(true)}
+        onOpenEmailSettings={() => setIsEmailSettingsOpen(true)}
       />
 
       {/* Main Workspace Area */}
@@ -330,8 +343,6 @@ const CRMMain: React.FC = () => {
           onSyncInbox={() => handleSyncInbox(false)}
           isSyncingInbox={isSyncingInbox}
           onOpenImport={() => setIsImportModalOpen(true)}
-          onOpenEmailSettings={() => setIsEmailSettingsOpen(true)}
-          onOpenAISettings={() => setIsAISettingsOpen(true)}
           onOpenInvite={() => setIsInviteModalOpen(true)}
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
           onNavigateHome={() => handleNavigate('dashboard')}
@@ -348,7 +359,7 @@ const CRMMain: React.FC = () => {
               <p className="text-xs font-medium">Loading CRM data...</p>
             </div>
           ) : (
-            <>
+            <Suspense fallback={<ViewFallback />}>
               {activeView === 'dashboard' && (
                 <DashboardView />
               )}
@@ -424,13 +435,17 @@ const CRMMain: React.FC = () => {
                 <ImportHistoryView onRefreshNeeded={refreshAllData} />
               )}
 
+              {activeView === 'linkedin' && (
+                <LinkedInView contacts={contacts} onRefresh={refreshAllData} />
+              )}
+
               {activeView === '404' && (
                 <NotFoundView
                   onNavigate={(v) => handleNavigate(v)}
                   requestedView={window.location.hash}
                 />
               )}
-            </>
+            </Suspense>
           )}
         </main>
 
@@ -438,13 +453,16 @@ const CRMMain: React.FC = () => {
         <Footer />
       </div>
 
-      {/* Modals */}
-      <ExcelImportModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        existingContacts={contacts}
-        onImportComplete={refreshAllData}
-      />
+      {/* Modals (lazy chunks load on first open) */}
+      <Suspense fallback={null}>
+      {isImportModalOpen && (
+        <ExcelImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          existingContacts={contacts}
+          onImportComplete={refreshAllData}
+        />
+      )}
 
       <ContactFormModal
         isOpen={isContactFormOpen}
@@ -539,20 +557,27 @@ const CRMMain: React.FC = () => {
         onSaveComplete={refreshAllData}
       />
 
-      <EmailSettingsModal
-        isOpen={isEmailSettingsOpen}
-        onClose={() => setIsEmailSettingsOpen(false)}
-      />
+      {isEmailSettingsOpen && (
+        <EmailSettingsModal
+          isOpen={isEmailSettingsOpen}
+          onClose={() => setIsEmailSettingsOpen(false)}
+        />
+      )}
 
-      <AISettingsModal
-        isOpen={isAISettingsOpen}
-        onClose={() => setIsAISettingsOpen(false)}
-      />
+      {isAISettingsOpen && (
+        <AISettingsModal
+          isOpen={isAISettingsOpen}
+          onClose={() => setIsAISettingsOpen(false)}
+        />
+      )}
 
-      <InviteModal
-        isOpen={isInviteModalOpen}
-        onClose={() => setIsInviteModalOpen(false)}
-      />
+      {isInviteModalOpen && (
+        <InviteModal
+          isOpen={isInviteModalOpen}
+          onClose={() => setIsInviteModalOpen(false)}
+        />
+      )}
+      </Suspense>
     </div>
   );
 };
