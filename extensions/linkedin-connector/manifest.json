@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CRM LinkedIn Connector",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "One-click connect your logged-in LinkedIn session to your CRM workspace. Nothing leaves your browser except to the CRM site you link.",
   "permissions": ["cookies", "storage", "scripting", "activeTab"],
   "host_permissions": ["https://*.linkedin.com/*"],

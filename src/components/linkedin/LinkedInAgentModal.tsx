@@ -15,7 +15,8 @@ import {
   LinkedInProspect,
   LinkedInQuotaInfo,
 } from '../../lib/linkedinAutomationService';
-import { getLinkedInAccounts, connectLinkedInCookie, getAccountCredentials } from '../../lib/linkedinService';
+import { getLinkedInAccounts, connectLinkedInCookie } from '../../lib/linkedinService';
+import { requestLinkedInSession } from '../../lib/linkedinExtensionBridge';
 import { LinkedInAccount } from '../../types/linkedin';
 import { useToast } from '../../context/ToastContext';
 import { useTeam } from '../../context/TeamContext';
@@ -239,16 +240,6 @@ export const LinkedInAgentModal: React.FC<LinkedInAgentModalProps> = ({
   /** Resolve active credentials from either selected saved account or custom inputs */
   const resolveActiveCredentials = async (): Promise<{ liAt: string; jsessionId: string; rawCookie?: string } | null> => {
     if (credentialMode === 'saved' && selectedAccountId) {
-      try {
-        const creds = await getAccountCredentials(selectedAccountId);
-        if (creds?.liAt) {
-          const rawCookie = localStorage.getItem('crm_custom_raw_cookie') || undefined;
-          return { ...creds, rawCookie };
-        }
-      } catch (e) {
-        console.warn('Could not load account credentials:', e);
-      }
-
       // Seamless fallback to cached credentials from 1-click connect
       const cachedLiAt = localStorage.getItem('crm_custom_li_at') || '';
       const cachedCsrf = localStorage.getItem('crm_custom_jsessionid') || '';
@@ -318,13 +309,9 @@ export const LinkedInAgentModal: React.FC<LinkedInAgentModalProps> = ({
   };
 
   /** 1-Click Verification of Custom Cookie */
-  const handleVerifyCustomCookie = async (overrideLiAt?: string, overrideCsrf?: string) => {
+  const handleVerifyCustomCookie = async (overrideLiAt?: string, _overrideCsrf?: string) => {
     const rawLiAt = overrideLiAt !== undefined ? overrideLiAt : customLiAt;
-    const rawCsrf = overrideCsrf !== undefined ? overrideCsrf : customJsessionId;
-
     const cleanLiAt = rawLiAt.trim().replace(/^li_at=/, '').replace(/^["']|["']$/g, '');
-    const cleanJsessionId = rawCsrf.trim().replace(/^JSESSIONID=/, '').replace(/^["']|["']$/g, '') || '';
-    const rawCookie = localStorage.getItem('crm_custom_raw_cookie') || undefined;
 
     if (!cleanLiAt) {
       showError('Cookie Required', 'Please paste your li_at session cookie first.');
@@ -335,35 +322,15 @@ export const LinkedInAgentModal: React.FC<LinkedInAgentModalProps> = ({
     setCookieVerification(null);
 
     try {
-      const res = await fetch('/api/linkedin/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cookieOverride: {
-            liAt: cleanLiAt,
-            jsessionId: cleanJsessionId,
-            rawCookie,
-          },
-        }),
+      // Checks this browser's LinkedIn session through the extension; the cookie never leaves the browser.
+      const { profile } = await requestLinkedInSession();
+      setCookieVerification({
+        tested: true,
+        valid: true,
+        name: profile?.name || 'LinkedIn User',
+        headline: profile?.headline,
       });
-
-      const data = await res.json();
-      if (data.valid && data.profile) {
-        setCookieVerification({
-          tested: true,
-          valid: true,
-          name: data.profile.name || 'LinkedIn User',
-          headline: data.profile.headline,
-        });
-        success('Cookie Valid! 🎉', `Connected as ${data.profile.name || 'LinkedIn User'}`);
-      } else {
-        setCookieVerification({
-          tested: true,
-          valid: false,
-          error: data.error || 'LinkedIn session cookie is expired or was challenged.',
-        });
-        showError('Invalid Cookie', data.error || 'LinkedIn session cookie is expired or invalid.');
-      }
+      success('Cookie Valid! 🎉', `Connected as ${profile?.name || 'LinkedIn User'}`);
     } catch (err: any) {
       setCookieVerification({
         tested: true,
@@ -570,15 +537,8 @@ export const LinkedInAgentModal: React.FC<LinkedInAgentModalProps> = ({
       return;
     }
 
-    const creds = cookieOverride || (await resolveActiveCredentials());
-    if (!creds?.liAt) {
-      showError(
-        'LinkedIn Cookie Required',
-        'Please enter your LinkedIn session cookie (li_at) above to start prospecting.'
-      );
-      setCredentialMode('custom');
-      return;
-    }
+    // The extension searches with the browser's own LinkedIn session; no cookie needed here.
+    const creds = cookieOverride || (await resolveActiveCredentials()) || undefined;
 
     setIsSearching(true);
     setProspects([]);
@@ -718,13 +678,7 @@ export const LinkedInAgentModal: React.FC<LinkedInAgentModalProps> = ({
 
     abortControllerRef.current = new AbortController();
 
-    const creds = await resolveActiveCredentials();
-    if (!creds?.liAt) {
-      showError('Cookie Required', 'No active LinkedIn session cookie found. Please enter your cookie in the credentials section.');
-      setCredentialMode('custom');
-      setActiveStep('search');
-      return;
-    }
+    const creds = (await resolveActiveCredentials()) || undefined;
 
     try {
       const res = await dispatchAgentBatchWithJitter({

@@ -20,85 +20,6 @@ function getClient() {
   return supabase;
 }
 
-// ==============================================================================
-// ENCRYPTION HELPERS — AES-GCM via Web Crypto API
-// The encryption key is derived from the Supabase anon key so it is unique
-// per workspace without exposing a separate secret in the bundle.
-// ==============================================================================
-
-const CRYPTO_VERSION_PREFIX = 'aes_v1:';
-
-async function deriveKey(): Promise<CryptoKey> {
-  const baseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'fallback-local-dev-key';
-  const enc = new TextEncoder();
-  const raw = await crypto.subtle.importKey('raw', enc.encode(baseKey), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: enc.encode('nexus_crm_li_cookie_v1'), iterations: 100_000, hash: 'SHA-256' },
-    raw,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-export async function encryptValue(value: string): Promise<string> {
-  const key = await deriveKey();
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const enc = new TextEncoder();
-  const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(value));
-  const combined = new Uint8Array(iv.byteLength + cipherBuf.byteLength);
-  combined.set(iv, 0);
-  combined.set(new Uint8Array(cipherBuf), iv.byteLength);
-  return CRYPTO_VERSION_PREFIX + bytesToBase64(combined);
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-export async function decryptValue(encrypted: string): Promise<string> {
-  try {
-    if (!encrypted.startsWith(CRYPTO_VERSION_PREFIX)) return encrypted;
-    const rawBase64 = encrypted.slice(CRYPTO_VERSION_PREFIX.length);
-    const combined = base64ToBytes(rawBase64);
-    const iv = combined.slice(0, 12);
-    const cipher = combined.slice(12);
-    const key = await deriveKey();
-    const decryptedBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipher);
-    return new TextDecoder().decode(decryptedBuf);
-  } catch (err) {
-    console.warn('Decryption failed, returning raw value:', err);
-    return encrypted;
-  }
-}
-
-/** Retrieve active session cookies for an account */
-export async function getAccountCredentials(accountId: string): Promise<{ liAt: string; jsessionId: string } | null> {
-  const { data, error } = await getClient()
-    .from('linkedin_accounts')
-    .select('li_at_encrypted, jsessionid_encrypted')
-    .eq('id', accountId)
-    .maybeSingle();
-
-  if (error || !data) return null;
-  const liAt = data.li_at_encrypted ? await decryptValue(data.li_at_encrypted) : '';
-  const jsessionId = data.jsessionid_encrypted ? await decryptValue(data.jsessionid_encrypted) : '';
-  return { liAt, jsessionId };
-}
-
 /** Returns the active Supabase session JWT, or null if not logged in. */
 async function getAuthToken(): Promise<string | null> {
   if (!supabase) return null;
@@ -171,15 +92,16 @@ export async function connectLinkedInCookie(
   customProfileUrl?: string,
   customName?: string
 ): Promise<LinkedInAccount> {
-  const encrypted = {
-    li_at_encrypted: await encryptValue(liAt.trim()),
-    jsessionid_encrypted: await encryptValue(jsessionId.trim()),
-  };
+  // Cookies stay in the browser: the extension acts with the browser's own session.
+  // Null also wipes cookies saved by older versions.
+  void liAt;
+  void jsessionId;
 
   const payload: Record<string, unknown> = {
     team_member_id: teamMemberId,
     auth_type: 'cookie',
-    ...encrypted,
+    li_at_encrypted: null,
+    jsessionid_encrypted: null,
     status: 'active',
     error_message: null,
     // Reset or set initial name so fresh account info is populated
