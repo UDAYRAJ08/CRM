@@ -1,4 +1,4 @@
-import { getDailyQuota } from './_helpers';
+import { getDailyQuota } from './_helpers.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');

@@ -255,16 +255,7 @@ select cron.schedule('linkedin-process-queue', '* * * * *',
   ); $$
 );
 
--- 3. Check cookie validity every hour:
-select cron.schedule('linkedin-check-cookies', '0 * * * *',
-  $$ select net.http_post(
-    url := 'https://hpavxzswulhycmwthror.supabase.co/functions/v1/linkedin-cookie-check',
-    headers := '{"Content-Type":"application/json"}'::jsonb,
-    body := '{}'::jsonb
-  ); $$
-);
-
--- 4. Reset daily counters at midnight UTC:
+-- 3. Reset daily counters at midnight UTC:
 select cron.schedule('linkedin-reset-daily', '0 0 * * *',
   $$ select reset_linkedin_daily_counters(); $$
 );
