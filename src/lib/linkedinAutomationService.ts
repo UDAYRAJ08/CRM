@@ -1,6 +1,12 @@
 import { db } from './supabase';
 import { Contact } from '../types/crm';
 import { executeAICompletion } from './multiAiService';
+import {
+  ExtensionBridgeError,
+  extensionQuota,
+  extensionSearchPeople,
+  extensionSendInvite,
+} from './linkedinExtensionBridge';
 
 export interface LinkedInQuotaInfo {
   date: string;
@@ -49,21 +55,16 @@ export interface ProspectSearchFilters {
  * Fetch current daily invite quota and safety limits
  */
 export async function fetchLinkedInQuota(): Promise<LinkedInQuotaInfo> {
-  try {
-    const res = await fetch('/api/linkedin/quota');
-    if (res.ok) {
-      const data = await res.json();
-      const quota = data.quota || data;
-      return {
-        date: quota.date || new Date().toISOString().slice(0, 10),
-        sentToday: quota.sentToday !== undefined ? quota.sentToday : (quota.count || 0),
-        maxDailyLimit: quota.maxDailyLimit || quota.maxLimit || 15,
-        remaining: quota.remaining !== undefined ? quota.remaining : 15,
-        hasSessionCookie: Boolean(data.hasSessionCookie ?? true),
-      };
-    }
-  } catch (e) {
-    console.warn('Could not fetch LinkedIn quota:', e);
+  // The extension counts invites, since it is the one sending them.
+  const quota = await extensionQuota();
+  if (quota) {
+    return {
+      date: quota.date,
+      sentToday: quota.count,
+      maxDailyLimit: quota.maxLimit,
+      remaining: quota.remaining,
+      hasSessionCookie: true,
+    };
   }
   return {
     date: new Date().toISOString().slice(0, 10),
@@ -72,6 +73,80 @@ export async function fetchLinkedInQuota(): Promise<LinkedInQuotaInfo> {
     remaining: 15,
     hasSessionCookie: true,
   };
+}
+
+type RawProspect = Omit<LinkedInProspect, 'sendMode' | 'status' | 'isDuplicate' | 'duplicateReason'>;
+
+/** Turn LinkedIn's raw people-search JSON into prospects, applying the title/keyword/location filters. */
+export function parseLinkedInSearchResults(rawData: any, filters: ProspectSearchFilters = {}): RawProspect[] {
+  const prospects: RawProspect[] = [];
+  const norm = (list?: string[]) => (list || []).map((t) => t.trim().toLowerCase()).filter(Boolean);
+  const targetTitles = norm(filters.targetTitles);
+  const negativeKeywords = norm(filters.negativeKeywords);
+  const targetLocations = norm(filters.locations);
+
+  const parseAvatar = (item: any): string | undefined => {
+    const vector =
+      item?.image?.attributes?.[0]?.detailData?.['com.linkedin.common.VectorImage'] ||
+      item?.picture?.['com.linkedin.common.VectorImage'] ||
+      item?.picture;
+    if (vector?.rootUrl && Array.isArray(vector?.artifacts) && vector.artifacts.length > 0) {
+      return `${vector.rootUrl}${vector.artifacts[0].fileIdentifyingUrlPath}`;
+    }
+    return undefined;
+  };
+
+  const items = [...(rawData?.included || []), ...(rawData?.elements || [])];
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    const name = item.title?.text || item.title || '';
+    const headline = item.primarySubtitle?.text || item.headline || '';
+    const location = item.secondarySubtitle?.text || item.subline || '';
+    let navUrl = item.navigationUrl || '';
+    const distance = item.badgeText?.text || item.distance || '2nd';
+
+    if (!navUrl && item.publicIdentifier) navUrl = `https://www.linkedin.com/in/${item.publicIdentifier}`;
+    if (typeof name !== 'string' || typeof headline !== 'string' || !name || !headline) continue;
+    if (!navUrl.includes('/in/') && !item.publicIdentifier) continue;
+
+    const vanityMatch = navUrl.match(/linkedin\.com\/in\/([^/?#]+)/i);
+    const vanity = vanityMatch ? decodeURIComponent(vanityMatch[1]) : item.publicIdentifier || '';
+    if (!vanity || seen.has(vanity.toLowerCase())) continue;
+    seen.add(vanity.toLowerCase());
+
+    let isQualified = true;
+    let qualificationReason = 'Matches all criteria';
+    const headlineLower = headline.toLowerCase();
+    const nameLower = name.toLowerCase();
+
+    const matchedNeg = negativeKeywords.find((neg) => headlineLower.includes(neg) || nameLower.includes(neg));
+    if (matchedNeg) {
+      isQualified = false;
+      qualificationReason = `Excluded by keyword: "${matchedNeg}"`;
+    }
+    if (isQualified && targetTitles.length > 0 && !targetTitles.some((t) => headlineLower.includes(t))) {
+      isQualified = false;
+      qualificationReason = 'Does not match target title keywords';
+    }
+    if (isQualified && targetLocations.length > 0 && !targetLocations.some((l) => location.toLowerCase().includes(l))) {
+      isQualified = false;
+      qualificationReason = 'Does not match target location';
+    }
+
+    prospects.push({
+      fullName: name,
+      headline,
+      location,
+      vanity,
+      profileUrl: `https://www.linkedin.com/in/${vanity}`,
+      avatarUrl: parseAvatar(item),
+      networkDistance: String(distance).replace(/[^0-9a-zA-Z]/g, ''),
+      isQualified,
+      qualificationReason,
+    });
+  }
+  return prospects;
 }
 
 /**
@@ -97,50 +172,45 @@ export async function searchLinkedInProspects({
   error?: string;
   expiredCookie?: boolean;
 }> {
+  void cookieOverride; // The extension uses the browser's own LinkedIn session.
   try {
-    const payload = {
-      keywords: keywords?.trim(),
-      searchUrl: searchUrl?.trim(),
-      filters,
-      cookieOverride,
-    };
-
-    let res: Response;
-    try {
-      res = await fetch('/api/linkedin/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } catch (netErr: any) {
+    let searchKeywords = (keywords || '').trim();
+    const url = (searchUrl || '').trim();
+    if (url) {
+      try {
+        const urlKeywords = new URL(url).searchParams.get('keywords');
+        if (urlKeywords) searchKeywords = urlKeywords;
+      } catch {
+        const match = url.match(/keywords=([^&]+)/);
+        if (match) searchKeywords = decodeURIComponent(match[1]);
+      }
+    }
+    if (!searchKeywords) {
       return {
         success: false,
         totalFound: 0,
         qualifiedCount: 0,
         prospects: [],
-        error: 'Cannot connect to local server (/api/linkedin/search). Make sure npm run dev is running.',
+        error: 'Search keywords or a valid LinkedIn search URL are required.',
       };
     }
 
-    let data: any = {};
+    let rawData: any;
     try {
-      data = await res.json();
-    } catch {
-      data = { error: `Server returned status ${res.status}` };
-    }
-
-    if (!res.ok || !data.success) {
+      rawData = await extensionSearchPeople(searchKeywords);
+    } catch (e) {
+      const err = e instanceof ExtensionBridgeError ? e : null;
       return {
         success: false,
         totalFound: 0,
         qualifiedCount: 0,
         prospects: [],
-        error: data.error || 'Failed to search LinkedIn prospects',
-        expiredCookie: Boolean(data.expiredCookie || res.status === 401),
+        error: err?.message || 'Failed to search LinkedIn prospects',
+        expiredCookie: err?.code === 'NOT_LOGGED_IN',
       };
     }
 
-    const rawProspects: any[] = data.prospects || [];
+    const rawProspects = parseLinkedInSearchResults(rawData, filters);
 
     // Map existing contact profile URLs for deduplication
     const knownUrls = new Set<string>();
@@ -297,50 +367,34 @@ export async function sendLinkedInConnectionInvite({
       }
     }
 
-    const payload = {
-      profileUrl: targetUrl || '',
-      contactName: contact.name,
-      note: note.slice(0, 300),
-      contactId: contact.id,
-      cookieOverride,
-    };
+    void cookieOverride; // The extension uses the browser's own LinkedIn session.
+    const vanityMatch = (targetUrl || '').match(/linkedin\.com\/in\/([^/?#]+)/i);
+    const vanity = vanityMatch
+      ? decodeURIComponent(vanityMatch[1])
+      : contact.name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
 
-    let res = await fetch('/api/linkedin/invite', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    let data = await res.json();
-
-    // Free account note quota fallback: If error indicates note limit or free tier restriction, retry with blank note!
-    if (!res.ok && note.trim().length > 0) {
-      const errStr = JSON.stringify(data).toLowerCase();
-      if (
-        errStr.includes('invitation_message_limit') ||
-        errStr.includes('premium') ||
-        errStr.includes('note') ||
-        res.status === 400
-      ) {
+    let data: Awaited<ReturnType<typeof extensionSendInvite>>;
+    let fallbackToBlank = false;
+    try {
+      try {
+        data = await extensionSendInvite(vanity, note.slice(0, 300));
+      } catch (e) {
+        // Free accounts cannot attach notes: retry once as a blank invitation.
+        const errStr = e instanceof ExtensionBridgeError ? `${e.message} ${e.details || ''}`.toLowerCase() : '';
+        const noteRejected =
+          e instanceof ExtensionBridgeError &&
+          e.code === 'FAILED' &&
+          (errStr.includes('invitation_message_limit') || errStr.includes('premium') || errStr.includes('note') || e.status === 400);
+        if (!note.trim() || !noteRejected) throw e;
         console.warn('Custom note limit suspected on free account, retrying with blank invitation...');
-        const fallbackRes = await fetch('/api/linkedin/invite', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, note: '' }),
-        });
-        if (fallbackRes.ok) {
-          data = await fallbackRes.json();
-          data.fallbackToBlank = true;
-          res = fallbackRes;
-        }
+        data = await extensionSendInvite(vanity, '');
+        fallbackToBlank = true;
       }
-    }
-
-    if (!res.ok || !data.success) {
+    } catch (e: any) {
       return {
         success: false,
-        message: data.error || 'Failed to dispatch LinkedIn invite',
-        error: data.error || 'Unknown error',
+        message: e?.message || 'Failed to dispatch LinkedIn invite',
+        error: e?.message || 'Unknown error',
       };
     }
 
@@ -384,11 +438,13 @@ export async function sendLinkedInConnectionInvite({
 
     return {
       success: true,
-      message: data.message || `Connection request sent to ${contact.name}!`,
+      message: data.alreadySent
+        ? `Connection request is already pending for ${data.name}.`
+        : `Connection request sent to ${data.name}!`,
       alreadySent: data.alreadySent,
-      sentToday: data.sentToday,
-      remaining: data.remaining,
-      fallbackToBlank: data.fallbackToBlank,
+      sentToday: data.quota?.count,
+      remaining: data.quota?.remaining,
+      fallbackToBlank,
     };
   } catch (err: any) {
     console.error('Error sending LinkedIn invite:', err);

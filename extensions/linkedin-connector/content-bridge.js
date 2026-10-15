@@ -8,14 +8,14 @@ window.__crmLinkedInBridge = true;
 
 const PAGE = 'crm-page';
 const EXT = 'crm-linkedin-extension';
-const ALLOWED = new Set(['PING', 'GET_SESSION']);
+const ALLOWED = new Set(['PING', 'GET_SESSION', 'SEARCH_PEOPLE', 'SEND_INVITE', 'QUOTA']);
 
 window.addEventListener('message', (event) => {
   if (event.source !== window || event.origin !== window.location.origin) return;
   const data = event.data;
   if (!data || data.source !== PAGE || !ALLOWED.has(data.type)) return;
 
-  chrome.runtime.sendMessage({ type: data.type }, (response) => {
+  chrome.runtime.sendMessage({ type: data.type, payload: data.payload }, (response) => {
     const reply = chrome.runtime.lastError
       ? { ok: false, error: 'EXTENSION_UNAVAILABLE' }
       : response || { ok: false, error: 'NO_RESPONSE' };

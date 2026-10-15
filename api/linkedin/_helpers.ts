@@ -122,33 +122,3 @@ export async function fetchLinkedInVoyager(
 
   return fetch(url, fetchOptions);
 }
-
-// Memory-cached daily quota for the serverless instance
-let dailyQuotaState = {
-  date: new Date().toISOString().slice(0, 10),
-  count: 0,
-};
-
-const MAX_DAILY_LIMIT = 15;
-
-export function getDailyQuota() {
-  const today = new Date().toISOString().slice(0, 10);
-  if (dailyQuotaState.date !== today) {
-    dailyQuotaState = { date: today, count: 0 };
-  }
-  return {
-    date: dailyQuotaState.date,
-    count: dailyQuotaState.count,
-    maxLimit: MAX_DAILY_LIMIT,
-    remaining: Math.max(0, MAX_DAILY_LIMIT - dailyQuotaState.count),
-  };
-}
-
-export function incrementDailyQuota(): number {
-  const today = new Date().toISOString().slice(0, 10);
-  if (dailyQuotaState.date !== today) {
-    dailyQuotaState = { date: today, count: 0 };
-  }
-  dailyQuotaState.count += 1;
-  return dailyQuotaState.count;
-}

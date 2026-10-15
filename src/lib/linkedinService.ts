@@ -3,6 +3,7 @@
 // Designed to be auth-type agnostic — cookie now, OAuth/hybrid later.
 
 import { supabase } from './supabase';
+import { requestLinkedInSession } from './linkedinExtensionBridge';
 import {
   LinkedInAccount,
   LinkedInCampaign,
@@ -203,96 +204,31 @@ export async function connectLinkedInCookie(
 
   if (error) throw error;
 
-  // 2. Trigger validation & profile metadata fetch via local/Vercel /api/linkedin/verify
-  // (Avoids direct AWS datacenter IP hits that cause automatic cookie revocation)
-  try {
-    const verifyRes = await fetch('/api/linkedin/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        cookieOverride: {
-          liAt: liAt.trim(),
-          jsessionId: jsessionId.trim(),
-        },
-      }),
-    });
-
-    if (verifyRes.ok) {
-      const verifyData = await verifyRes.json();
-      if (verifyData.valid && verifyData.profile) {
-        const profileUpdates: Record<string, any> = {
-          status: 'active',
-          error_message: null,
-          last_verified_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        if (verifyData.profile.name) profileUpdates.linkedin_name = verifyData.profile.name;
-        if (verifyData.profile.headline) profileUpdates.linkedin_headline = verifyData.profile.headline;
-        if (verifyData.profile.avatarUrl) profileUpdates.linkedin_avatar_url = verifyData.profile.avatarUrl;
-        if (verifyData.profile.profileUrl) profileUpdates.linkedin_profile_url = verifyData.profile.profileUrl;
-
-        await getClient()
-          .from('linkedin_accounts')
-          .update(profileUpdates)
-          .eq('id', data.id);
-      } else {
-        // Keep status active so the session is never killed automatically!
-        await getClient()
-          .from('linkedin_accounts')
-          .update({
-            status: 'active',
-            linkedin_name: customName?.trim() || data.linkedin_name || 'LinkedIn Connected Account',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', data.id);
-      }
-    }
-  } catch (err) {
-    console.warn('Auto-profile fetch on connect warning:', err);
-  }
-
-  // 3. Fetch latest record with updated profile info & avatar
-  const { data: refreshed } = await getClient()
-    .from('linkedin_accounts')
-    .select(SAFE_ACCOUNT_FIELDS)
-    .eq('id', data.id)
-    .single();
-
-  return refreshed ? normalizeAccount(refreshed) : normalizeAccount(data);
+  // No server-side verify here: LinkedIn revokes li_at when a server uses the session.
+  return normalizeAccount(data);
 }
 
 export async function refreshLinkedInAccount(accountId: string): Promise<LinkedInAccount> {
+  // Read the profile from the user's own browser via the extension, never from a server.
   try {
-    const creds = await getAccountCredentials(accountId);
-    const verifyRes = await fetch('/api/linkedin/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accountId,
-        cookieOverride: creds ? { liAt: creds.liAt, jsessionId: creds.jsessionId } : undefined,
-      }),
-    });
-
-    if (verifyRes.ok) {
-      const verifyData = await verifyRes.json();
-      if (verifyData.valid && verifyData.profile) {
-        await getClient()
-          .from('linkedin_accounts')
-          .update({
-            status: 'active',
-            error_message: null,
-            linkedin_name: verifyData.profile.name,
-            linkedin_headline: verifyData.profile.headline,
-            linkedin_avatar_url: verifyData.profile.avatarUrl,
-            linkedin_profile_url: verifyData.profile.profileUrl,
-            last_verified_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', accountId);
-      }
+    const { profile } = await requestLinkedInSession();
+    if (profile?.name) {
+      await getClient()
+        .from('linkedin_accounts')
+        .update({
+          status: 'active',
+          error_message: null,
+          linkedin_name: profile.name,
+          linkedin_headline: profile.headline || null,
+          linkedin_avatar_url: profile.avatarUrl || null,
+          linkedin_profile_url: profile.publicIdentifier ? `https://www.linkedin.com/in/${profile.publicIdentifier}` : null,
+          last_verified_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', accountId);
     }
   } catch (err) {
-    console.warn('Could not call /api/linkedin/verify:', err);
+    console.warn('Could not refresh LinkedIn profile through the extension:', err);
   }
 
   const { data, error } = await getClient()

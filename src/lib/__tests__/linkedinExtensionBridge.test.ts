@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
-import { pingExtension, requestLinkedInSession, ExtensionBridgeError } from '../linkedinExtensionBridge';
+import {
+  pingExtension,
+  requestLinkedInSession,
+  ExtensionBridgeError,
+  extensionSearchPeople,
+  extensionSendInvite,
+  extensionQuota,
+} from '../linkedinExtensionBridge';
 
 // jsdom delivers window.postMessage events with source = null and origin = '', but real
 // browsers set source = window and origin = the page origin (which the bridge verifies).
@@ -18,12 +25,12 @@ afterAll(() => {
 });
 
 /** Simulates the extension's content bridge answering page requests. */
-function installFakeExtension(handler: (type: string) => Record<string, unknown>) {
+function installFakeExtension(handler: (type: string, payload?: any) => Record<string, unknown>) {
   const listener = (event: MessageEvent) => {
     const d = event.data;
     if (event.source !== window || !d || d.source !== 'crm-page') return;
     window.postMessage(
-      { source: 'crm-linkedin-extension', requestId: d.requestId, ...handler(d.type) },
+      { source: 'crm-linkedin-extension', requestId: d.requestId, ...handler(d.type, d.payload) },
       window.location.origin
     );
   };
@@ -93,5 +100,30 @@ describe('requestLinkedInSession', () => {
       window.location.origin
     );
     await expect(pending).resolves.toMatchObject({ liAt: 'x' });
+  });
+});
+
+describe('LinkedIn actions', () => {
+  it('passes search keywords and returns raw data', async () => {
+    uninstall = installFakeExtension((type, payload) => ({ ok: type === 'SEARCH_PEOPLE', data: { echo: payload.keywords } }));
+    expect(await extensionSearchPeople('cto', 500)).toEqual({ echo: 'cto' });
+  });
+
+  it('sends an invite and returns the quota', async () => {
+    const quota = { date: '2026-10-15', count: 1, maxLimit: 15, remaining: 14 };
+    uninstall = installFakeExtension((type, payload) =>
+      type === 'SEND_INVITE' ? { ok: true, name: payload.vanity, quota } : { ok: false }
+    );
+    expect(await extensionSendInvite('jane-doe', '', 500)).toEqual({ name: 'jane-doe', alreadySent: false, quota });
+  });
+
+  it('carries LinkedIn status and details on failure', async () => {
+    uninstall = installFakeExtension(() => ({ ok: false, error: 'FAILED', message: 'LinkedIn returned status 400.', status: 400, details: 'note' }));
+    const err = await extensionSendInvite('jane-doe', 'hi', 500).catch((e) => e);
+    expect(err).toMatchObject({ code: 'FAILED', message: 'LinkedIn returned status 400.', status: 400, details: 'note' });
+  });
+
+  it('returns null quota when the extension is missing', async () => {
+    expect(await extensionQuota(50)).toBeNull();
   });
 });

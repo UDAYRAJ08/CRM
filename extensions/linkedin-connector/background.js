@@ -152,6 +152,107 @@ async function getSession() {
   return { ok: true, liAt: c.liAt, jsessionId: c.jsessionId, rawCookie: c.rawCookie, profile };
 }
 
+// ---------- LinkedIn actions ----------
+// Run from this browser so the session never leaves it: LinkedIn revokes li_at when the
+// same session shows up from a server. Only these fixed actions exist, so a linked page
+// cannot make arbitrary LinkedIn requests.
+
+const DAILY_INVITE_LIMIT = 15;
+const QUOTA_KEY = 'inviteQuota';
+
+async function getQuota() {
+  const date = new Date().toISOString().slice(0, 10);
+  const { [QUOTA_KEY]: q } = await chrome.storage.local.get(QUOTA_KEY);
+  const count = q?.date === date ? q.count : 0;
+  return { date, count, maxLimit: DAILY_INVITE_LIMIT, remaining: Math.max(0, DAILY_INVITE_LIMIT - count) };
+}
+
+async function voyager(path, jsessionId, init = {}) {
+  const res = await fetch(`${LINKEDIN}/voyager/api/${path}`, {
+    ...init,
+    credentials: 'include',
+    headers: {
+      accept: 'application/vnd.linkedin.normalized+json+2.1',
+      'csrf-token': jsessionId,
+      'x-restli-protocol-version': '2.0.0',
+      ...(init.headers || {}),
+    },
+  });
+  // A dead session ends on the login/authwall page instead of returning JSON.
+  const loggedOut =
+    res.status === 401 || res.status === 403 || /^\/(login|authwall|checkpoint|uas)/.test(new URL(res.url).pathname);
+  return { res, loggedOut };
+}
+
+async function sessionToken() {
+  const c = await readCookies();
+  return c.liAt && c.jsessionId ? c.jsessionId : null;
+}
+
+async function searchPeople(payload) {
+  const keywords = typeof payload?.keywords === 'string' ? payload.keywords.trim() : '';
+  if (!keywords || keywords.length > 200) return { ok: false, error: 'FAILED', message: 'Search keywords are required.' };
+  const token = await sessionToken();
+  if (!token) return { ok: false, error: 'NOT_LOGGED_IN' };
+
+  const k = encodeURIComponent(keywords);
+  const paths = [
+    `search/dash/clusters?decorationId=com.linkedin.voyager.dash.deco.search.SearchClusterCollection-174&origin=GLOBAL_SEARCH_HEADER&q=all&query=(keywords:${k},flagshipSearchIntent:SEARCH_SRP,queryParameters:List((key:resultType,value:List(PEOPLE))))`,
+    `search/blended?keywords=${k}&origin=GLOBAL_SEARCH_HEADER&q=all&filters=List(resultType->PEOPLE)`,
+  ];
+  let status = 0;
+  for (const p of paths) {
+    const { res, loggedOut } = await voyager(p, token);
+    if (loggedOut) return { ok: false, error: 'NOT_LOGGED_IN' };
+    if (res.ok) return { ok: true, data: await res.json() };
+    status = res.status;
+  }
+  return { ok: false, error: 'FAILED', message: `LinkedIn search returned status ${status}.` };
+}
+
+async function sendInvite(payload) {
+  const vanity = typeof payload?.vanity === 'string' ? payload.vanity.trim() : '';
+  const note = typeof payload?.note === 'string' ? payload.note.slice(0, 300) : '';
+  if (!/^[^\s/?#]{1,100}$/.test(vanity)) return { ok: false, error: 'FAILED', message: 'A valid LinkedIn profile URL is required.' };
+  const quota = await getQuota();
+  if (quota.remaining <= 0) {
+    return { ok: false, error: 'DAILY_LIMIT', message: `Daily safety limit reached (${quota.maxLimit}/${quota.maxLimit}). Please wait until tomorrow.`, quota };
+  }
+  const token = await sessionToken();
+  if (!token) return { ok: false, error: 'NOT_LOGGED_IN' };
+
+  let profileId = vanity;
+  let name = vanity;
+  const prof = await voyager(`identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(vanity)}`, token);
+  if (prof.loggedOut) return { ok: false, error: 'NOT_LOGGED_IN' };
+  if (prof.res.ok) {
+    const data = await prof.res.json();
+    const p = (data.included || []).find((i) => i?.$type?.includes('Profile') && i.entityUrn);
+    if (p) {
+      profileId = p.entityUrn.split(':').pop();
+      if (p.firstName || p.lastName) name = `${p.firstName || ''} ${p.lastName || ''}`.trim();
+    }
+  }
+
+  const { res, loggedOut } = await voyager('growth/normInvitations', token, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      message: note,
+      invitee: { 'com.linkedin.voyager.growth.invitation.InviteeProfile': { profileId } },
+    }),
+  });
+  const text = await res.text().catch(() => '');
+  if (res.ok) {
+    const count = quota.count + 1;
+    await chrome.storage.local.set({ [QUOTA_KEY]: { date: quota.date, count } });
+    return { ok: true, name, quota: { ...quota, count, remaining: Math.max(0, quota.maxLimit - count) } };
+  }
+  if (/INVITATION_ALREADY_SENT|already invited|DUPLICATE/.test(text)) return { ok: true, name, alreadySent: true, quota };
+  if (loggedOut) return { ok: false, error: 'NOT_LOGGED_IN' };
+  return { ok: false, error: 'FAILED', status: res.status, message: `LinkedIn returned status ${res.status}.`, details: text.slice(0, 300) };
+}
+
 // ---------- messaging ----------
 
 async function senderIsLinked(sender) {
@@ -180,6 +281,18 @@ async function handle(msg, sender) {
     case 'GET_SESSION': {
       if (!(await senderIsLinked(sender))) return { ok: false, error: 'ORIGIN_NOT_LINKED' };
       return getSession();
+    }
+    case 'SEARCH_PEOPLE': {
+      if (!(await senderIsLinked(sender))) return { ok: false, error: 'ORIGIN_NOT_LINKED' };
+      return searchPeople(msg.payload);
+    }
+    case 'SEND_INVITE': {
+      if (!(await senderIsLinked(sender))) return { ok: false, error: 'ORIGIN_NOT_LINKED' };
+      return sendInvite(msg.payload);
+    }
+    case 'QUOTA': {
+      if (!(await senderIsLinked(sender))) return { ok: false, error: 'ORIGIN_NOT_LINKED' };
+      return { ok: true, quota: await getQuota() };
     }
     // From the popup (extension pages only)
     case 'STATUS': {
