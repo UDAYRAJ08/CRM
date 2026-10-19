@@ -73,7 +73,7 @@ interface ExtensionReply {
 let counter = 0;
 
 function request(
-  type: 'PING' | 'GET_SESSION' | 'SEARCH_PEOPLE' | 'SEND_INVITE' | 'QUOTA',
+  type: 'PING' | 'GET_SESSION' | 'SEARCH_PEOPLE' | 'SEND_INVITE' | 'QUOTA' | 'VIEW_PROFILE' | 'SEND_MESSAGE',
   timeoutMs: number,
   win: Window = window,
   payload?: Record<string, unknown>
@@ -163,6 +163,18 @@ export async function extensionSendInvite(
   const reply = await request('SEND_INVITE', timeoutMs, win, { vanity, note });
   if (!reply.ok) throw toBridgeError(reply.error, reply);
   return { name: String(reply.name || vanity), alreadySent: Boolean(reply.alreadySent), quota: reply.quota as ExtensionQuota };
+}
+
+/** Register a profile view from the user's own browser. Throws ExtensionBridgeError. */
+export async function extensionViewProfile(vanity: string, timeoutMs = 30000, win: Window = window): Promise<void> {
+  const reply = await request('VIEW_PROFILE', timeoutMs, win, { vanity });
+  if (!reply.ok) throw toBridgeError(reply.error, reply);
+}
+
+/** Send a LinkedIn message to a 1st-degree connection from the user's own browser. Throws ExtensionBridgeError. */
+export async function extensionSendMessage(vanity: string, text: string, timeoutMs = 30000, win: Window = window): Promise<void> {
+  const reply = await request('SEND_MESSAGE', timeoutMs, win, { vanity, text });
+  if (!reply.ok) throw toBridgeError(reply.error, reply);
 }
 
 /** Today's invite count, kept by the extension. Null when the extension is not reachable. */

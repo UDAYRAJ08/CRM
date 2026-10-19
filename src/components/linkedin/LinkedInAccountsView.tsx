@@ -415,8 +415,8 @@ export const LinkedInAccountsView: React.FC<LinkedInAccountsViewProps> = ({ onOp
       />
 
       {/* 1-Click Connect & Instructions Banner */}
-      <div className="rounded-2xl border border-blue-200/80 bg-blue-50/80 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
-        <div className="flex items-start gap-3.5">
+      <div className="rounded-2xl border border-blue-200/80 bg-blue-50/80 p-4 sm:p-5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 shadow-xs">
+        <div className="flex items-start gap-3.5 min-w-0">
           <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
             <Linkedin className="w-5 h-5" />
           </div>
@@ -450,7 +450,7 @@ export const LinkedInAccountsView: React.FC<LinkedInAccountsViewProps> = ({ onOp
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={handleExtensionConnect}

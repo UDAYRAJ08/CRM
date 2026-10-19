@@ -85,8 +85,8 @@ export const Modal: React.FC<ModalProps> = ({
       >
         {/* If title is provided, render top header bar */}
         {title ? (
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-            <div className="min-w-0 flex-1 mr-4">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 shrink-0">
+            <div className="min-w-0 flex-1 mr-2 sm:mr-4">
               {typeof title === 'string' ? (
                 <h3 className="text-base font-semibold text-slate-900 truncate">{title}</h3>
               ) : (

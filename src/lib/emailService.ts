@@ -1,6 +1,37 @@
 import { db, DraftAttachment } from './supabase';
-import { EmailRecord, Contact } from '../types/crm';
+import { EmailRecord, Contact, Reminder } from '../types/crm';
 import { cleanCompanyName } from './utils';
+
+// Auto follow-up sequence per contact: first email -> Follow-up 1 -> Follow-up 2 -> done.
+export const FOLLOW_UP_STEPS = 2;
+const FOLLOW_UP_DELAY_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** Step of an auto follow-up reminder from its note, or null for a reminder the user wrote. */
+export function followUpStep(note: string): number | null {
+  const m = note.match(/^Follow-up (?:Step )?(\d+)\b/);
+  if (m) return Number(m[1]);
+  // Older versions rewrote the reminder to this note each time a follow-up went out, so one was already sent.
+  if (note.startsWith('Follow-up: Send reminder email')) return 2;
+  return null;
+}
+
+/**
+ * What a sent email does to the contact's auto follow-ups: it completes the open ones
+ * (the email is that follow-up) and queues the next step, until the sequence is finished.
+ * Reminders the user created are never touched.
+ */
+export function planFollowUp(reminders: Reminder[], contactId: string): { complete: Reminder[]; nextStep: number | null } {
+  const auto = reminders
+    .filter((r) => r.contact_id === contactId)
+    .map((r) => ({ r, step: followUpStep(r.note || '') }))
+    .filter((x): x is { r: Reminder; step: number } => x.step !== null);
+  const lastStep = auto.reduce((max, x) => Math.max(max, x.step), 0);
+  const next = lastStep + 1;
+  return {
+    complete: auto.filter((x) => !x.r.done).map((x) => x.r),
+    nextStep: next <= FOLLOW_UP_STEPS ? next : null,
+  };
+}
 
 export interface SendEmailParams {
   contactId?: string;
@@ -424,35 +455,28 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
       status: 'contacted',
     });
 
-    // 2. Automatically schedule or refresh a 3-Day Follow-up Reminder (preventing duplicate open tasks)
-    try {
-      const threeDaysLater = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
-      const existingReminders = await db.getReminders();
-      const existingOpenReminder = existingReminders.find(
-        (r) => r.contact_id === params.contactId && !r.done
-      );
-
-      if (existingOpenReminder) {
-        // Refresh existing reminder due date instead of creating duplicate open tasks
-        await db.saveReminder({
-          id: existingOpenReminder.id,
-          contact_id: params.contactId,
-          assigned_to: params.senderId || existingOpenReminder.assigned_to || null,
-          due_date: threeDaysLater,
-          note: `Follow-up: Send reminder email if ${params.recipientName || 'lead'} does not reply within 3 days.`,
-          done: false,
-        });
-      } else {
-        await db.saveReminder({
-          contact_id: params.contactId,
-          assigned_to: params.senderId || null,
-          due_date: threeDaysLater,
-          note: `Follow-up Step 1: Send reminder email if ${params.recipientName || 'lead'} does not reply within 3 days.`,
-          done: false,
-        });
+    // 2. Advance the auto follow-up sequence (Follow-up 1 -> Follow-up 2 -> done).
+    // A failed send is about to throw below, so it must not advance the sequence.
+    const sendFailed = !remoteSuccess && Boolean(remoteError) && !params.logOnly;
+    if (!sendFailed) {
+      try {
+        const plan = planFollowUp(await db.getReminders(), params.contactId);
+        const nowIso = new Date().toISOString();
+        for (const r of plan.complete) {
+          await db.saveReminder({ ...r, done: true, completed_at: nowIso });
+        }
+        if (plan.nextStep) {
+          await db.saveReminder({
+            contact_id: params.contactId,
+            assigned_to: params.senderId || plan.complete[0]?.assigned_to || null,
+            due_date: new Date(Date.now() + FOLLOW_UP_DELAY_MS).toISOString(),
+            note: `Follow-up ${plan.nextStep}: Send follow-up email ${plan.nextStep} if ${params.recipientName || 'lead'} does not reply within 3 days.`,
+            done: false,
+          });
+        }
+      } catch (reminderErr) {
+        console.warn('Failed to auto-schedule follow-up reminder:', reminderErr);
       }
-    } catch (reminderErr) {
-      console.warn('Failed to auto-schedule follow-up reminder:', reminderErr);
     }
   }
 

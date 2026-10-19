@@ -936,7 +936,7 @@ export const LinkedInAgentModal: React.FC<LinkedInAgentModalProps> = ({
                         Paste your full Cookie-Editor JSON export array or individual cookies below. Zero .env edits needed.
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <div className="inline-flex rounded-lg bg-slate-200/70 p-0.5 text-[11px]">
                         <button
                           type="button"
@@ -1138,7 +1138,7 @@ export const LinkedInAgentModal: React.FC<LinkedInAgentModalProps> = ({
                         value={customAccountName}
                         onChange={(e) => setCustomAccountName(e.target.value)}
                         placeholder="Nickname (e.g. Sales Account 2)"
-                        className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white w-48"
+                        className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white min-w-0 flex-1 sm:flex-none sm:w-48"
                       />
                       <button
                         type="button"

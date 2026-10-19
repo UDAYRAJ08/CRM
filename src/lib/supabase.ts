@@ -32,6 +32,8 @@ export interface EmailDraft {
   ai_generated?: boolean;
   sender_email?: string | null;
   attachments?: DraftAttachment[];
+  /** Set by "Schedule Send"; the scheduled-email runner sends the draft once this time passes. */
+  scheduled_at?: string | null;
   saved_at: string;
   created_at: string;
 }
@@ -258,12 +260,16 @@ export const db = {
 
     if (supabase) {
       const { data, error } = await supabase.from('companies').insert(newCompany).select().single();
-      if (!error && data) return data;
+      if (!error && data) {
+        invalidateCache('companies');
+        return data;
+      }
     }
 
     const list = getLocal('companies', INITIAL_COMPANIES);
     const updated = [...list, newCompany];
     setLocal('companies', updated);
+    invalidateCache('companies');
     return newCompany;
   },
 
@@ -418,17 +424,18 @@ export const db = {
 
     if (supabase) {
       const { data, error } = await supabase.from('contacts').insert(prepared).select();
-      if (!error && data) {
-        if (uploadLogInfo) {
-          await supabase.from('import_logs').insert({
-            file_name: uploadLogInfo.fileName,
-            uploaded_by: uploadLogInfo.uploadedBy || null,
-            rows_imported: data.length,
-            rows_flagged: uploadLogInfo.flaggedCount,
-          });
-        }
-        return data.length;
+      // Don't fall back to localStorage: imported contacts would never show up (lists read from Supabase)
+      if (error) throw new Error(error.message);
+      if (uploadLogInfo) {
+        await supabase.from('import_logs').insert({
+          file_name: uploadLogInfo.fileName,
+          uploaded_by: uploadLogInfo.uploadedBy || null,
+          rows_imported: data.length,
+          rows_flagged: uploadLogInfo.flaggedCount,
+        });
       }
+      notifyCRMEvent('crm_contacts_updated');
+      return data.length;
     }
 
     const existing = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
@@ -447,6 +454,7 @@ export const db = {
       setLocal('import_logs', [newLog, ...logs]);
     }
 
+    notifyCRMEvent('crm_contacts_updated');
     return prepared.length;
   },
 
@@ -1517,6 +1525,7 @@ export const db = {
         ai_generated: draft.ai_generated || false,
         sender_email: draft.sender_email || null,
         attachments: draft.attachments || [],
+        scheduled_at: draft.scheduled_at ?? null,
         saved_at: now,
         created_at: now,
       };

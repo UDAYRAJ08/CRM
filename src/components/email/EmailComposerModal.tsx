@@ -209,6 +209,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
       setCurrentDraftId(resumeDraft.id);
       setDraftSavedAt(resumeDraft.saved_at);
       setIsAiGenerated(resumeDraft.ai_generated || false);
+      if (resumeDraft.scheduled_at) setScheduledTime(new Date(resumeDraft.scheduled_at));
     } else {
       setRecipientEmail(contact.email || '');
       setSubject(initialSubject || '');
@@ -372,12 +373,15 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
   const clearSchedule = () => {
     setScheduledTime(null);
     setShowScheduleMenu(false);
+    // A resumed scheduled draft must stop being scheduled, not just lose the banner.
+    if (currentDraftId) saveDraft(true, null);
   };
 
   // ── Auto-save & Draft management ───────────────────────────────────────────
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const saveDraft = useCallback(async (silent = false) => {
+  // scheduledAt: undefined keeps the draft's current schedule, null clears it.
+  const saveDraft = useCallback(async (silent = false, scheduledAt?: string | null) => {
     if (!isOpen || hasSentRef.current) return;
     const body      = getEditorContent();
     const rawText   = getEditorText().trim();
@@ -413,6 +417,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
         ai_generated: isAiGenerated,
         sender_email: activeSenderEmail || null,
         attachments,
+        ...(scheduledAt !== undefined && { scheduled_at: scheduledAt }),
       });
       setCurrentDraftId(saved.id);
       setDraftSavedAt(saved.saved_at);
@@ -471,11 +476,11 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
     // If there's a scheduled time, save as a draft with schedule metadata and show confirmation
     if (scheduledTime && !logOnly) {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-      await saveDraft(true);
+      await saveDraft(true, scheduledTime.toISOString());
       hasSentRef.current = true;
       success(
         'Email Scheduled! 📅',
-        `Will send to ${targetEmail} on ${scheduledTime.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`
+        `Will send to ${targetEmail} on ${scheduledTime.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}. Keep the CRM open in a browser tab; if it is closed then, it sends when you next open it.`
       );
       if (onDraftSaved) onDraftSaved();
       onClose();
@@ -536,17 +541,17 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
       onClose={handleClose}
       maxWidth="3xl"
       title={
-        <div className="flex items-center justify-between w-full pr-6">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+        <div className="flex items-center justify-between gap-3 w-full sm:pr-6">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
               <Mail className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-slate-900 truncate">
                 {resumeDraft ? 'Resume Draft — ' : 'Compose Email to '}{contact.name}
               </h3>
-              <p className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap">
-                {contact.company?.name ? `${cleanCompanyName(contact.company.name)} · ` : ''}{contact.email || 'No email set'}
+              <p className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap min-w-0">
+                <span className="truncate max-w-full">{contact.company?.name ? `${cleanCompanyName(contact.company.name)} · ` : ''}{contact.email || 'No email set'}</span>
                 {isSavingDraft ? (
                   <span className="text-amber-600 font-medium flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> Saving draft…
@@ -564,7 +569,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
               </p>
             </div>
           </div>
-          <span className="text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+          <span className="hidden md:flex text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold px-2.5 py-0.5 rounded-full items-center gap-1.5 shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             {activeSenderEmail || 'Dynamic Sender'}
           </span>

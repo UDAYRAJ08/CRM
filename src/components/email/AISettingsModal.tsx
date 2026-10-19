@@ -328,7 +328,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     >
       <div className="space-y-4">
         {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-200">
+        <div className="flex border-b border-slate-200 overflow-x-auto no-scrollbar [&>button]:shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab('keys')}

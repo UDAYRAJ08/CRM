@@ -841,7 +841,7 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
             return (
               <div
                 key={reminder.id}
-                className={`flex items-start justify-between p-4 rounded-2xl border transition-all bg-white hover:shadow-xs ${
+                className={`flex flex-col sm:flex-row items-stretch sm:items-start justify-between gap-3 sm:gap-0 p-4 rounded-2xl border transition-all bg-white hover:shadow-xs ${
                   isSelected
                     ? 'border-indigo-400 ring-2 ring-indigo-500/20 bg-indigo-50/20'
                     : isPastDue
@@ -920,7 +920,7 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="shrink-0 ml-3 flex items-center gap-2">
+                <div className="shrink-0 pl-7 sm:pl-0 sm:ml-3 flex flex-wrap items-center gap-2">
                   {reminder.contact && onOpenEmailComposer && !reminder.done && (
                     <Button
                       size="sm"

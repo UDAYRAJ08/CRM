@@ -162,12 +162,12 @@ export const DraftsView: React.FC<DraftsViewProps> = ({
                 key={draft.id}
                 className="bg-white rounded-2xl border border-slate-200 hover:border-indigo-300 transition-all duration-150 overflow-hidden"
               >
-                <div className="p-4 sm:p-5 flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 sm:gap-4 min-w-0">
+                <div className="p-4 sm:p-5 flex flex-col sm:flex-row items-stretch sm:items-start justify-between gap-3 sm:gap-4">
+                  <div className="flex items-start gap-3 sm:gap-4 min-w-0 flex-1">
                     <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-amber-400 text-white font-semibold text-sm flex items-center justify-center shrink-0 shadow-xs">
                       <FileEdit className="w-5 h-5" />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm text-slate-900 truncate max-w-xs">
                           {draft.subject || '(No subject)'}
@@ -181,8 +181,8 @@ export const DraftsView: React.FC<DraftsViewProps> = ({
                       </div>
 
                       <div className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-2 flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <Mail className="w-3 h-3 text-slate-400" />
+                        <span className="flex items-center gap-1 min-w-0 break-all">
+                          <Mail className="w-3 h-3 text-slate-400 shrink-0" />
                           {draft.recipient_email || 'No recipient'}
                         </span>
                         {contact && (
@@ -209,7 +209,7 @@ export const DraftsView: React.FC<DraftsViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                     <Button
                       variant="primary"
                       size="sm"

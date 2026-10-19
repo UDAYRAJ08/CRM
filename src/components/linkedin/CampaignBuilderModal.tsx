@@ -526,7 +526,7 @@ export const CampaignBuilderModal: React.FC<CampaignBuilderModalProps> = ({
 
               <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-xs text-slate-600">
                 <p className="font-semibold mb-1">📅 How scheduling works</p>
-                <p>Actions are pre-computed with random delays (jitter) within your working hours. LinkedIn sees natural, human-like timing. The cron job fires every minute to process due actions.</p>
+                <p>Actions are pre-computed with random delays (jitter) within your working hours. LinkedIn sees natural, human-like timing. While a CRM tab is open with the LinkedIn Connector extension linked, the CRM runs one due action per minute from your own browser. Actions missed while the CRM was closed run when you next open it.</p>
               </div>
             </div>
           )}

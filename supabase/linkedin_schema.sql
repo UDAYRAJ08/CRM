@@ -246,14 +246,10 @@ $$;
 create extension if not exists "pg_cron";
 create extension if not exists "pg_net";
 
--- 2. Process action queue every minute:
-select cron.schedule('linkedin-process-queue', '* * * * *',
-  $$ select net.http_post(
-    url := 'https://hpavxzswulhycmwthror.supabase.co/functions/v1/linkedin-execute-action',
-    headers := '{"Content-Type":"application/json"}'::jsonb,
-    body := '{}'::jsonb
-  ); $$
-);
+-- 2. The action queue is processed by the CRM in the browser (src/lib/linkedinQueueRunner.ts)
+--    through the LinkedIn Connector extension: LinkedIn revokes li_at when a server uses it.
+--    Remove the old server job if it was created:
+--    select cron.unschedule('linkedin-process-queue');
 
 -- 3. Reset daily counters at midnight UTC:
 select cron.schedule('linkedin-reset-daily', '0 0 * * *',

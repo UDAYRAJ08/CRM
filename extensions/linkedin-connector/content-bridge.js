@@ -6,7 +6,7 @@
 {
   const PAGE = 'crm-page';
   const EXT = 'crm-linkedin-extension';
-  const ALLOWED = new Set(['PING', 'GET_SESSION', 'SEARCH_PEOPLE', 'SEND_INVITE', 'QUOTA']);
+  const ALLOWED = new Set(['PING', 'GET_SESSION', 'SEARCH_PEOPLE', 'SEND_INVITE', 'QUOTA', 'VIEW_PROFILE', 'SEND_MESSAGE']);
 
   // A copy left from before an extension reload or update can no longer reach the
   // extension ("Extension context invalidated"). Stop it so this copy answers instead.

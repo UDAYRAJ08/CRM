@@ -87,6 +87,7 @@ export function parseLinkedInSearchResults(rawData: any, filters: ProspectSearch
 
   const parseAvatar = (item: any): string | undefined => {
     const vector =
+      item?.image?.attributes?.[0]?.detailData?.nonEntityProfilePicture?.vectorImage ||
       item?.image?.attributes?.[0]?.detailData?.['com.linkedin.common.VectorImage'] ||
       item?.picture?.['com.linkedin.common.VectorImage'] ||
       item?.picture;

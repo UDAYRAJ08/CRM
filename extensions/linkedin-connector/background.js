@@ -96,11 +96,14 @@ async function unlinkOrigin(origin) {
 // ---------- LinkedIn session ----------
 
 async function readCookies() {
-  const cookies = await chrome.cookies.getAll({ domain: 'linkedin.com' });
-  const find = (name) => cookies.find((c) => c.name === name);
+  // Only cookies Chrome actually sends to www.linkedin.com. A domain-wide getAll() can
+  // return a stale JSESSIONID from another subdomain first, which fails the CSRF check.
+  const cookies = await chrome.cookies.getAll({ url: LINKEDIN });
+  const get = (name) => chrome.cookies.get({ url: LINKEDIN, name }).then((c) => c?.value || '');
+  const [liAt, jsessionId] = await Promise.all([get('li_at'), get('JSESSIONID')]);
   return {
-    liAt: find('li_at')?.value || '',
-    jsessionId: (find('JSESSIONID')?.value || '').replace(/^["']|["']$/g, ''),
+    liAt,
+    jsessionId: jsessionId.replace(/^["']|["']$/g, ''),
     rawCookie: cookies.map((c) => `${c.name}=${c.value}`).join('; '),
   };
 }
@@ -167,6 +170,19 @@ async function getQuota() {
   return { date, count, maxLimit: DAILY_INVITE_LIMIT, remaining: Math.max(0, DAILY_INVITE_LIMIT - count) };
 }
 
+// The GraphQL gateway rejects requests without x-li-track, even though /me tolerates it.
+const LI_TRACK = JSON.stringify({
+  clientVersion: '1.13.36348',
+  mpVersion: '1.13.36348',
+  osName: 'web',
+  timezoneOffset: -new Date().getTimezoneOffset() / 60,
+  deviceFormFactor: 'DESKTOP',
+  mpName: 'voyager-web',
+  displayDensity: 1,
+  displayWidth: 1920,
+  displayHeight: 1080,
+});
+
 async function voyager(path, jsessionId, init = {}) {
   const res = await fetch(`${LINKEDIN}/voyager/api/${path}`, {
     ...init,
@@ -175,14 +191,27 @@ async function voyager(path, jsessionId, init = {}) {
       accept: 'application/vnd.linkedin.normalized+json+2.1',
       'csrf-token': jsessionId,
       'x-restli-protocol-version': '2.0.0',
+      'x-li-lang': 'en_US',
+      'x-li-track': LI_TRACK,
       ...(init.headers || {}),
     },
   });
-  // A dead session ends on the login/authwall page instead of returning JSON.
-  const loggedOut =
-    res.status === 401 || res.status === 403 || /^\/(login|authwall|checkpoint|uas)/.test(new URL(res.url).pathname);
+  // Only a 401 or landing on a login/checkpoint page means the session is gone. A 403 is
+  // usually a rejected request (bad CSRF, blocked query); calling it "logged out" sent
+  // users into re-login loops that create new sessions.
+  const loggedOut = res.status === 401 || /^\/(login|authwall|checkpoint|uas)/.test(new URL(res.url).pathname);
   return { res, loggedOut };
 }
+
+// Rest.li variables: parens, commas and colons are structure, so only values are
+// escaped, and spaces must be %20 (LinkedIn reads "+" literally).
+function rlEncode(s) {
+  return encodeURIComponent(s).replace(/[()'!*]/g, (ch) => '%' + ch.charCodeAt(0).toString(16).toUpperCase());
+}
+
+// Pinned to a LinkedIn web build and rotates. When search starts failing with 400/404,
+// copy the current voyagerSearchDashClusters.<hash> from linkedin.com's Network tab.
+const SEARCH_QUERY_ID = 'voyagerSearchDashClusters.a7a0567fa66c52d645b5ff2f960b92aa';
 
 async function sessionToken() {
   const c = await readCookies();
@@ -195,19 +224,24 @@ async function searchPeople(payload) {
   const token = await sessionToken();
   if (!token) return { ok: false, error: 'NOT_LOGGED_IN' };
 
-  const k = encodeURIComponent(keywords);
-  const paths = [
-    `search/dash/clusters?decorationId=com.linkedin.voyager.dash.deco.search.SearchClusterCollection-174&origin=GLOBAL_SEARCH_HEADER&q=all&query=(keywords:${k},flagshipSearchIntent:SEARCH_SRP,queryParameters:List((key:resultType,value:List(PEOPLE))))`,
-    `search/blended?keywords=${k}&origin=GLOBAL_SEARCH_HEADER&q=all&filters=List(resultType->PEOPLE)`,
-  ];
-  let status = 0;
-  for (const p of paths) {
-    const { res, loggedOut } = await voyager(p, token);
-    if (loggedOut) return { ok: false, error: 'NOT_LOGGED_IN' };
-    if (res.ok) return { ok: true, data: await res.json() };
-    status = res.status;
-  }
-  return { ok: false, error: 'FAILED', message: `LinkedIn search returned status ${status}.` };
+  const variables =
+    `(start:0,count:10,origin:GLOBAL_SEARCH_HEADER,query:(keywords:${rlEncode(keywords)},` +
+    'flagshipSearchIntent:SEARCH_SRP,queryParameters:List((key:resultType,value:List(PEOPLE)))))';
+  const { res, loggedOut } = await voyager(
+    `graphql?includeWebMetadata=true&variables=${variables}&queryId=${SEARCH_QUERY_ID}`,
+    token
+  );
+  if (loggedOut) return { ok: false, error: 'NOT_LOGGED_IN' };
+  if (res.ok) return { ok: true, data: await res.json() };
+  const stale = res.status === 400 || res.status === 404;
+  return {
+    ok: false,
+    error: 'FAILED',
+    status: res.status,
+    message: stale
+      ? `LinkedIn search returned status ${res.status}: the search queryId is out of date and needs refreshing.`
+      : `LinkedIn search returned status ${res.status}.`,
+  };
 }
 
 async function sendInvite(payload) {
@@ -221,18 +255,9 @@ async function sendInvite(payload) {
   const token = await sessionToken();
   if (!token) return { ok: false, error: 'NOT_LOGGED_IN' };
 
-  let profileId = vanity;
-  let name = vanity;
-  const prof = await voyager(`identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(vanity)}`, token);
+  const prof = await resolveProfile(vanity, token);
   if (prof.loggedOut) return { ok: false, error: 'NOT_LOGGED_IN' };
-  if (prof.res.ok) {
-    const data = await prof.res.json();
-    const p = (data.included || []).find((i) => i?.$type?.includes('Profile') && i.entityUrn);
-    if (p) {
-      profileId = p.entityUrn.split(':').pop();
-      if (p.firstName || p.lastName) name = `${p.firstName || ''} ${p.lastName || ''}`.trim();
-    }
-  }
+  const { profileId, name } = prof;
 
   const { res, loggedOut } = await voyager('growth/normInvitations', token, {
     method: 'POST',
@@ -251,6 +276,78 @@ async function sendInvite(payload) {
   if (/INVITATION_ALREADY_SENT|already invited|DUPLICATE/.test(text)) return { ok: true, name, alreadySent: true, quota };
   if (loggedOut) return { ok: false, error: 'NOT_LOGGED_IN' };
   return { ok: false, error: 'FAILED', status: res.status, message: `LinkedIn returned status ${res.status}.`, details: text.slice(0, 300) };
+}
+
+// Vanity name -> member id (ACoAA...) and display name. Falls back to the vanity name.
+async function resolveProfile(vanity, token) {
+  let profileId = vanity;
+  let name = vanity;
+  const prof = await voyager(`identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(vanity)}`, token);
+  if (prof.loggedOut) return { loggedOut: true };
+  if (prof.res.ok) {
+    const data = await prof.res.json();
+    const p = (data.included || []).find((i) => i?.$type?.includes('Profile') && i.entityUrn);
+    if (p) {
+      profileId = p.entityUrn.split(':').pop();
+      if (p.firstName || p.lastName) name = `${p.firstName || ''} ${p.lastName || ''}`.trim();
+    }
+  }
+  return { loggedOut: false, profileId, name, found: profileId !== vanity };
+}
+
+function validVanity(payload) {
+  const vanity = typeof payload?.vanity === 'string' ? payload.vanity.trim() : '';
+  return /^[^\s/?#]{1,100}$/.test(vanity) ? vanity : '';
+}
+
+// Campaign "view profile" step: registers a profile view, like opening the profile page.
+async function viewProfile(payload) {
+  const vanity = validVanity(payload);
+  if (!vanity) return { ok: false, error: 'FAILED', message: 'A valid LinkedIn profile URL is required.' };
+  const token = await sessionToken();
+  if (!token) return { ok: false, error: 'NOT_LOGGED_IN' };
+  const { res, loggedOut } = await voyager(`identity/profiles/${encodeURIComponent(vanity)}/profileView`, token);
+  if (loggedOut) return { ok: false, error: 'NOT_LOGGED_IN' };
+  if (res.ok) return { ok: true };
+  return { ok: false, error: 'FAILED', status: res.status, message: `LinkedIn returned status ${res.status}.` };
+}
+
+// Campaign "message" step. LinkedIn only delivers this to 1st-degree connections.
+async function sendMessage(payload) {
+  const vanity = validVanity(payload);
+  const text = typeof payload?.text === 'string' ? payload.text.trim().slice(0, 8000) : '';
+  if (!vanity || !text) return { ok: false, error: 'FAILED', message: 'A LinkedIn profile URL and message text are required.' };
+  const token = await sessionToken();
+  if (!token) return { ok: false, error: 'NOT_LOGGED_IN' };
+
+  const prof = await resolveProfile(vanity, token);
+  if (prof.loggedOut) return { ok: false, error: 'NOT_LOGGED_IN' };
+  if (!prof.found) return { ok: false, error: 'FAILED', message: `Could not find the LinkedIn profile "${vanity}".` };
+
+  // Creating a conversation with an existing 1:1 contact appends to that thread.
+  const { res, loggedOut } = await voyager('messaging/conversations?action=create', token, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      keyVersion: 'LEGACY_INBOX',
+      conversationCreate: {
+        eventCreate: {
+          value: {
+            'com.linkedin.voyager.messaging.create.MessageCreate': {
+              attributedBody: { text, attributes: [] },
+              attachments: [],
+            },
+          },
+        },
+        recipients: [prof.profileId],
+        subtype: 'MEMBER_TO_MEMBER',
+      },
+    }),
+  });
+  if (loggedOut) return { ok: false, error: 'NOT_LOGGED_IN' };
+  if (res.ok) return { ok: true, name: prof.name };
+  const details = await res.text().catch(() => '');
+  return { ok: false, error: 'FAILED', status: res.status, message: `LinkedIn returned status ${res.status}.`, details: details.slice(0, 300) };
 }
 
 // ---------- messaging ----------
@@ -289,6 +386,14 @@ async function handle(msg, sender) {
     case 'SEND_INVITE': {
       if (!(await senderIsLinked(sender))) return { ok: false, error: 'ORIGIN_NOT_LINKED' };
       return sendInvite(msg.payload);
+    }
+    case 'VIEW_PROFILE': {
+      if (!(await senderIsLinked(sender))) return { ok: false, error: 'ORIGIN_NOT_LINKED' };
+      return viewProfile(msg.payload);
+    }
+    case 'SEND_MESSAGE': {
+      if (!(await senderIsLinked(sender))) return { ok: false, error: 'ORIGIN_NOT_LINKED' };
+      return sendMessage(msg.payload);
     }
     case 'QUOTA': {
       if (!(await senderIsLinked(sender))) return { ok: false, error: 'ORIGIN_NOT_LINKED' };

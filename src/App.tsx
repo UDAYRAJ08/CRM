@@ -12,6 +12,8 @@ import { ContactFormModal } from './components/contacts/ContactFormModal';
 import { ContactDetailModal } from './components/contacts/ContactDetailModal';
 import { ReminderFormModal } from './components/reminders/ReminderFormModal';
 import { syncOutlookInbox } from './lib/inboundSyncService';
+import { sendDueScheduledEmails } from './lib/scheduledEmailRunner';
+import { runNextLinkedInAction } from './lib/linkedinQueueRunner';
 import { LoginPage } from './components/auth/LoginPage';
 import { MobileNavDrawer } from './components/layout/MobileNavDrawer';
 import { Footer } from './components/layout/Footer';
@@ -48,7 +50,7 @@ const ViewFallback: React.FC = () => (
 const CRMMain: React.FC = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
   const { activeMember, isLoading: isTeamLoading } = useTeam();
-  const { success, info } = useToast();
+  const { success, info, error: toastError } = useToast();
 
   const [activeView, setActiveView] = useState<ViewType>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -181,6 +183,46 @@ const CRMMain: React.FC = () => {
     };
   }, [user]);
 
+  // Scheduled emails: send due drafts every 30s, and right away on load.
+  useEffect(() => {
+    if (!user) return;
+    const sender = { id: activeMember?.id, name: activeMember?.name || user.user_metadata?.full_name };
+    const tick = () =>
+      sendDueScheduledEmails(sender)
+        .then((outcomes) => {
+          for (const o of outcomes) {
+            if (o.ok) success('Scheduled email sent', o.message);
+            else toastError('Scheduled email failed', `${o.message} It is back in Drafts.`);
+          }
+        })
+        .catch((e) => console.warn('Scheduled email runner failed:', e));
+    tick();
+    const interval = setInterval(tick, 30 * 1000);
+    return () => clearInterval(interval);
+  }, [user, activeMember?.id, activeMember?.name]);
+
+  // LinkedIn campaign queue: run one due action per minute through the extension.
+  useEffect(() => {
+    if (!user || !activeMember?.id) return;
+    const memberId = activeMember.id;
+    let running = false;
+    const tick = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const res = await runNextLinkedInAction(memberId);
+        if (res.processed && res.message) (res.ok ? info : toastError)('LinkedIn campaign', res.message);
+      } catch (e) {
+        console.warn('LinkedIn queue runner failed:', e);
+      } finally {
+        running = false;
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user, activeMember?.id]);
+
   // Hash-based routing synchronization & 404 detection
   useEffect(() => {
     const handleHashChange = () => {
@@ -302,7 +344,7 @@ const CRMMain: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 overflow-x-hidden w-full">
+    <div className="flex min-h-screen bg-slate-50 overflow-x-clip w-full">
       {/* Name Picker Modal (triggered on load or manually) */}
       <TeamMemberModal />
 

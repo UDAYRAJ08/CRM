@@ -511,21 +511,21 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
         onClose={onClose}
         maxWidth="4xl"
         title={
-          <div className="flex items-center justify-between w-full pr-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-md">
+          <div className="flex items-center justify-between gap-3 w-full sm:pr-6">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="hidden sm:flex w-10 h-10 rounded-2xl bg-indigo-600 text-white items-center justify-center font-bold shadow-md shrink-0">
                 <Sparkles className="w-5 h-5" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <h3 className="text-base font-bold text-slate-900">
                     Professional Bulk Outreach Generator
                   </h3>
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 whitespace-nowrap">
                     {contactsWithEmail.length} Recipient{contactsWithEmail.length === 1 ? '' : 's'}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="hidden sm:block text-xs text-slate-500 mt-0.5">
                   Write and dispatch high-converting bulk emails for {serviceProfile.companyName} with dynamic merge fields.
                 </p>
               </div>
@@ -535,11 +535,12 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
             <button
               type="button"
               onClick={() => setIsAISettingsOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 text-indigo-700 hover:bg-indigo-100 text-xs font-bold transition cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 text-indigo-700 hover:bg-indigo-100 text-xs font-bold transition cursor-pointer shrink-0"
               title="Configure AI API Keys & Company Services"
+              aria-label="AI engine settings"
             >
               <Cpu className="w-3.5 h-3.5 text-indigo-600" />
-              <span>AI Engine ({activeProviderMeta?.shortName})</span>
+              <span className="hidden sm:inline">AI Engine ({activeProviderMeta?.shortName})</span>
               <Settings className="w-3 h-3 text-indigo-400" />
             </button>
           </div>
@@ -642,9 +643,9 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                    <span className="font-semibold text-slate-700">Services Highlighted:</span>
-                    <span className="text-indigo-800 font-medium truncate max-w-sm">
+                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5 min-w-0 max-w-full">
+                    <span className="font-semibold text-slate-700 shrink-0">Services Highlighted:</span>
+                    <span className="text-indigo-800 font-medium truncate max-w-sm min-w-0">
                       {serviceProfile.services.slice(0, 2).join(', ')}...
                     </span>
                   </div>

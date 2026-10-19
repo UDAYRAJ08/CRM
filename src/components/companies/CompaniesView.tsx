@@ -164,12 +164,12 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                         key={c.id}
                         type="button"
                         onClick={() => onSelectContact(c)}
-                        className="w-full text-left p-1.5 rounded-lg hover:bg-slate-50 flex items-center justify-between text-xs group transition"
+                        className="w-full text-left p-1.5 rounded-lg hover:bg-slate-50 flex items-center justify-between gap-3 text-xs group transition"
                       >
-                        <span className="font-semibold text-slate-800 group-hover:text-indigo-600">
+                        <span className="font-semibold text-slate-800 group-hover:text-indigo-600 shrink-0 max-w-[60%] truncate">
                           {c.name}
                         </span>
-                        <span className="text-[11px] text-slate-500">{c.title || c.status}</span>
+                        <span className="text-[11px] text-slate-500 min-w-0 flex-1 truncate text-right">{c.title || c.status}</span>
                       </button>
                     ))}
                   </div>
