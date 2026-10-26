@@ -8,13 +8,16 @@ import {
   substituteMergeFields,
   resolveContactCompany,
 } from '../../lib/emailService';
-import { DraftAttachment } from '../../lib/supabase';
+import { db, DraftAttachment } from '../../lib/supabase';
+import { SCHEDULE_PRESETS } from './EmailComposerModal';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import {
   Mail,
   Send,
+  AlarmClock,
+  CalendarClock,
   Users,
   Eye,
   Variable,
@@ -119,6 +122,12 @@ const STATIC_TEMPLATES: Record<
   },
 };
 
+/** Earliest pickable send time (now + 1 min) as a local datetime-local value. */
+const minScheduleAt = () => {
+  const d = new Date(Date.now() + 60_000);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+};
+
 export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
   isOpen,
   onClose,
@@ -140,6 +149,11 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
   const [previewIndex, setPreviewIndex] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const [progress, setProgress] = useState(0);
+  // Schedule send (null = send now)
+  const [scheduledTime, setScheduledTime] = useState<Date | null>(null);
+  const [showScheduleMenu, setShowScheduleMenu] = useState(false);
+  const [customScheduleValue, setCustomScheduleValue] = useState('');
+  const scheduleRef = useRef<HTMLDivElement>(null);
 
   // Rich Text Editor & Toolbar state
   const editorRef = useRef<HTMLDivElement>(null);
@@ -215,6 +229,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
       if (emojiRef.current && !emojiRef.current.contains(e.target as Node)) setShowEmojiPicker(false);
       if (fontSizeRef.current && !fontSizeRef.current.contains(e.target as Node)) setShowFontSizeMenu(false);
       if (linkRef.current && !linkRef.current.contains(e.target as Node)) setShowLinkPopover(false);
+      if (scheduleRef.current && !scheduleRef.current.contains(e.target as Node)) setShowScheduleMenu(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -436,6 +451,52 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
     }
   };
 
+  // Save one scheduled draft per recipient; the scheduled-email runner (App.tsx) sends them when due.
+  const scheduleBulk = async (when: Date) => {
+    if (isNaN(when.getTime()) || when <= new Date()) {
+      error('Invalid time', 'Please choose a future date and time.');
+      return;
+    }
+    setIsSending(true);
+    setProgress(0);
+    const ids: string[] = [];
+    for (let i = 0; i < contactsWithEmail.length; i++) {
+      const contact = contactsWithEmail[i];
+      const draft = await db.saveDraft({
+        contact_id: contact.id,
+        recipient_email: contact.email!,
+        subject: substituteMergeFields(subjectTemplate, contact),
+        body: substituteMergeFields(bodyTemplate, contact),
+        ai_generated: activeTemplateKey === 'ai_generated',
+        sender_email: activeSenderEmail || null,
+        attachments,
+        scheduled_at: when.toISOString(),
+      });
+      ids.push(draft.id);
+      setProgress(Math.round(((i + 1) / contactsWithEmail.length) * 100));
+    }
+
+    // Drafts live in localStorage and saveDraft cannot report a full store, so confirm every one landed.
+    const stored = new Set((await db.getDrafts()).map((d) => d.id));
+    if (ids.some((id) => !stored.has(id))) {
+      for (const id of ids) await db.deleteDraft(id);
+      setIsSending(false);
+      error(
+        'Could not schedule',
+        'Not enough browser storage for these emails (attachments are copied for each recipient). Remove attachments, choose fewer contacts, or send now.'
+      );
+      return;
+    }
+
+    setIsSending(false);
+    success(
+      'Bulk Emails Scheduled! 📅',
+      `${ids.length} email${ids.length === 1 ? '' : 's'} will send on ${when.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}. Keep the CRM open in a browser tab; if it is closed then, they send when you next open it.`
+    );
+    onComplete();
+    onClose();
+  };
+
   // Send Bulk Email batch
   const handleSendBulk = async () => {
     const rawBody = editorRef.current?.innerText.trim() || bodyTemplate.replace(/<[^>]*>/g, '').trim();
@@ -446,6 +507,11 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
 
     if (contactsWithEmail.length === 0) {
       error('No valid emails', 'None of the selected contacts have an email address.');
+      return;
+    }
+
+    if (scheduledTime) {
+      await scheduleBulk(scheduledTime);
       return;
     }
 
@@ -1065,8 +1131,8 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
           {/* Live Preview Switcher */}
           {previewContact && (
             <div className="border border-slate-200 rounded-2xl p-3.5 bg-slate-50/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-700 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
                   <Eye className="w-3.5 h-3.5 text-indigo-600" />
                   Live Preview ({previewIndex + 1} of {contactsWithEmail.length}):{' '}
                   <span className="text-indigo-600 font-semibold">{previewContact.name}</span>
@@ -1102,12 +1168,12 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
               </div>
 
               <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs space-y-2 font-sans">
-                <div className="flex items-center justify-between text-slate-500 border-b border-slate-100 pb-1.5">
-                  <div>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-slate-500 border-b border-slate-100 pb-1.5">
+                  <div className="min-w-0 break-all">
                     <span className="font-semibold text-slate-600">To:</span>{' '}
                     <span className="text-slate-800">{previewContact.email || 'No email set'}</span>
                   </div>
-                  <div className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                  <div className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 whitespace-nowrap">
                     <CheckCircle2 className="w-3 h-3" />
                     <span>Merge Fields Populated</span>
                   </div>
@@ -1153,7 +1219,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
               <div className="flex justify-between text-xs text-indigo-900 font-semibold">
                 <span className="flex items-center gap-1.5">
                   <RotateCw className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
-                  Dispatching personalized bulk outreach...
+                  {scheduledTime ? 'Scheduling personalized bulk outreach...' : 'Dispatching personalized bulk outreach...'}
                 </span>
                 <span className="font-bold">{progress}%</span>
               </div>
@@ -1166,26 +1232,154 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
             </div>
           )}
 
+          {/* Scheduled-send banner */}
+          {scheduledTime && (
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-900">
+              <span className="flex items-center gap-2">
+                <CalendarClock className="w-4 h-4 text-indigo-600 shrink-0" aria-hidden="true" />
+                <span>
+                  Scheduled for{' '}
+                  <strong>{scheduledTime.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</strong>
+                </span>
+              </span>
+              <span className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleMenu(true)}
+                  disabled={isSending}
+                  className="px-2.5 py-1 rounded-lg font-semibold text-indigo-700 hover:bg-indigo-100 transition"
+                >
+                  Change
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScheduledTime(null)}
+                  disabled={isSending}
+                  className="px-2.5 py-1 rounded-lg font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition"
+                >
+                  Remove
+                </button>
+              </span>
+            </div>
+          )}
+
           {/* Footer actions */}
           <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-slate-500 min-w-0">
               Sender: <strong className="text-slate-800">{activeSenderName} • {serviceProfile.companyName}</strong>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 ml-auto">
               <Button type="button" variant="ghost" onClick={onClose} disabled={isSending}>
                 Cancel
               </Button>
-              <Button
-                type="button"
-                variant="primary"
-                isLoading={isSending}
-                leftIcon={<Send className="w-4 h-4" />}
-                onClick={handleSendBulk}
-                className="bg-indigo-600 hover:bg-indigo-700 shadow-sm"
-              >
-                Send to {contactsWithEmail.length} Contact{contactsWithEmail.length === 1 ? '' : 's'}
-              </Button>
+
+              {/* Send / Schedule split button */}
+              <div className="relative flex items-stretch rounded-xl shadow-sm" ref={scheduleRef}>
+                <button
+                  type="button"
+                  onClick={handleSendBulk}
+                  disabled={isSending}
+                  className="flex items-center gap-2 pl-4 pr-3.5 py-2 rounded-l-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition disabled:opacity-60"
+                >
+                  {isSending ? (
+                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" aria-hidden="true" />
+                  ) : scheduledTime ? (
+                    <CalendarClock className="w-4 h-4" aria-hidden="true" />
+                  ) : (
+                    <Send className="w-4 h-4" aria-hidden="true" />
+                  )}
+                  {isSending
+                    ? scheduledTime ? 'Scheduling…' : 'Sending…'
+                    : `${scheduledTime ? 'Schedule' : 'Send to'} ${contactsWithEmail.length} Contact${contactsWithEmail.length === 1 ? '' : 's'}`}
+                </button>
+                <div className="w-px bg-indigo-500/60" />
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleMenu((v) => !v)}
+                  disabled={isSending}
+                  aria-label="Schedule send"
+                  aria-haspopup="menu"
+                  aria-expanded={showScheduleMenu}
+                  title="Schedule send"
+                  className="flex items-center justify-center px-2.5 rounded-r-xl bg-indigo-600 hover:bg-indigo-700 text-white transition disabled:opacity-60"
+                >
+                  <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showScheduleMenu ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showScheduleMenu && (
+                  <div
+                    role="menu"
+                    className="absolute bottom-full right-0 mb-2 w-72 max-w-[calc(100vw-2.5rem)] bg-white border border-slate-200 rounded-2xl shadow-lg p-3 z-50"
+                  >
+                    <div className="flex items-center gap-2 mb-2.5 pb-2.5 border-b border-slate-100">
+                      <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center">
+                        <CalendarClock className="w-4 h-4 text-indigo-600" aria-hidden="true" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">Schedule bulk send</p>
+                        <p className="text-[11px] text-slate-500">Every recipient gets their email at this time</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-0.5 mb-2.5">
+                      {SCHEDULE_PRESETS.filter((p) => p.getDate() > new Date()).map((preset) => {
+                        const d = preset.getDate();
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { setScheduledTime(d); setShowScheduleMenu(false); }}
+                            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-indigo-50 text-xs font-medium text-slate-700 hover:text-indigo-700 transition group"
+                          >
+                            <span className="flex items-center gap-2.5">
+                              <AlarmClock className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500" aria-hidden="true" />
+                              {preset.label}
+                            </span>
+                            <span className="text-[11px] text-slate-400 group-hover:text-indigo-500">
+                              {d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })},{' '}
+                              {d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-2.5 space-y-2">
+                      <label className="block text-[11px] font-semibold text-slate-600 px-1" htmlFor="bulk-schedule-custom">
+                        Custom date & time
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          id="bulk-schedule-custom"
+                          type="datetime-local"
+                          value={customScheduleValue}
+                          min={minScheduleAt()}
+                          onChange={(e) => setCustomScheduleValue(e.target.value)}
+                          className="min-w-0 flex-1 px-2.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                        <button
+                          type="button"
+                          disabled={!customScheduleValue}
+                          onClick={() => {
+                            const d = new Date(customScheduleValue);
+                            if (isNaN(d.getTime()) || d <= new Date()) {
+                              error('Invalid time', 'Please choose a future date and time.');
+                              return;
+                            }
+                            setScheduledTime(d);
+                            setShowScheduleMenu(false);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition disabled:opacity-40"
+                        >
+                          Set
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -5,7 +5,7 @@ import { Contact, EmailRecord, Interaction } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { formatDate, formatRelativeTime, getInitials, stripHtml } from '../../lib/utils';
 import { Button } from '../ui/Button';
-import { StatusBadge } from '../ui/Badge';
+import { STATUS_BADGE_CONFIG } from '../ui/Badge';
 import { Inbox, RefreshCw, Search, Reply, Calendar, User } from 'lucide-react';
 import { Linkedin } from '../linkedin/LinkedInIcon';
 
@@ -286,28 +286,23 @@ export const InboxView: React.FC<InboxViewProps> = ({
             const hasSubject = !PLACEHOLDER_SUBJECTS.has(msg.subject.trim().toLowerCase());
 
             return (
-              <li key={msg.id} className={isExpanded ? 'bg-slate-50/60' : ''}>
+              <li
+                key={msg.id}
+                className={isExpanded ? 'bg-indigo-50/30 shadow-[inset_3px_0_0_theme(colors.indigo.500)]' : ''}
+              >
                 <button
                   type="button"
                   onClick={() => setExpandedMessageId(isExpanded ? null : msg.id)}
                   aria-expanded={isExpanded}
-                  className="w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-slate-50 transition-colors cursor-pointer"
+                  className="w-full text-left px-4 sm:px-6 py-4 sm:py-5 flex items-start gap-4 hover:bg-slate-50/80 transition-colors cursor-pointer"
                 >
-                  <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 text-xs font-medium flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 text-sm font-semibold flex items-center justify-center shrink-0">
                     {getInitials(msg.senderName, 'L')}
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-medium text-slate-900 truncate">{msg.senderName}</span>
-                        {contact.company?.name && (
-                          <span className="text-xs text-slate-400 truncate hidden sm:inline">{contact.company.name}</span>
-                        )}
-                        <span className="shrink-0">
-                          <StatusBadge status={contact.status} />
-                        </span>
-                      </div>
+                    <div className="flex items-baseline justify-between gap-4">
+                      <span className="text-[15px] font-semibold text-slate-900 truncate">{msg.senderName}</span>
                       <time
                         dateTime={msg.receivedAt}
                         title={formatDate(msg.receivedAt)}
@@ -317,28 +312,33 @@ export const InboxView: React.FC<InboxViewProps> = ({
                       </time>
                     </div>
 
-                    <p className="text-sm mt-0.5 truncate">
-                      <span className={hasSubject ? 'text-slate-800' : 'text-slate-400 italic'}>
-                        {hasSubject ? msg.subject : 'No subject'}
-                      </span>
-                      {!isExpanded && text && (
-                        <span className="text-slate-500"> — {text.replace(/\s+/g, ' ')}</span>
-                      )}
+                    <p className="text-xs text-slate-500 mt-0.5 truncate">
+                      {contact.company?.name && <>{contact.company.name} · </>}
+                      {STATUS_BADGE_CONFIG[contact.status]?.label || contact.status}
                     </p>
+
+                    {(hasSubject || (!isExpanded && text)) && (
+                      <div className="mt-2.5 max-w-3xl space-y-0.5">
+                        {hasSubject && <p className="text-sm font-medium text-slate-800 truncate">{msg.subject}</p>}
+                        {!isExpanded && text && (
+                          <p className="text-sm text-slate-500 leading-relaxed line-clamp-2 sm:line-clamp-1 break-words">{text.replace(/\s+/g, ' ')}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </button>
 
                 {isExpanded && (
-                  <div className="pl-16 pr-4 pb-4">
-                    <p className="text-xs text-slate-400 mb-2 break-all">
+                  <div className="pl-[4.5rem] sm:pl-20 pr-4 sm:pr-6 pb-6">
+                    <p className="text-xs text-slate-400 mb-3 break-all">
                       {msg.senderEmail} · {formatDate(msg.receivedAt)}
                     </p>
                     {/* Inbound mail is untrusted: render as escaped text, never as HTML. */}
-                    <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-line break-words max-h-96 overflow-y-auto">
+                    <div className="max-w-prose text-sm text-slate-700 leading-7 whitespace-pre-line break-words max-h-96 overflow-y-auto">
                       {text || 'No message body.'}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 mt-4">
+                    <div className="flex flex-wrap items-center gap-2 mt-5">
                       <Button
                         size="sm"
                         onClick={() => onOpenEmailComposer(contact, `Re: ${msg.subject.replace(/^re:\s*/i, '')}`)}

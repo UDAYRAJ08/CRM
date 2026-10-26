@@ -196,6 +196,11 @@ export const DraftsView: React.FC<DraftsViewProps> = ({
                           <Clock className="w-3 h-3" />
                           {formatRelativeTime(draft.saved_at)}
                         </span>
+                        {draft.scheduled_at && (
+                          <span className="text-indigo-700 font-semibold bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                            Sends {new Date(draft.scheduled_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                          </span>
+                        )}
                       </div>
 
                       {draft.body && (

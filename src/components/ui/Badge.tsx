@@ -35,21 +35,21 @@ export const Badge: React.FC<BadgeProps> = ({
   );
 };
 
+export const STATUS_BADGE_CONFIG: Record<ContactStatus, { label: string; variant: BadgeProps['variant'] }> = {
+  new: { label: 'New', variant: 'primary' },
+  contacted: { label: 'Contacted', variant: 'warning' },
+  qualified: { label: 'Qualified', variant: 'purple' },
+  proposal: { label: 'Proposal Sent', variant: 'warning' },
+  won: { label: 'Won', variant: 'success' },
+  lost: { label: 'Lost', variant: 'danger' },
+  inactive: { label: 'Inactive', variant: 'neutral' },
+};
+
 export const StatusBadge: React.FC<{ status: ContactStatus; size?: 'sm' | 'md' }> = ({
   status,
   size = 'sm',
 }) => {
-  const config: Record<ContactStatus, { label: string; variant: BadgeProps['variant'] }> = {
-    new: { label: 'New', variant: 'primary' },
-    contacted: { label: 'Contacted', variant: 'warning' },
-    qualified: { label: 'Qualified', variant: 'purple' },
-    proposal: { label: 'Proposal Sent', variant: 'warning' },
-    won: { label: 'Won', variant: 'success' },
-    lost: { label: 'Lost', variant: 'danger' },
-    inactive: { label: 'Inactive', variant: 'neutral' },
-  };
-
-  const item = config[status] || { label: status, variant: 'default' };
+  const item = STATUS_BADGE_CONFIG[status] || { label: status, variant: 'default' };
 
   return (
     <Badge variant={item.variant} size={size}>

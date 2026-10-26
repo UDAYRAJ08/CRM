@@ -27,7 +27,7 @@ const EMOJI_LIST = [
 ];
 
 // Quick schedule presets shown in the dropdown
-const SCHEDULE_PRESETS = [
+export const SCHEDULE_PRESETS = [
   { label: 'In 1 hour',       getDate: () => { const d = new Date(); d.setHours(d.getHours() + 1, 0, 0, 0);   return d; } },
   { label: 'Tonight 8 PM',    getDate: () => { const d = new Date(); d.setHours(20, 0, 0, 0);                  return d; } },
   { label: 'Tomorrow 9 AM',   getDate: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; } },
