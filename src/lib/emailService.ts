@@ -1,4 +1,4 @@
-import { db, DraftAttachment } from './supabase';
+import { db, supabase, DraftAttachment } from './supabase';
 import { EmailRecord, Contact, Reminder } from '../types/crm';
 import { cleanCompanyName } from './utils';
 
@@ -89,18 +89,31 @@ export function buildEmailHtml(body: string): string {
   return `<div style="${EMAIL_WRAPPER_STYLE}">${doc.body.innerHTML}</div>`;
 }
 
+/**
+ * POST a Composio MCP request through /api/composio (api/composio.ts on Vercel, vite proxy in dev).
+ * The server adds COMPOSIO_API_KEY and requires the user's Supabase session; a key saved in
+ * Email settings is only used when the server has none.
+ */
+export async function composioFetch(payload: unknown): Promise<Response> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+  };
+  const userKey = localStorage.getItem('crm_composio_api_key') || import.meta.env.VITE_COMPOSIO_API_KEY;
+  if (userKey) headers['x-consumer-api-key'] = userKey.trim();
+  const token = supabase ? (await supabase.auth.getSession()).data.session?.access_token : null;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch('/api/composio', { method: 'POST', headers, body: JSON.stringify(payload) });
+}
+
 // Helper: Dispatch via Composio (supports both Gmail & Outlook)
 async function sendViaComposio(
-  apiKey: string,
   recipient: string,
   subject: string,
   body: string,
   userEmail?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // Same-origin proxy (vite.config.ts in dev, vercel.json in prod): browsers block direct cross-origin calls.
-    const endpoint = '/api/composio';
-
     const isGmailSender = userEmail && /@(gmail\.com|googlemail\.com)$/i.test(userEmail);
 
     const htmlContent = buildEmailHtml(body);
@@ -147,26 +160,18 @@ async function sendViaComposio(
           },
         ];
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'x-consumer-api-key': apiKey.trim(),
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: Date.now(),
-        method: 'tools/call',
-        params: {
-          name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
-          arguments: {
-            current_step: 'SENDING_EMAIL',
-            sync_response_to_workbench: false,
-            tools: toolsToAttempt,
-          },
+    const res = await composioFetch({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'tools/call',
+      params: {
+        name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
+        arguments: {
+          current_step: 'SENDING_EMAIL',
+          sync_response_to_workbench: false,
+          tools: toolsToAttempt,
         },
-      }),
+      },
     });
 
     const resText = await res.text();
@@ -289,12 +294,20 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
     localStorage.getItem('crm_resend_api_key') ||
     import.meta.env.VITE_RESEND_API_KEY;
 
-  // Check Composio preference: defaults to true if VITE_EMAIL_PROVIDER === 'composio' or if enabled in settings
+  // Composio (the user's own Outlook/Gmail) is the default sender; Resend only when switched off in settings
+  // or VITE_EMAIL_PROVIDER=resend. The Composio key lives on the server, so no client key is required.
   const localUseComposio = localStorage.getItem('crm_use_composio');
   const shouldUseComposio =
     localUseComposio !== null
       ? localUseComposio === 'true'
-      : (import.meta.env.VITE_EMAIL_PROVIDER === 'composio' || Boolean(composioApiKey));
+      : import.meta.env.VITE_EMAIL_PROVIDER !== 'resend';
+
+  if (shouldUseComposio && !params.logOnly && params.attachments?.length) {
+    // sendViaComposio has no attachment support: refuse rather than silently send without them.
+    throw new Error(
+      'Attachments are not supported when sending through Outlook/Gmail (Composio). Remove the attachments, or switch to Resend in Email settings.'
+    );
+  }
 
   // Dynamic user and workspace sender resolution
   const workspaceSender =
@@ -351,8 +364,8 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
   // If user explicitly chose log-only mode
   if (!params.logOnly) {
     // 1. If Composio is preferred, try Composio first
-    if (shouldUseComposio && composioApiKey) {
-      const cRes = await sendViaComposio(composioApiKey, params.recipientEmail, params.subject, params.body, activeUserEmail);
+    if (shouldUseComposio) {
+      const cRes = await sendViaComposio(params.recipientEmail, params.subject, params.body, activeUserEmail);
       if (cRes.success) {
         remoteSuccess = true;
         providerUsed = isPublicWebmail ? 'Composio Gmail' : 'Composio Outlook';
@@ -361,8 +374,8 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
       }
     }
 
-    // 2. Try Resend Delivery (if not already sent via Composio)
-    if (!remoteSuccess && resendApiKey) {
+    // 2. Resend, only when Composio is switched off (never as a silent second sender)
+    if (!shouldUseComposio && resendApiKey) {
       let resendRes = await sendViaResend(
         resendApiKey,
         effectiveFrom,
@@ -380,7 +393,7 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
         // Seamless failover to Composio if key is present
         if (composioApiKey) {
           console.info('Auto-failover to Composio for verified inbox delivery...');
-          const cRes = await sendViaComposio(composioApiKey, params.recipientEmail, params.subject, params.body, activeUserEmail);
+          const cRes = await sendViaComposio(params.recipientEmail, params.subject, params.body, activeUserEmail);
           if (cRes.success) {
             remoteSuccess = true;
             providerUsed = isPublicWebmail ? 'Composio Gmail (Failover)' : 'Composio Outlook (Failover)';
@@ -425,7 +438,7 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
     // 3. Fallback to Composio if Resend failed and Composio wasn't attempted
     if (!remoteSuccess && composioApiKey && !shouldUseComposio) {
       console.info('Attempting fallback delivery via Composio...');
-      const cRes = await sendViaComposio(composioApiKey, params.recipientEmail, params.subject, params.body, activeUserEmail);
+      const cRes = await sendViaComposio(params.recipientEmail, params.subject, params.body, activeUserEmail);
       if (cRes.success) {
         remoteSuccess = true;
         providerUsed = isPublicWebmail ? 'Composio Gmail (Fallback)' : 'Composio Outlook (Fallback)';
@@ -433,7 +446,7 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
     }
   }
 
-  if (!composioApiKey && !resendApiKey && !remoteSuccess && !params.logOnly) {
+  if (!shouldUseComposio && !resendApiKey && !remoteSuccess && !params.logOnly) {
     warningMessage = 'Logged to CRM history. (To deliver to real inboxes, configure your email provider in Settings)';
   }
 

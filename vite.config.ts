@@ -767,10 +767,15 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/resend/, ''),
       },
+      // Dev stand-in for api/composio.ts: adds the server-only COMPOSIO_API_KEY from .env (no login check locally).
       '/api/composio': {
         target: 'https://connect.composio.dev',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/composio/, '/mcp'),
+        configure: (proxy) => {
+          const key = loadEnv('development', process.cwd(), '').COMPOSIO_API_KEY;
+          if (key) proxy.on('proxyReq', (proxyReq) => proxyReq.setHeader('x-consumer-api-key', key));
+        },
       },
     },
   },

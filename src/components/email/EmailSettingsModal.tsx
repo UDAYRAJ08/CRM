@@ -77,7 +77,8 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
         'CRM Team <onboarding@resend.dev>'
       );
       setCompanyDomain(localStorage.getItem('crm_company_domain') || '');
-      setUseComposio(localStorage.getItem('crm_use_composio') === 'true');
+      // Composio (Outlook/Gmail) is the default sender unless switched off here.
+      setUseComposio(localStorage.getItem('crm_use_composio') !== 'false');
       setComposioApiKey(
         localStorage.getItem('crm_composio_api_key') ||
         import.meta.env.VITE_COMPOSIO_API_KEY ||

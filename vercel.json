@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/composio",
-      "destination": "https://connect.composio.dev/mcp"
-    },
-    {
       "source": "/api/resend/:match*",
       "destination": "https://api.resend.com/:match*"
     },

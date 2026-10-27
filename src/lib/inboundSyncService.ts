@@ -1,6 +1,6 @@
 import { db, supabase } from './supabase';
 import { Contact, EmailRecord, Interaction } from '../types/crm';
-import { followUpStep } from './emailService';
+import { followUpStep, composioFetch } from './emailService';
 import { isBounceMessage, bouncedRecipients } from './bounce';
 
 /** Close the contact's open automatic follow-ups (reminders the user wrote are left alone). */
@@ -85,56 +85,41 @@ function cleanReplyBody(raw: string): string {
 }
 
 export async function syncOutlookInbox(): Promise<InboundSyncResult> {
-  // Never hardcode a fallback key: it ships in the public JS bundle and in git history.
-  const composioApiKey =
-    localStorage.getItem('crm_composio_api_key') ||
-    import.meta.env.VITE_COMPOSIO_API_KEY;
-
-  if (!composioApiKey) {
-    return {
-      success: false,
-      totalChecked: 0,
-      newRepliesCount: 0,
-      matchedContacts: [],
-      message: 'Composio API key is not configured.',
-    };
-  }
-
   try {
-    // Both Vite dev server and Vercel vercel.json rewrite /api/composio -> https://connect.composio.dev/mcp
-    const endpoint = '/api/composio';
-
-    // Query last 50 inbox emails from connected Outlook mailbox
-    const composioRes = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'x-consumer-api-key': composioApiKey.trim(),
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: Date.now(),
-        method: 'tools/call',
-        params: {
-          name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
-          arguments: {
-            current_step: 'SYNC_INBOX_EMAILS',
-            sync_response_to_workbench: false,
-            tools: [
-              {
-                tool_slug: 'OUTLOOK_QUERY_EMAILS',
-                arguments: {
-                  folder: 'inbox',
-                  orderby: 'receivedDateTime desc',
-                  top: 50,
-                },
+    // Query last 50 inbox emails from connected Outlook mailbox (key added server-side by /api/composio)
+    const composioRes = await composioFetch({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'tools/call',
+      params: {
+        name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
+        arguments: {
+          current_step: 'SYNC_INBOX_EMAILS',
+          sync_response_to_workbench: false,
+          tools: [
+            {
+              tool_slug: 'OUTLOOK_QUERY_EMAILS',
+              arguments: {
+                folder: 'inbox',
+                orderby: 'receivedDateTime desc',
+                top: 50,
               },
-            ],
-          },
+            },
+          ],
         },
-      }),
+      },
     });
+
+    if (!composioRes.ok) {
+      const detail = (await composioRes.text()).slice(0, 160);
+      return {
+        success: false,
+        totalChecked: 0,
+        newRepliesCount: 0,
+        matchedContacts: [],
+        message: `Inbox sync failed (${composioRes.status}): ${detail}`,
+      };
+    }
 
     const resText = await composioRes.text();
     const messages = parseComposioResponse(resText);
