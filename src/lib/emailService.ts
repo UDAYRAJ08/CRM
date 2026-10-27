@@ -98,10 +98,8 @@ async function sendViaComposio(
   userEmail?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const endpoint =
-      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? '/api/composio'
-        : 'https://connect.composio.dev/mcp';
+    // Same-origin proxy (vite.config.ts in dev, vercel.json in prod): browsers block direct cross-origin calls.
+    const endpoint = '/api/composio';
 
     const isGmailSender = userEmail && /@(gmail\.com|googlemail\.com)$/i.test(userEmail);
 
@@ -203,10 +201,8 @@ async function sendViaResend(
   isSandboxRestricted?: boolean;
 }> {
   try {
-    const endpoint =
-      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? '/api/resend/emails'
-        : 'https://api.resend.com/emails';
+    // Same-origin proxy (vite.config.ts in dev, vercel.json in prod): Resend's API rejects browser CORS requests.
+    const endpoint = '/api/resend/emails';
 
     const isHtml = /<[a-z][\s\S]*>/i.test(body);
     const plainText = isHtml
