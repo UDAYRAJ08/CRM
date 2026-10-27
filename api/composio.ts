@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // Vercel function: proxies Composio MCP calls so the API key stays on the server.
 // Set COMPOSIO_API_KEY as a Secret in Vercel (no VITE_ prefix, which would put it in the browser bundle).
 
