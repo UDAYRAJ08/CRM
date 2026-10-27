@@ -17,20 +17,35 @@ export function followUpStep(note: string): number | null {
 
 /**
  * What a sent email does to the contact's auto follow-ups: it completes the open ones
- * (the email is that follow-up) and queues the next step, until the sequence is finished.
- * Reminders the user created are never touched.
+ * (the email is that follow-up) and queues the next step, until the sequence is finished
+ * or the lead has replied since it started. Reminders the user created are never touched.
  */
-export function planFollowUp(reminders: Reminder[], contactId: string): { complete: Reminder[]; nextStep: number | null } {
+export function planFollowUp(
+  reminders: Reminder[],
+  contactId: string,
+  lastReplyAt: string | null = null
+): { complete: Reminder[]; nextStep: number | null } {
   const auto = reminders
     .filter((r) => r.contact_id === contactId)
     .map((r) => ({ r, step: followUpStep(r.note || '') }))
     .filter((x): x is { r: Reminder; step: number } => x.step !== null);
-  const lastStep = auto.reduce((max, x) => Math.max(max, x.step), 0);
-  const next = lastStep + 1;
-  return {
-    complete: auto.filter((x) => !x.r.done).map((x) => x.r),
-    nextStep: next <= FOLLOW_UP_STEPS ? next : null,
-  };
+  const complete = auto.filter((x) => !x.r.done).map((x) => x.r);
+  const sequenceStart = Math.min(...auto.map((x) => Date.parse(x.r.created_at)));
+  // The lead answered during this sequence: you're in a conversation now, not chasing them.
+  if (lastReplyAt && auto.length && Date.parse(lastReplyAt) >= sequenceStart) {
+    return { complete, nextStep: null };
+  }
+  const next = auto.reduce((max, x) => Math.max(max, x.step), 0) + 1;
+  return { complete, nextStep: next <= FOLLOW_UP_STEPS ? next : null };
+}
+
+/** Latest time this contact emailed us, or null. */
+export function lastReplyTime(emails: EmailRecord[]): string | null {
+  const times = emails
+    .filter((e) => e.is_inbound || e.status === 'received')
+    .map((e) => e.sent_at || e.created_at || '')
+    .filter((t) => !isNaN(Date.parse(t)));
+  return times.length ? times.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a)) : null;
 }
 
 export interface SendEmailParams {
@@ -460,7 +475,11 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
     const sendFailed = !remoteSuccess && Boolean(remoteError) && !params.logOnly;
     if (!sendFailed) {
       try {
-        const plan = planFollowUp(await db.getReminders(), params.contactId);
+        const plan = planFollowUp(
+          await db.getReminders(),
+          params.contactId,
+          lastReplyTime(await db.getEmails(params.contactId))
+        );
         const nowIso = new Date().toISOString();
         for (const r of plan.complete) {
           await db.saveReminder({ ...r, done: true, completed_at: nowIso });

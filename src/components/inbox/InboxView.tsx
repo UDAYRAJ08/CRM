@@ -8,6 +8,7 @@ import { Button } from '../ui/Button';
 import { STATUS_BADGE_CONFIG } from '../ui/Badge';
 import { Inbox, RefreshCw, Search, Reply, Calendar, User } from 'lucide-react';
 import { Linkedin } from '../linkedin/LinkedInIcon';
+import { isBounceMessage } from '../../lib/bounce';
 
 const STAGE_FILTERS = ['all', 'qualified', 'contacted', 'proposal', 'won'];
 const PLACEHOLDER_SUBJECTS = new Set(['no subject', 'email reply', '']);
@@ -168,10 +169,16 @@ export const InboxView: React.FC<InboxViewProps> = ({
     loadInboundMessages();
   }, [contacts]);
 
+  // Bounce reports logged before bounce detection existed stay out of the inbox too.
+  const replies = useMemo(
+    () => messages.filter((m) => !isBounceMessage(m.senderEmail, m.subject, m.body)),
+    [messages]
+  );
+
   const lastSyncTime = localStorage.getItem('crm_last_inbox_sync');
 
   const filteredMessages = useMemo(() => {
-    return messages.filter((msg) => {
+    return replies.filter((msg) => {
       if (selectedStatusFilter !== 'all' && msg.contact.status !== selectedStatusFilter) {
         return false;
       }
@@ -186,7 +193,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
         (msg.contact.company?.name && msg.contact.company.name.toLowerCase().includes(q))
       );
     });
-  }, [messages, searchQuery, selectedStatusFilter]);
+  }, [replies, searchQuery, selectedStatusFilter]);
 
   const handleSync = async () => {
     await onSyncInbox();
@@ -201,7 +208,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900 flex items-center gap-2.5">
             Inbox
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 tabular-nums">
-              {messages.length}
+              {replies.length}
             </span>
           </h1>
           <p className="text-sm text-slate-500 mt-1 truncate">

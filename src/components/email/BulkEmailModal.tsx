@@ -373,8 +373,11 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
     }
   };
 
-  const contactsWithEmail = selectedContacts.filter((c) => Boolean(c.email?.trim()));
-  const contactsWithoutEmail = selectedContacts.length - contactsWithEmail.length;
+  const withAddress = selectedContacts.filter((c) => Boolean(c.email?.trim()));
+  // An address that bounced before will bounce again and hurts sender reputation.
+  const contactsWithEmail = withAddress.filter((c) => !c.tags?.includes('Bounced'));
+  const contactsWithoutEmail = selectedContacts.length - withAddress.length;
+  const bouncedCount = withAddress.length - contactsWithEmail.length;
 
   const previewContact = contactsWithEmail[previewIndex] || selectedContacts[0];
   const renderedSubject = previewContact
@@ -819,6 +822,14 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
                 <strong>{contactsWithoutEmail}</strong> contact{contactsWithoutEmail === 1 ? '' : 's'} without an email address will be skipped.
+              </span>
+            </div>
+          )}
+          {bouncedCount > 0 && (
+            <div className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-800">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                <strong>{bouncedCount}</strong> contact{bouncedCount === 1 ? '' : 's'} tagged <strong>Bounced</strong> will be skipped (their address rejected an earlier email).
               </span>
             </div>
           )}

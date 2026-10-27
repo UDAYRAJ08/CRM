@@ -1,3 +1,4 @@
+import { isBounceMessage } from './bounce';
 import { createClient } from '@supabase/supabase-js';
 import {
   TeamMember,
@@ -765,14 +766,17 @@ export const db = {
 
   /** Number of received (inbound) emails, counted server-side without downloading rows. */
   async countInboundEmails(): Promise<number> {
+    const isReply = (e: Pick<EmailRecord, 'sender_email' | 'subject' | 'body'>) =>
+      !isBounceMessage(e.sender_email || '', e.subject || '', e.body || '');
     if (supabase) {
-      const { count, error } = await supabase
+      // Bounce reports are filtered by content, so fetch the few fields needed rather than a head count.
+      const { data, error } = await supabase
         .from('emails')
-        .select('id', { count: 'exact', head: true })
+        .select('sender_email, subject, body')
         .eq('status', 'received');
-      if (!error && count !== null) return count;
+      if (!error && data) return data.filter(isReply).length;
     }
-    return getLocal<EmailRecord[]>('emails', []).filter((e) => e.status === 'received' || e.is_inbound).length;
+    return getLocal<EmailRecord[]>('emails', []).filter((e) => (e.status === 'received' || e.is_inbound) && isReply(e)).length;
   },
 
   async getEmails(contactId?: string): Promise<EmailRecord[]> {

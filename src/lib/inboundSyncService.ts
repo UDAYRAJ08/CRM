@@ -1,5 +1,17 @@
 import { db, supabase } from './supabase';
 import { Contact, EmailRecord, Interaction } from '../types/crm';
+import { followUpStep } from './emailService';
+import { isBounceMessage, bouncedRecipients } from './bounce';
+
+/** Close the contact's open automatic follow-ups (reminders the user wrote are left alone). */
+async function closeAutoFollowUps(contactId: string): Promise<void> {
+  const reminders = await db.getReminders();
+  for (const r of reminders) {
+    if (r.contact_id === contactId && !r.done && followUpStep(r.note || '') !== null) {
+      await db.toggleReminder(r.id, true);
+    }
+  }
+}
 
 export interface InboundSyncResult {
   success: boolean;
@@ -73,10 +85,10 @@ function cleanReplyBody(raw: string): string {
 }
 
 export async function syncOutlookInbox(): Promise<InboundSyncResult> {
+  // Never hardcode a fallback key: it ships in the public JS bundle and in git history.
   const composioApiKey =
     localStorage.getItem('crm_composio_api_key') ||
-    import.meta.env.VITE_COMPOSIO_API_KEY ||
-    'ck_SDOn08y-f0-B3wSCswR7';
+    import.meta.env.VITE_COMPOSIO_API_KEY;
 
   if (!composioApiKey) {
     return {
@@ -167,10 +179,9 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       const fromEmail = msg?.from?.emailAddress?.address?.trim().toLowerCase();
       if (!fromEmail) continue;
 
-      // Ignore automated system notifications & delivery reports
+      // Ignore automated system notifications (delivery reports are handled as bounces below)
       if (
         fromEmail.includes('notifications.hive.com') ||
-        fromEmail.includes('mailer-daemon') ||
         fromEmail.includes('hrms@') ||
         fromEmail.includes('no-reply') ||
         fromEmail.includes('noreply')
@@ -182,6 +193,23 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       const senderName = msg?.from?.emailAddress?.name || fromEmail.split('@')[0];
       const subject = msg?.subject || 'No Subject';
       const rawBody = msg?.bodyPreview || msg?.body?.content || '';
+
+      // Bounce: flag the address that failed and stop following it up; never treat it as a lead.
+      if (isBounceMessage(fromEmail, subject, rawBody)) {
+        try {
+          for (const addr of bouncedRecipients(rawBody, fromEmail)) {
+            const bounced = contactEmailMap.get(addr) || sentRecipientMap.get(addr);
+            if (bounced && !bounced.tags?.includes('Bounced')) {
+              bounced.tags = [...(bounced.tags || []), 'Bounced'];
+              await db.saveContact({ id: bounced.id, tags: bounced.tags });
+              await closeAutoFollowUps(bounced.id);
+            }
+          }
+        } catch (bounceErr) {
+          console.warn('Could not record bounce', bounceErr);
+        }
+        continue;
+      }
       const bodyPreview = cleanReplyBody(rawBody);
       const receivedAt = msg?.receivedDateTime || new Date().toISOString();
       const messageId = msg?.id || '';
@@ -271,15 +299,9 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
         created_at: receivedAt,
       });
 
-      // 3. Complete any pending follow-up reminders for this contact since they replied!
+      // 3. They replied: close the automatic follow-ups (manual reminders stay).
       try {
-        const allReminders = await db.getReminders();
-        const pendingForContact = allReminders.filter(
-          (r) => r.contact_id === matchedContact.id && !r.done
-        );
-        for (const rem of pendingForContact) {
-          await db.toggleReminder(rem.id, true);
-        }
+        await closeAutoFollowUps(matchedContact.id);
       } catch (remErr) {
         console.warn('Could not auto-resolve reminder', remErr);
       }
