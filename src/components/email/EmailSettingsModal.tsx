@@ -9,7 +9,6 @@ import {
   Mail,
   Shield,
   CheckCircle2,
-  AlertCircle,
   Send,
   Sparkles,
   Cpu,
@@ -17,7 +16,6 @@ import {
 import { sendSystemEmail, buildEmailHtml } from '../../lib/emailService';
 import { AISettingsModal } from './AISettingsModal';
 import { EmailAccountsSection } from './EmailAccountsSection';
-import { usePermissions } from '../../hooks/usePermissions';
 import {
   getActiveAIProvider,
   AI_PROVIDERS,
@@ -37,8 +35,7 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
 }) => {
   const { user } = useAuth();
   const { activeMember } = useTeam();
-  const { success, error, info } = useToast();
-  const { isAdmin, canManageAIKeys } = usePermissions();
+  const { success, error } = useToast();
 
   const activeUserEmail = (activeMember?.email || user?.email || '').trim();
   const activeUserName = (activeMember?.name || user?.user_metadata?.full_name || 'Team Member').trim();

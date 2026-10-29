@@ -6,13 +6,10 @@ import { usePermissions } from '../../hooks/usePermissions';
 import { sendSystemEmail, buildEmailHtml } from '../../lib/emailService';
 import {
   X,
-  Mail,
   UserPlus,
   Copy,
   Check,
   Send,
-  Sparkles,
-  Link,
   ShieldCheck,
   Clock,
   Trash2,
@@ -38,8 +35,8 @@ const STORAGE_INVITES_KEY = 'crm_sent_invitations';
 export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => {
   const { activeMember } = useTeam();
   const { user } = useAuth();
-  const { success, error, info } = useToast();
-  const { canManageTeam, isAdmin } = usePermissions();
+  const { success, error } = useToast();
+  const { canManageTeam } = usePermissions();
 
   const activeSenderName = (activeMember?.name || user?.user_metadata?.full_name || 'Administrator').trim();
 
