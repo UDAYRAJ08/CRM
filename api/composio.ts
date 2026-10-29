@@ -2,6 +2,8 @@
 // Vercel function: proxies Composio MCP calls so the API key stays on the server.
 // Set COMPOSIO_API_KEY as a Secret in Vercel (no VITE_ prefix, which would put it in the browser bundle).
 
+import { requireUser } from './_lib/auth.js';
+
 const COMPOSIO_MCP = 'https://connect.composio.dev/mcp';
 
 export default async function handler(req: any, res: any) {
@@ -10,15 +12,10 @@ export default async function handler(req: any, res: any) {
   }
 
   // Only signed-in CRM users may use the workspace's Composio account (it can read and send mail).
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  const auth = String(req.headers.authorization || '');
-  if (!supabaseUrl || !anonKey || !auth.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Sign in to the CRM first.' });
-  }
-  const who = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: anonKey, Authorization: auth } });
-  if (!who.ok) {
-    return res.status(401).json({ error: 'Your session expired. Sign in again.' });
+  const user = await requireUser(req);
+  if (!user) {
+    const hasBearer = String(req.headers.authorization || '').startsWith('Bearer ');
+    return res.status(401).json({ error: hasBearer ? 'Your session expired. Sign in again.' : 'Sign in to the CRM first.' });
   }
 
   // Server key wins; a key saved in the CRM's Email settings is only a fallback.
