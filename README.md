@@ -1,6 +1,6 @@
 # Lightweight Internal Team CRM
 
-A lightweight, collaborative internal CRM web app for small teams (3–10 people) to manage shared contacts, log interactions (calls, meetings, notes, emails), draft AI-assisted emails with Claude Sonnet, send communications via Resend, and track follow-up tasks.
+A lightweight, collaborative internal CRM web app for small teams (3–10 people) to manage shared contacts, log interactions (calls, meetings, notes, emails), draft AI-assisted emails with Claude Sonnet, send email from each user's own Outlook mailbox, and track follow-up tasks.
 
 ---
 
@@ -46,10 +46,10 @@ A lightweight, collaborative internal CRM web app for small teams (3–10 people
    - **1-Click Assist Workflow**: Instant clipboard copy and auto-open profile in LinkedIn.
    - Chronological logging to the contact's CRM timeline under the **`in`** badge.
 
-6. **Composio / Microsoft 365 Outlook Inbound Reply Tracking**:
-   - Automatic polling of incoming emails from Microsoft 365 (`udaysharma@ingversionsdigital.com`).
-   - Maps inbound replies against CRM contacts and automatically logs replies to the contact's timeline.
-   - Auto-advances prospect pipeline status to **`Qualified`**.
+6. **Outlook Email (Microsoft Graph)**:
+   - Each user connects their own Outlook mailbox and sends from it; the composer shows which mailbox will send.
+   - Inbox sync logs replies only from existing CRM contacts (or recipients of CRM-sent email) to the contact's timeline. Other mail stays private.
+   - Auto-advances prospect pipeline status to **`Qualified`**. Bounces tag the contact as `Bounced`.
 
 ---
 
@@ -57,7 +57,7 @@ A lightweight, collaborative internal CRM web app for small teams (3–10 people
 
 - **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons, Recharts, SheetJS (`xlsx`), Date-fns
 - **Backend & Database**: Supabase (PostgreSQL with live real-time sync)
-- **Email Delivery & Inbound Tracking**: Microsoft 365 Outlook via Composio MCP & Resend API
+- **Email Delivery & Inbound Tracking**: each user's Outlook mailbox via Microsoft Graph (Vercel functions in `api/`); Resend only for system email (invites, settings tests)
 - **Social Outreach**: LinkedIn Voyager Engine with session-based dispatching and daily safety caps
 
 ---
@@ -74,6 +74,9 @@ cp .env.example .env
 # 3. Start the development server
 npm run dev
 ```
+
+`npm run dev` does not run the `api/` functions, so email does not work there. Use `npx vercel dev`
+(port 3000) for email; see the *Deploy checklist* below.
 
 ### Scripts
 
@@ -113,13 +116,24 @@ permission), re-checks the calling site on every request, and never sends the se
 
 ---
 
+## Email (Outlook via Microsoft Graph)
+
+Each user connects their own Outlook mailbox in **Email settings**. The CRM sends through Microsoft
+Graph from that mailbox, so mail appears in the user's Sent Items. OAuth tokens are encrypted and
+stored server-side in `email_accounts`; the browser never sees them. Inbox sync reads the last
+messages of every connected mailbox and logs only replies from CRM contacts. Resend is used only for
+system email (team invites, settings tests), and only team members can send it.
+
+---
+
 ## Security notes (read before deploying)
 
 - **Anything prefixed `VITE_` is compiled into the public JavaScript bundle.** That includes the
   `VITE_*_API_KEY` values in `.env.example`. Use them only for local development. For a real
-  deployment, keep AI / Resend / Composio keys as server-side secrets (Supabase Edge Function
-  secrets or Vercel serverless env vars) and call them through a function, and **rotate any key that
-  has ever been in a deployed bundle**.
+  deployment, keep AI keys as server-side secrets (Supabase Edge Function secrets or Vercel
+  serverless env vars) and call them through a function, and **rotate any key that has ever been in
+  a deployed bundle**. Email secrets (Azure, token key, Resend) are server-only; never prefix them
+  with `VITE_`.
 - `LINKEDIN_LI_AT` / `LINKEDIN_JSESSIONID` are full account credentials. Never prefix them with
   `VITE_`, never commit them, and prefer per-user accounts stored server-side.
 - Apply `supabase/security_hardening.sql` (and review `supabase/persona_pin_and_rls.sql`) in the
@@ -135,12 +149,40 @@ src/components/   UI, grouped by feature (contacts, email, linkedin, pipeline, .
 src/context/      Auth, Team and Toast providers
 src/lib/          Services: supabase data layer, email, AI, LinkedIn, parsing
 src/lib/__tests__ Unit tests for pure logic
-api/              Vercel serverless functions (LinkedIn)
+api/              Vercel serverless functions (Outlook email, system email)
 supabase/         SQL schemas / migrations and Edge Functions
 ```
 
 Heavy views (Dashboard, Pipeline, LinkedIn, Inbox...) and large modals (Excel import, composers)
 are lazy-loaded with `React.lazy`, so the initial bundle stays small.
+
+---
+
+## Deploy checklist (email)
+
+Do these in order.
+
+1. **Database first.** In the Supabase SQL editor run `supabase/emails_inbound_and_indexes.sql`,
+   then `supabase/email_accounts.sql`, *before* deploying. Without them email history silently stays
+   in the browser.
+2. **Azure app registration** (Microsoft Entra ID):
+   - Single tenant.
+   - Web redirect URIs: `https://<prod-domain>/api/email-oauth-callback` and
+     `http://localhost:3000/api/email-oauth-callback`.
+   - Delegated Microsoft Graph permissions: `Mail.Send`, `Mail.Read`, `User.Read`, `offline_access`.
+     Grant admin consent.
+   - Create a client secret.
+3. **Server env vars** as Vercel Secrets (and in a local `.env`), never with a `VITE_` prefix:
+   `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `EMAIL_OAUTH_REDIRECT_URI`,
+   `EMAIL_TOKEN_ENC_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`.
+   Generate `EMAIL_TOKEN_ENC_KEY` with:
+   `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
+4. **Local development** uses `npx vercel dev` (port 3000). `npm run dev` does not run the `api/`
+   functions, so email does not work there.
+5. **Supabase Auth**: disable public sign-ups, or restrict them to the company domain. Any signed-in
+   user gets a team profile, and team members can send system email.
+6. **After deploy**, delete `COMPOSIO_API_KEY`, `VITE_COMPOSIO_API_KEY` and `VITE_RESEND_API_KEY`
+   from Vercel, and revoke the old Composio key.
 
 ---
 
@@ -152,6 +194,7 @@ are lazy-loaded with `React.lazy`, so the initial bundle stays small.
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY` (public by design; protected by RLS)
    - `LINKEDIN_LI_AT` / `LINKEDIN_JSESSIONID` (optional, server-side only)
+   - The server-only email variables from the *Deploy checklist* above.
    - See *Security notes* above before adding any other `VITE_` key.
 4. Deploy! Build command: `npm run build`, Output directory: `dist`.
 
