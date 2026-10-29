@@ -138,16 +138,9 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       const receivedAt = msg?.receivedDateTime || new Date().toISOString();
       const messageId = msg?.id || '';
 
-      // If this reply is from a new lead not yet in CRM, auto-create them!
-      if (!matchedContact) {
-        matchedContact = await db.saveContact({
-          name: senderName,
-          email: fromEmail,
-          status: 'qualified',
-          tags: ['Inbound Lead', 'Replied'],
-        });
-        contactEmailMap.set(fromEmail, matchedContact);
-      } else if (!matchedContact.email) {
+      // Only CRM contacts are logged: the rest of a personal inbox never enters the shared CRM.
+      if (!matchedContact) continue;
+      if (!matchedContact.email) {
         // Backfill missing email address on contact
         matchedContact = await db.saveContact({
           id: matchedContact.id,

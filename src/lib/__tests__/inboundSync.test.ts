@@ -46,6 +46,8 @@ describe('syncOutlookInbox', () => {
       },
     });
     listMyEmailAccounts.mockResolvedValue([]);
+    await db.saveContact({ name: 'Lead One', email: 'lead1@x.com', status: 'contacted' });
+    await db.saveContact({ name: 'Lead Two', email: 'lead2@y.com', status: 'new' });
     const saveEmail = vi.spyOn(db, 'saveEmail');
 
     const res = await syncOutlookInbox();
@@ -58,6 +60,24 @@ describe('syncOutlookInbox', () => {
       ['lead1@x.com', 'acc-1', 'a@team.com'],
       ['lead2@y.com', 'acc-2', 'b@team.com'],
     ]);
+  });
+
+  it('ignores mail from senders who are not CRM contacts', async () => {
+    apiPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { mailboxes: [{ accountId: 'acc-1', email: 'a@team.com', messages: [msg('p1', 'friend@personal.com', 'Dinner?')] }], errors: [] },
+    });
+    const saveContact = vi.spyOn(db, 'saveContact');
+    const saveEmail = vi.spyOn(db, 'saveEmail');
+    const addInteraction = vi.spyOn(db, 'addInteraction');
+    [saveContact, saveEmail, addInteraction].forEach((s) => s.mockClear());
+    const res = await syncOutlookInbox();
+    expect(res.newRepliesCount).toBe(0);
+    expect(saveContact).not.toHaveBeenCalled();
+    expect(saveEmail).not.toHaveBeenCalled();
+    expect(addInteraction).not.toHaveBeenCalled();
+    expect((await db.getContacts()).some((c) => c.email === 'friend@personal.com')).toBe(false);
   });
 
   it('tells the user which mailbox needs reconnecting', async () => {
