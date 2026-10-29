@@ -3,6 +3,7 @@ import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
 import { Contact, EmailRecord, Interaction } from '../../types/crm';
 import { db } from '../../lib/supabase';
+import { listMyEmailAccounts } from '../../lib/emailAccounts';
 import { formatDate, formatRelativeTime, getInitials, stripHtml } from '../../lib/utils';
 import { Button } from '../ui/Button';
 import { STATUS_BADGE_CONFIG } from '../ui/Badge';
@@ -51,6 +52,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
   const { user } = useAuth();
   const activeUserEmail = (activeMember?.email || user?.email || localStorage.getItem('crm_active_user_email') || 'workspace inbox').trim();
 
+  const [mailboxEmails, setMailboxEmails] = useState<string[]>([]);
   const [messages, setMessages] = useState<InboundMessageItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -166,6 +168,12 @@ export const InboxView: React.FC<InboxViewProps> = ({
   };
 
   useEffect(() => {
+    listMyEmailAccounts()
+      .then((accts) => setMailboxEmails(accts.map((a) => a.email)))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     loadInboundMessages();
   }, [contacts]);
 
@@ -212,7 +220,7 @@ export const InboxView: React.FC<InboxViewProps> = ({
             </span>
           </h1>
           <p className="text-sm text-slate-500 mt-1 truncate">
-            Replies to {activeUserEmail}
+            Replies to {mailboxEmails.length ? mailboxEmails.join(', ') : activeUserEmail}
             {lastSyncTime && <> · synced {formatRelativeTime(lastSyncTime)}</>}
           </p>
         </div>

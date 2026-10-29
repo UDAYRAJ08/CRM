@@ -1,6 +1,7 @@
 import { db, supabase } from './supabase';
 import { Contact, EmailRecord, Interaction } from '../types/crm';
-import { followUpStep, composioFetch } from './emailService';
+import { followUpStep } from './emailService';
+import { apiPost, listMyEmailAccounts } from './emailAccounts';
 import { isBounceMessage, bouncedRecipients } from './bounce';
 
 /** Close the contact's open automatic follow-ups (reminders the user wrote are left alone). */
@@ -21,63 +22,6 @@ export interface InboundSyncResult {
   message: string;
 }
 
-function parseComposioResponse(rawText: string): any[] {
-  let messages: any[] = [];
-
-  // 1. If SSE stream, extract lines starting with "data: "
-  let jsonStr = rawText;
-  if (rawText.includes('data: ')) {
-    const dataLines = rawText
-      .split('\n')
-      .filter((line) => line.startsWith('data: '))
-      .map((line) => line.replace(/^data:\s*/, '').trim())
-      .filter(Boolean);
-    if (dataLines.length > 0) {
-      jsonStr = dataLines.join('');
-    }
-  }
-
-  try {
-    const parsed = JSON.parse(jsonStr);
-
-    // Check if result has content array (MCP standard format with stringified json in content[0].text)
-    const contentList = parsed?.result?.content || [];
-    for (const c of contentList) {
-      if (c.type === 'text' && c.text) {
-        try {
-          const inner = JSON.parse(c.text);
-          const results = inner?.data?.results || inner?.results || [];
-          for (const r of results) {
-            const valList = r?.response?.data?.value || r?.response?.data_preview?.value;
-            if (Array.isArray(valList)) {
-              messages = valList;
-              break;
-            }
-          }
-        } catch (e) {
-          console.warn('Inner parse error', e);
-        }
-      }
-    }
-
-    // Direct result.results format
-    if (messages.length === 0) {
-      const results = parsed?.result?.results || parsed?.data?.results || [];
-      for (const r of results) {
-        const valList = r?.response?.data?.value || r?.response?.data_preview?.value;
-        if (Array.isArray(valList)) {
-          messages = valList;
-          break;
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Failed to parse Composio MCP JSON', err);
-  }
-
-  return messages;
-}
-
 function cleanReplyBody(raw: string): string {
   if (!raw) return '';
   const splitMatch = raw.split(/\r?\n\s*On\s+[A-Za-z]+,\s+\d+.*wrote:/i)[0];
@@ -86,52 +30,45 @@ function cleanReplyBody(raw: string): string {
 
 export async function syncOutlookInbox(): Promise<InboundSyncResult> {
   try {
-    // Query last 50 inbox emails from connected Outlook mailbox (key added server-side by /api/composio)
-    const composioRes = await composioFetch({
-      jsonrpc: '2.0',
-      id: Date.now(),
-      method: 'tools/call',
-      params: {
-        name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
-        arguments: {
-          current_step: 'SYNC_INBOX_EMAILS',
-          sync_response_to_workbench: false,
-          tools: [
-            {
-              tool_slug: 'OUTLOOK_QUERY_EMAILS',
-              arguments: {
-                folder: 'inbox',
-                orderby: 'receivedDateTime desc',
-                top: 50,
-              },
-            },
-          ],
-        },
-      },
+    // Server fetches the last inbox messages of every Outlook mailbox this user connected.
+    const res = await apiPost<{
+      mailboxes?: Array<{ accountId: string; email: string; messages: any[] }>;
+      errors?: Array<{ accountId: string; code: string }>;
+    }>('/api/email-sync', {});
+    const fail = (message: string): InboundSyncResult => ({
+      success: false,
+      totalChecked: 0,
+      newRepliesCount: 0,
+      matchedContacts: [],
+      message,
     });
+    if (res.status === 401) return fail('Sign in again to sync your inbox.');
+    if (!res.ok) return fail(`Inbox sync failed (${res.status})`);
 
-    if (!composioRes.ok) {
-      const detail = (await composioRes.text()).slice(0, 160);
-      return {
-        success: false,
-        totalChecked: 0,
-        newRepliesCount: 0,
-        matchedContacts: [],
-        message: `Inbox sync failed (${composioRes.status}): ${detail}`,
-      };
+    const mailboxes = res.data?.mailboxes || [];
+    const errors = res.data?.errors || [];
+    let reconnectNote = '';
+    const reauthIds = errors.filter((e) => e.code === 'REAUTH_REQUIRED').map((e) => e.accountId);
+    if (reauthIds.length > 0) {
+      const accounts = await listMyEmailAccounts();
+      const emails = reauthIds.map((id) => accounts.find((a) => a.id === id)?.email).filter(Boolean);
+      if (emails.length > 0) reconnectNote = ` Reconnect ${emails.join(', ')} in Email settings.`;
     }
 
-    const resText = await composioRes.text();
-    const messages = parseComposioResponse(resText);
+    const items = mailboxes.flatMap((mb) => (mb.messages || []).map((msg) => ({ msg, mb })));
+    const ownMailboxes = new Set(mailboxes.map((mb) => mb.email.trim().toLowerCase()));
 
-    if (!messages || messages.length === 0) {
+    if (items.length === 0) {
       localStorage.setItem('crm_last_inbox_sync', new Date().toISOString());
       return {
         success: true,
         totalChecked: 0,
         newRepliesCount: 0,
         matchedContacts: [],
-        message: 'Inbox checked: No messages returned from Outlook.',
+        message:
+          mailboxes.length === 0 && errors.length === 0
+            ? 'No Outlook mailbox connected. Connect one in Email settings.'
+            : `Inbox checked: No messages returned from Outlook.${reconnectNote}`,
       };
     }
 
@@ -160,9 +97,11 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
     let newRepliesCount = 0;
     const matchedContacts: Array<{ contactName: string; subject: string; from: string }> = [];
 
-    for (const msg of messages) {
+    for (const { msg, mb } of items) {
       const fromEmail = msg?.from?.emailAddress?.address?.trim().toLowerCase();
       if (!fromEmail) continue;
+      // Own sent/forwarded mail is not a reply.
+      if (ownMailboxes.has(fromEmail)) continue;
 
       // Ignore automated system notifications (delivery reports are handled as bounces below)
       if (
@@ -237,7 +176,8 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       // 1. Log into emails table as an Inbound email
       await db.saveEmail({
         contact_id: matchedContact.id,
-        recipient_email: localStorage.getItem('crm_active_user_email') || 'team@workspace.crm',
+        recipient_email: mb.email,
+        email_account_id: mb.accountId,
         sender_email: fromEmail,
         is_inbound: true,
         subject: subject,
@@ -303,13 +243,13 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
 
     return {
       success: true,
-      totalChecked: messages.length,
+      totalChecked: items.length,
       newRepliesCount,
       matchedContacts,
       message:
         newRepliesCount > 0
-          ? `Synced ${messages.length} emails: Found ${newRepliesCount} new reply from ${matchedContacts.map((m) => m.contactName).join(', ')}!`
-          : `Synced ${messages.length} emails from inbox. No new replies from CRM contacts.`,
+          ? `Synced ${mailboxes.length} mailbox(es): Found ${newRepliesCount} new reply from ${matchedContacts.map((m) => m.contactName).join(', ')}!${reconnectNote}`
+          : `Synced ${mailboxes.length} mailbox(es) (${items.length} emails). No new replies from CRM contacts.${reconnectNote}`,
     };
   } catch (err: any) {
     console.error('Error syncing Outlook inbox:', err);

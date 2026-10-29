@@ -1,4 +1,4 @@
-import { db, supabase, DraftAttachment } from './supabase';
+import { db, DraftAttachment } from './supabase';
 import { EmailRecord, Contact, Reminder } from '../types/crm';
 import { cleanCompanyName } from './utils';
 import { apiPost } from './emailAccounts';
@@ -89,23 +89,6 @@ export function buildEmailHtml(body: string): string {
     if (!p.style.margin) p.style.margin = '0';
   });
   return `<div style="${EMAIL_WRAPPER_STYLE}">${doc.body.innerHTML}</div>`;
-}
-
-/**
- * POST a Composio MCP request through /api/composio (api/composio.ts on Vercel, vite proxy in dev).
- * The server adds COMPOSIO_API_KEY and requires the user's Supabase session; a key saved in
- * Email settings is only used when the server has none.
- */
-export async function composioFetch(payload: unknown): Promise<Response> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json, text/event-stream',
-  };
-  const userKey = localStorage.getItem('crm_composio_api_key') || import.meta.env.VITE_COMPOSIO_API_KEY;
-  if (userKey) headers['x-consumer-api-key'] = userKey.trim();
-  const token = supabase ? (await supabase.auth.getSession()).data.session?.access_token : null;
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return fetch('/api/composio', { method: 'POST', headers, body: JSON.stringify(payload) });
 }
 
 const SEND_ERRORS: Record<string, (d: any) => string> = {
