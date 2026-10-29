@@ -75,6 +75,13 @@ describe('getFreshAccessToken', () => {
   });
 });
 
+describe('GraphError', () => {
+  it('has a readable message without a status', () => {
+    expect(new GraphError('GRAPH_FAILED').message).toBe('Microsoft Graph request failed.');
+    expect(new GraphError('GRAPH_FAILED', 503).message).toBe('Microsoft Graph request failed (HTTP 503)');
+  });
+});
+
 describe('buildGraphMessage', () => {
   it('strips the data-url prefix from attachments', () => {
     const m: any = buildGraphMessage({

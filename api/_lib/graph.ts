@@ -75,7 +75,14 @@ export class GraphError extends Error {
   code: 'REAUTH_REQUIRED' | 'GRAPH_FAILED';
   status?: number;
   constructor(code: 'REAUTH_REQUIRED' | 'GRAPH_FAILED', status?: number, message?: string) {
-    super(message || (code === 'REAUTH_REQUIRED' ? 'Outlook sign-in expired. Reconnect the mailbox.' : `Microsoft Graph request failed (HTTP ${status})`));
+    super(
+      message ||
+        (code === 'REAUTH_REQUIRED'
+          ? 'Outlook sign-in expired. Reconnect the mailbox.'
+          : status
+            ? `Microsoft Graph request failed (HTTP ${status})`
+            : 'Microsoft Graph request failed.'),
+    );
     this.code = code;
     this.status = status;
   }

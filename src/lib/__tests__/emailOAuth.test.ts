@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const upsert = vi.fn();
 let existingDefault: unknown = null;
+let existingSame: unknown = null;
 vi.mock('../../../api/_lib/auth.js', () => ({
   requireUser: vi.fn(),
   adminDb: () => ({
     from: () => ({
       select: () => ({
-        eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: existingDefault, error: null }) }) }),
+        eq: () => ({
+          eq: (k: string) => ({ maybeSingle: async () => ({ data: k === 'is_default' ? existingDefault : existingSame, error: null }) }),
+        }),
       }),
       upsert: async (row: any, opts: any) => {
         upsert(row, opts);
@@ -43,6 +46,7 @@ describe('outlook oauth', () => {
     fetchMock.mockReset();
     upsert.mockReset();
     existingDefault = null;
+    existingSame = null;
     vi.mocked(requireUser).mockReset();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -123,6 +127,27 @@ describe('outlook oauth', () => {
     expect(decryptToken(row.access_token_enc)).toBe('AT');
     expect(decryptToken(row.refresh_token_enc)).toBe('RT');
     expect(row.is_default).toBe(true);
+  });
+
+  it('callback: reconnecting a mailbox when the user has no default makes it the default', async () => {
+    existingSame = { id: 'acc1' };
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'AT', refresh_token: 'RT', expires_in: 3600 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ mail: 'me@corp.com', displayName: 'Me' })));
+    const res = mockRes();
+    await callback({ method: 'GET', headers: { cookie: 'eo_n=n1' }, query: { code: 'c', state: signState('u1', 'n1') } }, res);
+    expect(res.location).toBe('/?email_account=connected');
+    expect(upsert.mock.calls[0][0].is_default).toBe(true);
+  });
+
+  it('callback: reconnecting a non-default mailbox never moves the existing default', async () => {
+    existingSame = { id: 'acc2' };
+    existingDefault = { id: 'acc1' };
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'AT', refresh_token: 'RT', expires_in: 3600 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ mail: 'me@corp.com', displayName: 'Me' })));
+    await callback({ method: 'GET', headers: { cookie: 'eo_n=n1' }, query: { code: 'c', state: signState('u1', 'n1') } }, mockRes());
+    expect('is_default' in upsert.mock.calls[0][0]).toBe(false);
   });
 
   it('callback: microsoft error redirects with reason=denied', async () => {

@@ -19,8 +19,11 @@ export function encryptToken(plain: string): string {
 export function decryptToken(enc: string): string {
   const [v, iv, tag, ct] = enc.split(':');
   if (v !== 'v1' || !iv || !tag || ct === undefined) throw new Error('Bad token format');
-  const d = createDecipheriv('aes-256-gcm', encKey(), Buffer.from(iv, 'base64'));
-  d.setAuthTag(Buffer.from(tag, 'base64'));
+  const authTag = Buffer.from(tag, 'base64');
+  // A short tag would weaken GCM authentication; only the full 16 bytes are accepted.
+  if (authTag.length !== 16) throw new Error('Bad token format');
+  const d = createDecipheriv('aes-256-gcm', encKey(), Buffer.from(iv, 'base64'), { authTagLength: 16 });
+  d.setAuthTag(authTag);
   return Buffer.concat([d.update(Buffer.from(ct, 'base64')), d.final()]).toString('utf8');
 }
 

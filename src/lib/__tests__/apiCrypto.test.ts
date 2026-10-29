@@ -18,6 +18,12 @@ describe('token crypto', () => {
     expect(() => decryptToken([v, iv, tag, flip(ct)].join(':'))).toThrow();
   });
 
+  it('rejects a truncated auth tag', () => {
+    const [v, iv, tag, ct] = encryptToken('abc').split(':');
+    const short = Buffer.from(tag, 'base64').subarray(0, 4).toString('base64');
+    expect(() => decryptToken([v, iv, short, ct].join(':'))).toThrow();
+  });
+
   it('rejects a missing or short key', () => {
     process.env.EMAIL_TOKEN_ENC_KEY = Buffer.alloc(8).toString('base64');
     expect(() => encryptToken('x')).toThrow(/EMAIL_TOKEN_ENC_KEY/);

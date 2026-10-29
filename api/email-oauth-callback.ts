@@ -35,7 +35,6 @@ export default async function handler(req: any, res: any) {
     step = 'store';
     const db = adminDb();
     const { data: def } = await db.from('email_accounts').select('id').eq('auth_user_id', st.uid).eq('is_default', true).maybeSingle();
-    const { data: same } = await db.from('email_accounts').select('id').eq('auth_user_id', st.uid).eq('email', me.email).maybeSingle();
     const row: Record<string, unknown> = {
       auth_user_id: st.uid,
       provider: 'outlook',
@@ -47,8 +46,8 @@ export default async function handler(req: any, res: any) {
       status: 'active',
       error_message: null,
     };
-    // Reconnecting an existing mailbox must not steal or drop the default.
-    if (!same) row.is_default = !def;
+    // Only claim the default when the user has none; an existing default is never moved or dropped.
+    if (!def) row.is_default = true;
     const { error } = await db.from('email_accounts').upsert(row, { onConflict: 'auth_user_id,email' });
     if (error) throw new Error('upsert failed');
     return res.redirect(302, '/?email_account=connected');
