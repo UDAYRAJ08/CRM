@@ -32,6 +32,7 @@ export interface EmailDraft {
   body: string; // may contain HTML from rich-text editor
   ai_generated?: boolean;
   sender_email?: string | null;
+  email_account_id?: string | null;
   attachments?: DraftAttachment[];
   /** Set by "Schedule Send"; the scheduled-email runner sends the draft once this time passes. */
   scheduled_at?: string | null;
@@ -819,14 +820,15 @@ export const db = {
   },
 
   async saveEmail(email: Partial<EmailRecord>): Promise<EmailRecord> {
-    const validStatus =
-      email.status === 'received' ? 'sent' : email.status || 'sent';
+    const validStatus = email.status || 'sent';
 
     const payload = {
       id: email.id || crypto.randomUUID(),
       contact_id: email.contact_id || null,
       recipient_email: email.recipient_email || '',
       sender_email: email.sender_email || null,
+      is_inbound: email.is_inbound ?? false,
+      email_account_id: email.email_account_id ?? null,
       subject: email.subject || '',
       body: email.body || '',
       ai_generated: email.ai_generated || false,
@@ -842,6 +844,9 @@ export const db = {
         id: payload.id,
         contact_id: payload.contact_id,
         recipient_email: payload.recipient_email,
+        sender_email: payload.sender_email,
+        is_inbound: payload.is_inbound,
+        email_account_id: payload.email_account_id,
         subject: payload.subject,
         body: payload.body,
         ai_generated: payload.ai_generated,

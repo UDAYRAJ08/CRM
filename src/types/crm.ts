@@ -63,6 +63,7 @@ export interface EmailRecord {
   recipient_email: string;
   sender_email?: string | null;
   is_inbound?: boolean;
+  email_account_id?: string | null;
   subject: string;
   body: string;
   ai_generated?: boolean;
