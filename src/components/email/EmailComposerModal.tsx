@@ -15,7 +15,7 @@ import { useEditorFormatState, toolbarToggleClass } from './editorFormatting';
 import { FontSizeMenu } from './FontSizeMenu';
 import {
   Mail, Sparkles, Send, CheckCircle, ChevronDown, ChevronUp, Clock,
-  AlertTriangle, ExternalLink, Bold, Italic, Underline,
+  Bold, Italic, Underline,
   List, Type, Paperclip, Smile, Trash2, X, FileEdit,
   Link, CalendarClock, AlarmClock,
 } from 'lucide-react';
@@ -567,10 +567,6 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
             </div>
           </div>
           <MailboxPicker value={emailAccountId} onChange={setEmailAccountId} />
-          <span className="hidden md:flex text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold px-2.5 py-0.5 rounded-full items-center gap-1.5 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            {activeSenderEmail || 'Dynamic Sender'}
-          </span>
         </div>
       }
     >
@@ -642,16 +638,6 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
             </div>
           </div>
         )}
-
-        {/* Sender banner */}
-        <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400 font-medium">From:</span>
-            <span className="font-semibold text-slate-800">{activeSenderName}</span>
-            <span className="text-slate-500 font-mono text-[11px]">&lt;{activeSenderEmail || 'Configure in Settings'}&gt;</span>
-          </div>
-          <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md font-medium">Dynamic Sender Active</span>
-        </div>
 
         {/* Recipient */}
         <div>
