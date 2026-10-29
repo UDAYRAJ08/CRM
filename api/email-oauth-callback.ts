@@ -1,0 +1,48 @@
+/// <reference types="node" />
+import { adminDb } from './_lib/auth.js';
+import { encryptToken, verifyState } from './_lib/crypto.js';
+import { exchangeCode, getMe } from './_lib/graph.js';
+
+const fail = (res: any, reason: string) => res.redirect(302, `/?email_account=error&reason=${reason}`);
+
+export default async function handler(req: any, res: any) {
+  const q: Record<string, any> = req.query ?? Object.fromEntries(new URL(req.url ?? '', 'http://x').searchParams);
+  const one = (v: unknown) => (Array.isArray(v) ? String(v[0] ?? '') : String(v ?? ''));
+
+  let step = 'state';
+  try {
+    const st = verifyState(one(q.state));
+    if (!st) return fail(res, 'state');
+    if (q.error) return fail(res, 'denied');
+    const code = one(q.code);
+    if (!code) return fail(res, 'token');
+
+    step = 'token';
+    const t = await exchangeCode(code);
+    step = 'profile';
+    const me = await getMe(t.access_token);
+
+    step = 'store';
+    const db = adminDb();
+    const { data: def } = await db.from('email_accounts').select('id').eq('auth_user_id', st.uid).eq('is_default', true).maybeSingle();
+    const { data: same } = await db.from('email_accounts').select('id').eq('auth_user_id', st.uid).eq('email', me.email).maybeSingle();
+    const row: Record<string, unknown> = {
+      auth_user_id: st.uid,
+      provider: 'outlook',
+      email: me.email,
+      display_name: me.displayName,
+      access_token_enc: encryptToken(t.access_token),
+      refresh_token_enc: encryptToken(t.refresh_token),
+      expires_at: new Date(Date.now() + t.expires_in * 1000 - 60_000).toISOString(),
+      status: 'active',
+      error_message: null,
+    };
+    // Reconnecting an existing mailbox must not steal or drop the default.
+    if (!same) row.is_default = !def;
+    const { error } = await db.from('email_accounts').upsert(row, { onConflict: 'auth_user_id,email' });
+    if (error) throw new Error('upsert failed');
+    return res.redirect(302, '/?email_account=connected');
+  } catch (e: any) {
+    return fail(res, /is not set|must be base64/.test(String(e?.message)) ? 'config' : step);
+  }
+}
