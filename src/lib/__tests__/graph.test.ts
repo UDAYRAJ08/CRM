@@ -61,6 +61,12 @@ describe('getFreshAccessToken', () => {
     expect(updates[0].error_message).not.toContain('secret');
   });
 
+  it('fails (without reauth) when the rotated tokens cannot be saved', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp(200, { access_token: 'n', refresh_token: 'r', expires_in: 3600 })));
+    const db: any = { from: () => ({ update: () => ({ eq: async () => ({ error: { message: 'x' } }) }) }) };
+    await expect(getFreshAccessToken(db, account(0))).rejects.toMatchObject({ code: 'GRAPH_FAILED' });
+  });
+
   it('does not mark reauth on a transient token-endpoint failure', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => resp(503, {})));
     const { db, updates } = fakeDb();

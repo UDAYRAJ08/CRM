@@ -120,12 +120,14 @@ export async function getFreshAccessToken(db: any, account: AccountRow): Promise
   if (!j?.access_token) throw new GraphError('GRAPH_FAILED', r.status);
 
   const expiresIn = Number(j.expires_in) || 3600;
-  await db.from('email_accounts').update({
+  const { error } = await db.from('email_accounts').update({
     access_token_enc: encryptToken(j.access_token),
     refresh_token_enc: encryptToken(j.refresh_token || refreshToken),
     expires_at: new Date(Date.now() + expiresIn * 1000 - SKEW_MS).toISOString(),
     updated_at: new Date().toISOString(),
   }).eq('id', account.id);
+  // The old refresh token is already dead at Microsoft; losing the new one would force a reconnect.
+  if (error) throw new GraphError('GRAPH_FAILED');
   return j.access_token;
 }
 
