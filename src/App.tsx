@@ -3,7 +3,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { TeamProvider, useTeam } from './context/TeamContext';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { Contact, Reminder } from './types/crm';
-import { db, EmailDraft } from './lib/supabase';
+import { db, EmailDraft, isSupabaseConfigured } from './lib/supabase';
+import { EmailAccount, listMyEmailAccounts, connectOutlook } from './lib/emailAccounts';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { TeamMemberModal } from './components/layout/TeamMemberModal';
@@ -89,6 +90,36 @@ const CRMMain: React.FC = () => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [draftCount, setDraftCount] = useState(0);
   const [resumingDraft, setResumingDraft] = useState<EmailDraft | null>(null);
+  const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
+
+  // Mailboxes: drives the reconnect banner. Skipped in demo mode (no Supabase).
+  useEffect(() => {
+    if (!user || !isSupabaseConfigured) return;
+    const load = () => listMyEmailAccounts().then(setEmailAccounts).catch(() => {});
+    load();
+    window.addEventListener('crm_email_accounts_updated', load);
+    return () => window.removeEventListener('crm_email_accounts_updated', load);
+  }, [user]);
+
+  // "Connect Outlook" links elsewhere ask for the settings modal via this event.
+  useEffect(() => {
+    const open = () => setIsEmailSettingsOpen(true);
+    window.addEventListener('crm_open_email_settings', open);
+    return () => window.removeEventListener('crm_open_email_settings', open);
+  }, []);
+
+  // Return from the Microsoft OAuth redirect: ?email_account=connected|error&reason=...
+  useEffect(() => {
+    if (!user) return;
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('email_account');
+    if (!result) return;
+    if (result === 'connected') success('Outlook mailbox connected.');
+    else toastError(`Could not connect Outlook (${params.get('reason') || 'unknown'}).`);
+    setIsEmailSettingsOpen(true);
+    window.dispatchEvent(new CustomEvent('crm_email_accounts_updated'));
+    history.replaceState(null, '', window.location.pathname + window.location.hash);
+  }, [user]);
 
   const countInboundReplies = async (_contactList: Contact[]) => {
     try {
@@ -393,6 +424,19 @@ const CRMMain: React.FC = () => {
             setIsContactFormOpen(true);
           }}
         />
+
+        {emailAccounts.filter((a) => a.status === 'reauth_required').map((a) => (
+          <div key={a.id} className="mx-3 sm:mx-6 lg:mx-8 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
+            <span>Your Outlook mailbox <strong>{a.email}</strong> needs to be reconnected.</span>
+            <button
+              type="button"
+              onClick={() => connectOutlook().catch((e) => toastError('Could not connect Outlook', e.message))}
+              className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold cursor-pointer"
+            >
+              Reconnect
+            </button>
+          </div>
+        ))}
 
         <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
           {isLoading ? (

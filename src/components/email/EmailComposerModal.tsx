@@ -3,6 +3,7 @@ import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Contact, Interaction, EmailRecord } from '../../types/crm';
+import { MailboxPicker } from './MailboxPicker';
 import { sendEmailDirectly, resolveContactCompany } from '../../lib/emailService';
 import { cleanCompanyName, stripHtml } from '../../lib/utils';
 import { db, EmailDraft, DraftAttachment } from '../../lib/supabase';
@@ -151,7 +152,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
   const [interactions, setInteractions]     = useState<Interaction[]>([]);
   const [pastEmails, setPastEmails]         = useState<EmailRecord[]>([]);
   const [isSending, setIsSending]           = useState(false);
-  const [sandboxError, setSandboxError]     = useState<string | null>(null);
+  const [emailAccountId, setEmailAccountId] = useState<string | null>(null);
 
   // Toolbar popovers
   const [showEmojiPicker, setShowEmojiPicker]   = useState(false);
@@ -209,6 +210,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
       setCurrentDraftId(resumeDraft.id);
       setDraftSavedAt(resumeDraft.saved_at);
       setIsAiGenerated(resumeDraft.ai_generated || false);
+      setEmailAccountId(resumeDraft.email_account_id ?? null);
       if (resumeDraft.scheduled_at) setScheduledTime(new Date(resumeDraft.scheduled_at));
     } else {
       setRecipientEmail(contact.email || '');
@@ -222,7 +224,6 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
       setIsAiGenerated(false);
     }
 
-    setSandboxError(null);
     db.getInteractions(contact.id).then(setInteractions);
     db.getEmails(contact.id).then((emails) => setPastEmails(emails || []));
   }, [isOpen, contact, activeMember, initialSubject, initialBody, resumeDraft]);
@@ -416,6 +417,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
         body,
         ai_generated: isAiGenerated,
         sender_email: activeSenderEmail || null,
+        email_account_id: emailAccountId,
         attachments,
         ...(scheduledAt !== undefined && { scheduled_at: scheduledAt }),
       });
@@ -428,7 +430,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
     } finally {
       setIsSavingDraft(false);
     }
-  }, [isOpen, subject, recipientEmail, currentDraftId, contact.id, isAiGenerated, activeSenderEmail, attachments, onDraftSaved]);
+  }, [isOpen, subject, recipientEmail, currentDraftId, contact.id, isAiGenerated, activeSenderEmail, emailAccountId, attachments, onDraftSaved]);
 
   const scheduleAutoSave = useCallback(() => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -488,7 +490,6 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
     }
 
     setIsSending(true);
-    setSandboxError(null);
     try {
       const result = await sendEmailDirectly({
         contactId: contact.id,
@@ -499,6 +500,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
         senderId: activeMember?.id,
         senderName: activeSenderName,
         senderEmail: activeSenderEmail,
+        emailAccountId: emailAccountId ?? undefined,
         aiGenerated: isAiGenerated,
         logOnly,
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -515,12 +517,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
       if (onEmailSent) onEmailSent();
       onClose();
     } catch (err: any) {
-      const msg = err.message || '';
-      if (err.isSandboxRestricted || msg.includes('only send testing emails') || msg.includes('not verified') || msg.includes('resend.com/domains')) {
-        setSandboxError(msg);
-      } else {
-        error('Failed to send email', msg);
-      }
+      error('Failed to send email', err.message);
     } finally {
       setIsSending(false);
     }
@@ -569,6 +566,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
               </p>
             </div>
           </div>
+          <MailboxPicker value={emailAccountId} onChange={setEmailAccountId} />
           <span className="hidden md:flex text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold px-2.5 py-0.5 rounded-full items-center gap-1.5 shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             {activeSenderEmail || 'Dynamic Sender'}
@@ -577,33 +575,6 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
       }
     >
       <form onSubmit={handleSend} className="space-y-4">
-
-        {/* Sandbox Warning */}
-        {sandboxError && (
-          <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl space-y-2.5 text-xs text-amber-900 animate-in fade-in duration-200">
-            <div className="flex items-start gap-2 font-bold">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              {sandboxError.includes('not verified') ? 'Domain Verification Notice' : 'Resend Free Sandbox Limitation'}
-            </div>
-            <p className="text-[11px] leading-relaxed">
-              {sandboxError.includes('not verified') ? sandboxError : `Resend free tier only allows delivery to your registered account email (${ownerEmail}).`}
-            </p>
-            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/60">
-              <button type="button" onClick={() => { setRecipientEmail(ownerEmail); executeSend(false, ownerEmail); }}
-                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition flex items-center gap-1">
-                <Send className="w-3 h-3" /> Send test to {ownerEmail}
-              </button>
-              <button type="button" onClick={() => executeSend(true)}
-                className="px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-slate-800 font-semibold text-xs transition">
-                💾 Save to CRM anyway
-              </button>
-              <a href="https://resend.com/domains" target="_blank" rel="noreferrer"
-                className="text-[11px] text-amber-900 hover:underline font-semibold flex items-center gap-1 ml-auto">
-                Verify Custom Domain <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-          </div>
-        )}
 
         {/* Scheduled Send Banner */}
         {scheduledTime && (
@@ -692,7 +663,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
             </button>
           </div>
           <Input type="email" placeholder="recipient@example.com" value={recipientEmail}
-            onChange={(e) => { setRecipientEmail(e.target.value); setSandboxError(null); scheduleAutoSave(); }} required />
+            onChange={(e) => { setRecipientEmail(e.target.value); scheduleAutoSave(); }} required />
         </div>
 
         {/* Subject */}

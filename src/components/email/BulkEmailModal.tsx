@@ -9,6 +9,9 @@ import {
   resolveContactCompany,
 } from '../../lib/emailService';
 import { db, DraftAttachment } from '../../lib/supabase';
+import { MailboxPicker } from './MailboxPicker';
+import { shouldStopBulk } from '../../lib/bulkSend';
+import { listMyEmailAccounts } from '../../lib/emailAccounts';
 import { SCHEDULE_PRESETS } from './EmailComposerModal';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -141,6 +144,8 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
 
   const activeSenderEmail = (activeMember?.email || user?.email || '').trim();
   const activeSenderName = (activeMember?.name || user?.user_metadata?.full_name || 'Uday Raj').trim();
+
+  const [emailAccountId, setEmailAccountId] = useState<string | null>(null);
 
   // Core Template state
   const [activeTemplateKey, setActiveTemplateKey] = useState<BulkTemplateKey | 'ai_generated'>(initialTemplate);
@@ -472,6 +477,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
         body: substituteMergeFields(bodyTemplate, contact),
         ai_generated: activeTemplateKey === 'ai_generated',
         sender_email: activeSenderEmail || null,
+        email_account_id: emailAccountId,
         attachments,
         scheduled_at: when.toISOString(),
       });
@@ -523,6 +529,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
 
     let sentCount = 0;
     let failedCount = 0;
+    let stopError: (Error & { code?: string }) | null = null;
 
     for (let i = 0; i < contactsWithEmail.length; i++) {
       const contact = contactsWithEmail[i];
@@ -537,6 +544,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
           subject: customSub,
           body: customBody,
           senderEmail: activeSenderEmail || undefined,
+          emailAccountId: emailAccountId ?? undefined,
           senderId: activeMember?.id,
           senderName: activeSenderName,
           aiGenerated: activeTemplateKey === 'ai_generated',
@@ -545,6 +553,10 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
         sentCount++;
       } catch (err) {
         console.error('Failed sending to', contact.email, err);
+        if (shouldStopBulk(err)) {
+          stopError = err as Error & { code?: string };
+          break;
+        }
         failedCount++;
       }
 
@@ -555,7 +567,14 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
 
     setIsSending(false);
 
-    if (sentCount > 0) {
+    if (stopError) {
+      let msg = stopError.message;
+      if (stopError.code === 'DAILY_LIMIT') {
+        const email = (await listMyEmailAccounts().catch(() => [])).find((a) => a.id === emailAccountId)?.email ?? 'this mailbox';
+        msg = `Sent ${sentCount}. ${contactsWithEmail.length - sentCount} not sent: daily limit for ${email} reached.`;
+      }
+      error('Bulk send stopped', msg);
+    } else if (sentCount > 0) {
       success(
         'Bulk Outreach Dispatched!',
         `Successfully delivered to ${sentCount} contact${sentCount === 1 ? '' : 's'}.${
@@ -1276,8 +1295,9 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
 
           {/* Footer actions */}
           <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-slate-500 min-w-0">
-              Sender: <strong className="text-slate-800">{activeSenderName} • {serviceProfile.companyName}</strong>
+            <div className="text-xs text-slate-500 min-w-0 flex flex-wrap items-center gap-2">
+              <span>Sender: <strong className="text-slate-800">{activeSenderName} • {serviceProfile.companyName}</strong></span>
+              <MailboxPicker value={emailAccountId} onChange={setEmailAccountId} />
             </div>
 
             <div className="flex items-center gap-2 ml-auto">
