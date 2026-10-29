@@ -1,18 +1,28 @@
 /// <reference types="node" />
+import { timingSafeEqual } from 'node:crypto';
 import { adminDb } from './_lib/auth.js';
 import { encryptToken, verifyState } from './_lib/crypto.js';
 import { exchangeCode, getMe } from './_lib/graph.js';
 
 const fail = (res: any, reason: string) => res.redirect(302, `/?email_account=error&reason=${reason}`);
 
+const sameNonce = (a: string, b: string) => {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length > 0 && x.length === y.length && timingSafeEqual(x, y);
+};
+
 export default async function handler(req: any, res: any) {
   const q: Record<string, any> = req.query ?? Object.fromEntries(new URL(req.url ?? '', 'http://x').searchParams);
   const one = (v: unknown) => (Array.isArray(v) ? String(v[0] ?? '') : String(v ?? ''));
+  // The nonce is single-use: clear it on every outcome.
+  res.setHeader('Set-Cookie', 'eo_n=; Path=/api/email-oauth-callback; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+  const cookieNonce = /(?:^|;\s*)eo_n=([^;]*)/.exec(String(req.headers?.cookie ?? ''))?.[1] ?? '';
 
   let step = 'state';
   try {
     const st = verifyState(one(q.state));
-    if (!st) return fail(res, 'state');
+    if (!st || !sameNonce(cookieNonce, st.n)) return fail(res, 'state');
     if (q.error) return fail(res, 'denied');
     const code = one(q.code);
     if (!code) return fail(res, 'token');

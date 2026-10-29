@@ -29,20 +29,21 @@ const hmac = (data: string) =>
     .update(data)
     .digest();
 
-export function signState(uid: string, ttlMs = 600_000): string {
-  const payload = Buffer.from(JSON.stringify({ uid, exp: Date.now() + ttlMs, n: randomBytes(8).toString('hex') })).toString('base64url');
+// n is the browser nonce: the callback only accepts the state alongside a matching eo_n cookie.
+export function signState(uid: string, n: string, ttlMs = 600_000): string {
+  const payload = Buffer.from(JSON.stringify({ uid, exp: Date.now() + ttlMs, n })).toString('base64url');
   return `${payload}.${hmac(payload).toString('base64url')}`;
 }
 
-export function verifyState(state: string): { uid: string } | null {
+export function verifyState(state: string): { uid: string; n: string } | null {
   const [payload, sig] = String(state).split('.');
   if (!payload || !sig) return null;
   const want = hmac(payload);
   const got = Buffer.from(sig, 'base64url');
   if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
   try {
-    const { uid, exp } = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    return typeof uid === 'string' && typeof exp === 'number' && exp > Date.now() ? { uid } : null;
+    const { uid, exp, n } = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return typeof uid === 'string' && typeof n === 'string' && n && typeof exp === 'number' && exp > Date.now() ? { uid, n } : null;
   } catch {
     return null;
   }

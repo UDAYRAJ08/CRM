@@ -26,15 +26,15 @@ describe('token crypto', () => {
 
 describe('oauth state', () => {
   it('verifyState accepts its own state', () => {
-    expect(verifyState(signState('u1'))).toEqual({ uid: 'u1' });
+    expect(verifyState(signState('u1', 'n1'))).toEqual({ uid: 'u1', n: 'n1' });
   });
 
   it('rejects tampered state', () => {
-    const [p, s] = signState('u1').split('.');
+    const [p, s] = signState('u1', 'n1').split('.');
     expect(verifyState(`${flip(p)}.${s}`)).toBeNull();
   });
 
   it('rejects expired state', () => {
-    expect(verifyState(signState('u1', -1))).toBeNull();
+    expect(verifyState(signState('u1', 'n1', -1))).toBeNull();
   });
 });

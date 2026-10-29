@@ -27,6 +27,8 @@ function mockRes() {
   res.status = (c: number) => ((res.statusCode = c), res);
   res.json = (b: unknown) => ((res.body = b), res);
   res.redirect = (c: number, url: string) => ((res.statusCode = c), (res.location = url), res);
+  res.headers = {} as Record<string, string>;
+  res.setHeader = (k: string, v: string) => ((res.headers[k.toLowerCase()] = v), res);
   return res;
 }
 
@@ -65,16 +67,43 @@ describe('outlook oauth', () => {
     expect(verifyState(u.searchParams.get('state')!)?.uid).toBe('u1');
   });
 
+  it('start: sets an HttpOnly nonce cookie equal to the state nonce', async () => {
+    vi.mocked(requireUser).mockResolvedValue({ id: 'u1', email: 'a@b.c' });
+    const res = mockRes();
+    await start({ method: 'POST', headers: {} }, res);
+    const st = verifyState(new URL(res.body.url).searchParams.get('state')!);
+    const cookie = res.headers['set-cookie'] as string;
+    expect(cookie).toMatch(/^eo_n=[^;]+; Path=\/api\/email-oauth-callback; HttpOnly; Secure; SameSite=Lax; Max-Age=600$/);
+    expect(st?.n).toBeTruthy();
+    expect(cookie.slice(5, cookie.indexOf(';'))).toBe(st?.n);
+  });
+
+  it('callback: rejects a valid state with no nonce cookie', async () => {
+    const res = mockRes();
+    await callback({ method: 'GET', headers: {}, query: { code: 'c', state: signState('u1', 'n1') } }, res);
+    expect(res.location).toBe('/?email_account=error&reason=state');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(res.headers['set-cookie']).toContain('Max-Age=0');
+  });
+
+  it('callback: rejects a valid state with a different nonce cookie', async () => {
+    const res = mockRes();
+    await callback({ method: 'GET', headers: { cookie: 'a=1; eo_n=other' }, query: { code: 'c', state: signState('u1', 'n1') } }, res);
+    expect(res.location).toBe('/?email_account=error&reason=state');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
   it('callback: rejects tampered state', async () => {
     const res = mockRes();
-    await callback({ method: 'GET', query: { code: 'c', state: signState('u1') + 'x' } }, res);
+    await callback({ method: 'GET', query: { code: 'c', state: signState('u1', 'n1') + 'x' } }, res);
     expect(res.location).toContain('email_account=error');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('callback: rejects expired state', async () => {
     const res = mockRes();
-    await callback({ method: 'GET', query: { code: 'c', state: signState('u1', -1) } }, res);
+    await callback({ method: 'GET', headers: { cookie: 'eo_n=n1' }, query: { code: 'c', state: signState('u1', 'n1', -1) } }, res);
     expect(res.location).toContain('email_account=error');
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -84,8 +113,9 @@ describe('outlook oauth', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'AT', refresh_token: 'RT', expires_in: 3600 })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ mail: 'Me@Corp.com', displayName: 'Me' })));
     const res = mockRes();
-    await callback({ method: 'GET', query: { code: 'c', state: signState('u1') } }, res);
+    await callback({ method: 'GET', headers: { cookie: 'x=y; eo_n=n1' }, query: { code: 'c', state: signState('u1', 'n1') } }, res);
     expect(res.location).toBe('/?email_account=connected');
+    expect(res.headers['set-cookie']).toBe('eo_n=; Path=/api/email-oauth-callback; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
     const [row, opts] = upsert.mock.calls[0];
     expect(opts.onConflict).toBe('auth_user_id,email');
     expect(row.email).toBe('me@corp.com');
@@ -97,7 +127,7 @@ describe('outlook oauth', () => {
 
   it('callback: microsoft error redirects with reason=denied', async () => {
     const res = mockRes();
-    await callback({ method: 'GET', query: { error: 'access_denied', state: signState('u1') } }, res);
+    await callback({ method: 'GET', headers: { cookie: 'eo_n=n1' }, query: { error: 'access_denied', state: signState('u1', 'n1') } }, res);
     expect(res.location).toBe('/?email_account=error&reason=denied');
   });
 });
