@@ -31,6 +31,7 @@ async function sendDue(sender: { id?: string; name?: string }): Promise<Schedule
         senderId: sender.id,
         senderName: sender.name,
         senderEmail: draft.sender_email || undefined,
+        emailAccountId: draft.email_account_id || undefined,
         aiGenerated: draft.ai_generated,
         attachments: draft.attachments?.length ? draft.attachments : undefined,
       });

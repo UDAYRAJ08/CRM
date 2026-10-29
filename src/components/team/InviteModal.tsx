@@ -3,7 +3,7 @@ import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
-import { sendEmailDirectly } from '../../lib/emailService';
+import { sendSystemEmail, buildEmailHtml } from '../../lib/emailService';
 import {
   X,
   Mail,
@@ -41,7 +41,6 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
   const { success, error, info } = useToast();
   const { canManageTeam, isAdmin } = usePermissions();
 
-  const activeSenderEmail = (activeMember?.email || user?.email || '').trim();
   const activeSenderName = (activeMember?.name || user?.user_metadata?.full_name || 'Administrator').trim();
 
   const [inviteName, setInviteName] = useState('');
@@ -138,33 +137,20 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
 
     setIsSending(true);
     try {
-      const res = await sendEmailDirectly({
-        recipientEmail: email,
-        recipientName: name || 'Colleague',
-        subject: emailSubject,
-        body: emailBody,
-        senderEmail: activeSenderEmail || undefined,
-        senderName: senderName,
-        senderId: activeMember?.id,
-      });
-
-      if (res.success) {
-        success('Invitation Dispatched!', `An invite email was sent to ${email}`);
-        const newRecord: PendingInvite = {
-          id: crypto.randomUUID(),
-          name: name || 'Colleague',
-          email: email,
-          role: inviteRole,
-          sentAt: new Date().toISOString(),
-          status: 'sent',
-        };
-        saveInvites([newRecord, ...invitesHistory.filter((i) => i.email !== email)]);
-        setInviteEmail('');
-        setInviteName('');
-        setCustomNote('');
-      } else {
-        error('Delivery Notice', res.message || 'Could not send direct email. You can copy the invite link instead.');
-      }
+      await sendSystemEmail({ to: email, subject: emailSubject, html: buildEmailHtml(emailBody) });
+      success('Invitation Dispatched!', `An invite email was sent to ${email}`);
+      const newRecord: PendingInvite = {
+        id: crypto.randomUUID(),
+        name: name || 'Colleague',
+        email: email,
+        role: inviteRole,
+        sentAt: new Date().toISOString(),
+        status: 'sent',
+      };
+      saveInvites([newRecord, ...invitesHistory.filter((i) => i.email !== email)]);
+      setInviteEmail('');
+      setInviteName('');
+      setCustomNote('');
     } catch (err: any) {
       error('Invite Error', err.message || 'Failed to deliver invitation.');
     } finally {

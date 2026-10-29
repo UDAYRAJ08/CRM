@@ -22,7 +22,7 @@ import {
   Cpu,
   Lock,
 } from 'lucide-react';
-import { sendEmailDirectly } from '../../lib/emailService';
+import { sendSystemEmail, buildEmailHtml } from '../../lib/emailService';
 import { AISettingsModal } from './AISettingsModal';
 import { usePermissions } from '../../hooks/usePermissions';
 import {
@@ -145,22 +145,14 @@ export const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
     localStorage.setItem('crm_use_composio', useComposio ? 'true' : 'false');
 
     try {
-      const res = await sendEmailDirectly({
-        recipientEmail: targetEmail,
-        subject: `🎉 CRM Multi-User Email Test from ${activeUserName}`,
-        body: `Hello!\n\nThis is a dynamic test email sent from the CRM workspace.\n\nSender Identity:\n• Name: ${activeUserName}\n• Email: ${activeUserEmail || 'Not specified'}\n• Mode: ${useComposio ? 'Composio Outlook' : 'Direct Transactional Engine'}\n\nReplies to this message will be routed directly to ${activeUserEmail || 'the sender'}.`,
-        senderEmail: activeUserEmail || undefined,
-        senderName: activeUserName,
-        senderId: activeMember?.id,
+      const body = `Hello!\n\nThis is a test email sent from the CRM workspace by ${activeUserName}.`;
+      await sendSystemEmail({
+        to: targetEmail,
+        subject: `CRM email test from ${activeUserName}`,
+        html: buildEmailHtml(body),
       });
-
-      if (res.success) {
-        setTestResult(`Success! Dispatched via ${res.provider || 'CRM Engine'} to ${targetEmail}`);
-        success('Email Dispatched!', `Test email sent to ${targetEmail}`);
-      } else {
-        setTestResult(`Notice: ${res.message || 'Logged in CRM'}`);
-        info('Email Recorded', res.message || 'Logged in CRM history');
-      }
+      setTestResult(`Success! Dispatched to ${targetEmail}`);
+      success('Email Dispatched!', `Test email sent to ${targetEmail}`);
     } catch (err: any) {
       setTestResult(`Error: ${err.message}`);
       error('Test Failed', err.message);

@@ -1,6 +1,7 @@
 import { db, supabase, DraftAttachment } from './supabase';
 import { EmailRecord, Contact, Reminder } from '../types/crm';
 import { cleanCompanyName } from './utils';
+import { apiPost } from './emailAccounts';
 
 // Auto follow-up sequence per contact: first email -> Follow-up 1 -> Follow-up 2 -> done.
 export const FOLLOW_UP_STEPS = 2;
@@ -61,6 +62,7 @@ export interface SendEmailParams {
   aiGenerated?: boolean;
   logOnly?: boolean;
   attachments?: DraftAttachment[];
+  emailAccountId?: string;
 }
 
 export interface SendEmailResult {
@@ -106,362 +108,62 @@ export async function composioFetch(payload: unknown): Promise<Response> {
   return fetch('/api/composio', { method: 'POST', headers, body: JSON.stringify(payload) });
 }
 
-// Helper: Dispatch via Composio (supports both Gmail & Outlook)
-async function sendViaComposio(
-  recipient: string,
-  subject: string,
-  body: string,
-  userEmail?: string
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const isGmailSender = userEmail && /@(gmail\.com|googlemail\.com)$/i.test(userEmail);
+const SEND_ERRORS: Record<string, (d: any) => string> = {
+  AUTH: () => 'Please sign in again to send email.',
+  NO_MAILBOX: () => 'Connect your Outlook mailbox in Email settings to send email.',
+  REAUTH_REQUIRED: () => 'Your Outlook connection expired. Reconnect it in Email settings.',
+  DAILY_LIMIT: (d) => `Daily sending limit reached for this mailbox (${d.limit}/day). Try again tomorrow.`,
+  TOO_LARGE: () => 'Attachments are over 3 MB. Remove some and try again.',
+};
 
-    const htmlContent = buildEmailHtml(body);
-
-    const toolsToAttempt = isGmailSender
-      ? [
-          {
-            tool_slug: 'GMAIL_SEND_EMAIL',
-            arguments: {
-              recipient_email: recipient.trim(),
-              subject: subject.trim(),
-              body: htmlContent,
-              is_html: true,
-            },
-          },
-          {
-            tool_slug: 'OUTLOOK_SEND_EMAIL',
-            arguments: {
-              to: recipient.trim(),
-              subject: subject.trim(),
-              body: htmlContent,
-              is_html: true,
-            },
-          },
-        ]
-      : [
-          {
-            tool_slug: 'OUTLOOK_SEND_EMAIL',
-            arguments: {
-              to: recipient.trim(),
-              subject: subject.trim(),
-              body: htmlContent,
-              is_html: true,
-            },
-          },
-          {
-            tool_slug: 'GMAIL_SEND_EMAIL',
-            arguments: {
-              recipient_email: recipient.trim(),
-              subject: subject.trim(),
-              body: htmlContent,
-              is_html: true,
-            },
-          },
-        ];
-
-    const res = await composioFetch({
-      jsonrpc: '2.0',
-      id: Date.now(),
-      method: 'tools/call',
-      params: {
-        name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
-        arguments: {
-          current_step: 'SENDING_EMAIL',
-          sync_response_to_workbench: false,
-          tools: toolsToAttempt,
-        },
-      },
-    });
-
-    const resText = await res.text();
-    if (
-      resText.includes('"successful":true') ||
-      resText.includes('"status_code":202') ||
-      resText.includes('202')
-    ) {
-      return { success: true };
-    }
-    return { success: false, error: `Composio error: ${resText.slice(0, 180)}` };
-  } catch (err: any) {
-    return { success: false, error: `Composio network error: ${err.message}` };
-  }
+function apiError(status: number, data: any): Error {
+  const err: any = new Error(
+    SEND_ERRORS[data?.code]?.(data) || data?.message || data?.error || `Email could not be sent (HTTP ${status})`
+  );
+  err.code = data?.code;
+  return err;
 }
 
-// Helper: Dispatch via Resend REST API
-async function sendViaResend(
-  apiKey: string,
-  from: string,
-  to: string,
-  replyTo: string,
-  subject: string,
-  body: string,
-  attachments?: DraftAttachment[]
-): Promise<{
-  success: boolean;
-  data?: any;
-  error?: string;
-  status?: number;
-  isDomainUnverified?: boolean;
-  isSandboxRestricted?: boolean;
-}> {
-  try {
-    // Same-origin proxy (vite.config.ts in dev, vercel.json in prod): Resend's API rejects browser CORS requests.
-    const endpoint = '/api/resend/emails';
-
-    const isHtml = /<[a-z][\s\S]*>/i.test(body);
-    const plainText = isHtml
-      ? body
-          .replace(/<br\s*[\/]?>/gi, '\n')
-          .replace(/<\/p>/gi, '\n\n')
-          .replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1')
-          .replace(/<[^>]+>/g, '')
-          .replace(/&nbsp;/gi, ' ')
-          .replace(/&amp;/gi, '&')
-          .replace(/&lt;/gi, '<')
-          .replace(/&gt;/gi, '>')
-          .trim()
-      : body.trim();
-    const htmlBody = buildEmailHtml(body);
-
-    const payload: any = {
-      from: from.trim(),
-      to: [to.trim()],
-      reply_to: replyTo.trim(),
-      subject: subject.trim(),
-      text: plainText,
-      html: htmlBody,
-    };
-
-    if (attachments && attachments.length > 0) {
-      payload.attachments = attachments.map((att) => ({
-        filename: att.name,
-        content: att.dataUrl.includes('base64,') ? att.dataUrl.split('base64,')[1] : att.dataUrl,
-      }));
-    }
-
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await res.json();
-    if (res.ok && data.id) {
-      return { success: true, data };
-    }
-
-    const errMsg = data.message || data.error || 'Email delivery failed';
-    const isDomainUnverified = Boolean(
-      errMsg &&
-        (errMsg.includes('not verified') ||
-          errMsg.includes('resend.com/domains') ||
-          errMsg.includes('validation_error') ||
-          res.status === 403)
-    );
-    const isSandboxRestricted = Boolean(
-      errMsg &&
-        (errMsg.includes('only send testing emails to your own email address') ||
-          res.status === 422)
-    );
-
-    return {
-      success: false,
-      data,
-      error: errMsg,
-      status: res.status,
-      isDomainUnverified,
-      isSandboxRestricted,
-    };
-  } catch (err: any) {
-    return {
-      success: false,
-      error: `Delivery network error: ${err.message}`,
-    };
-  }
+/** Team invites and settings tests: sent by the system via Resend, not from a user's mailbox. */
+export async function sendSystemEmail(p: { to: string; subject: string; html: string }): Promise<void> {
+  const { ok, status, data } = await apiPost('/api/system-email', p);
+  if (!ok) throw apiError(status, data);
 }
 
 export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEmailResult> {
-  // Configuration options
-  const composioApiKey =
-    localStorage.getItem('crm_composio_api_key') ||
-    import.meta.env.VITE_COMPOSIO_API_KEY;
-
-  const resendApiKey =
-    localStorage.getItem('crm_resend_api_key') ||
-    import.meta.env.VITE_RESEND_API_KEY;
-
-  // Composio (the user's own Outlook/Gmail) is the default sender; Resend only when switched off in settings
-  // or VITE_EMAIL_PROVIDER=resend. The Composio key lives on the server, so no client key is required.
-  const localUseComposio = localStorage.getItem('crm_use_composio');
-  const shouldUseComposio =
-    localUseComposio !== null
-      ? localUseComposio === 'true'
-      : import.meta.env.VITE_EMAIL_PROVIDER !== 'resend';
-
-  if (shouldUseComposio && !params.logOnly && params.attachments?.length) {
-    // sendViaComposio has no attachment support: refuse rather than silently send without them.
-    throw new Error(
-      'Attachments are not supported when sending through Outlook/Gmail (Composio). Remove the attachments, or switch to Resend in Email settings.'
-    );
-  }
-
-  // Dynamic user and workspace sender resolution
-  const workspaceSender =
-    localStorage.getItem('crm_sender_email') ||
-    import.meta.env.VITE_RESEND_FROM_EMAIL ||
-    'CRM Team <onboarding@resend.dev>';
-
-  const companyDomain = (localStorage.getItem('crm_company_domain') || '').trim();
-
-  // Active user's personal sender details
-  const activeUserEmail = (params.senderEmail || localStorage.getItem('crm_active_user_email') || '').trim();
-  const activeUserName = (params.senderName || 'Team Member').trim();
-
-  // Determine effective From header and Reply-To
-  let effectiveFrom: string;
-  let effectiveReplyTo: string = (params.replyTo || activeUserEmail || workspaceSender).trim();
-
-  const isPublicWebmail = /@(gmail\.com|googlemail\.com|yahoo\.com|outlook\.com|hotmail\.com|icloud\.com|aol\.com)$/i.test(activeUserEmail);
-
-  if (activeUserEmail && isPublicWebmail) {
-    // Public webmail domains cannot be placed directly into third-party SMTP 'From' headers due to SPF/DMARC rejection.
-    // They are dispatched via the verified gateway with the user's name, and direct Reply-To pointing straight to their personal inbox.
-    const baseGatewayEmail = workspaceSender.includes('<') && workspaceSender.includes('>')
-      ? workspaceSender.substring(workspaceSender.indexOf('<') + 1, workspaceSender.indexOf('>'))
-      : workspaceSender.trim();
-    effectiveFrom = `"${activeUserName}" <${baseGatewayEmail}>`;
-    effectiveReplyTo = activeUserEmail;
-  } else if (activeUserEmail && companyDomain && activeUserEmail.toLowerCase().endsWith(companyDomain.toLowerCase())) {
-    // 1. Direct Company Domain delivery: from "Jane Doe <jane@company.com>"
-    effectiveFrom = `"${activeUserName}" <${activeUserEmail}>`;
-    effectiveReplyTo = activeUserEmail;
-  } else if (activeUserEmail && workspaceSender && !workspaceSender.toLowerCase().includes(activeUserEmail.toLowerCase())) {
-    // 2. Gateway Domain delivery: "Jane Doe via CRM <team@domain.com>" with reply-to going directly to Jane
-    const baseGatewayEmail = workspaceSender.includes('<') && workspaceSender.includes('>')
-      ? workspaceSender.substring(workspaceSender.indexOf('<') + 1, workspaceSender.indexOf('>'))
-      : workspaceSender.trim();
-    effectiveFrom = `"${activeUserName}" <${baseGatewayEmail}>`;
-    effectiveReplyTo = activeUserEmail;
-  } else if (activeUserEmail) {
-    // 3. User specified from
-    effectiveFrom = `"${activeUserName}" <${activeUserEmail}>`;
-    effectiveReplyTo = activeUserEmail;
-  } else {
-    // 4. Default fallback
-    effectiveFrom = workspaceSender;
-  }
-
-  let remoteSuccess = false;
-  let remoteError: string | null = null;
+  let senderEmail = (params.senderEmail || localStorage.getItem('crm_active_user_email') || '').trim();
+  let accountId: string | null = params.emailAccountId || null;
   let providerUsed = 'CRM Engine';
-  let isSandboxRestricted = false;
-  let warningMessage: string | undefined = undefined;
 
-  // If user explicitly chose log-only mode
   if (!params.logOnly) {
-    // 1. If Composio is preferred, try Composio first
-    if (shouldUseComposio) {
-      const cRes = await sendViaComposio(params.recipientEmail, params.subject, params.body, activeUserEmail);
-      if (cRes.success) {
-        remoteSuccess = true;
-        providerUsed = isPublicWebmail ? 'Composio Gmail' : 'Composio Outlook';
-      } else {
-        remoteError = cRes.error || null;
-      }
-    }
-
-    // 2. Resend, only when Composio is switched off (never as a silent second sender)
-    if (!shouldUseComposio && resendApiKey) {
-      let resendRes = await sendViaResend(
-        resendApiKey,
-        effectiveFrom,
-        params.recipientEmail,
-        effectiveReplyTo,
-        params.subject,
-        params.body,
-        params.attachments
-      );
-
-      // If failed due to unverified custom domain (e.g. ingversionsdigital.com not verified on resend.com/domains)
-      if (!resendRes.success && resendRes.isDomainUnverified) {
-        console.warn(`Resend domain in '${effectiveFrom}' is unverified on resend.com/domains.`);
-
-        // Seamless failover to Composio if key is present
-        if (composioApiKey) {
-          console.info('Auto-failover to Composio for verified inbox delivery...');
-          const cRes = await sendViaComposio(params.recipientEmail, params.subject, params.body, activeUserEmail);
-          if (cRes.success) {
-            remoteSuccess = true;
-            providerUsed = isPublicWebmail ? 'Composio Gmail (Failover)' : 'Composio Outlook (Failover)';
-          } else {
-            remoteError = cRes.error || null;
-          }
-        }
-
-        // If still not sent, retry via Resend default sandbox domain
-        if (!remoteSuccess) {
-          const sandboxFrom = `"${activeUserName}" <onboarding@resend.dev>`;
-          console.info(`Retrying via Resend Sandbox (${sandboxFrom})...`);
-          resendRes = await sendViaResend(
-            resendApiKey,
-            sandboxFrom,
-            params.recipientEmail,
-            effectiveReplyTo,
-            params.subject,
-            params.body,
-            params.attachments
-          );
-          if (resendRes.success) {
-            remoteSuccess = true;
-            providerUsed = `Resend Sandbox (${activeUserName})`;
-          }
-        }
-      }
-
-      if (resendRes.success) {
-        remoteSuccess = true;
-        if (!providerUsed || providerUsed === 'CRM Engine') {
-          providerUsed = `Resend (${activeUserName})`;
-        }
-      } else if (!remoteSuccess) {
-        remoteError = resendRes.error || remoteError;
-        if (resendRes.isSandboxRestricted || resendRes.isDomainUnverified) {
-          isSandboxRestricted = true;
-        }
-      }
-    }
-
-    // 3. Fallback to Composio if Resend failed and Composio wasn't attempted
-    if (!remoteSuccess && composioApiKey && !shouldUseComposio) {
-      console.info('Attempting fallback delivery via Composio...');
-      const cRes = await sendViaComposio(params.recipientEmail, params.subject, params.body, activeUserEmail);
-      if (cRes.success) {
-        remoteSuccess = true;
-        providerUsed = isPublicWebmail ? 'Composio Gmail (Fallback)' : 'Composio Outlook (Fallback)';
-      }
-    }
-  }
-
-  if (!shouldUseComposio && !resendApiKey && !remoteSuccess && !params.logOnly) {
-    warningMessage = 'Logged to CRM history. (To deliver to real inboxes, configure your email provider in Settings)';
+    // Nothing is saved on failure: the email was not sent.
+    const { ok, status, data } = await apiPost<{ from: string; accountId: string }>('/api/email-send', {
+      emailAccountId: params.emailAccountId,
+      to: params.recipientEmail,
+      subject: params.subject,
+      html: buildEmailHtml(params.body),
+      replyTo: params.replyTo,
+      attachments: params.attachments?.map((a) => ({ name: a.name, dataUrl: a.dataUrl })),
+    });
+    if (!ok) throw apiError(status, data);
+    senderEmail = data.from;
+    accountId = data.accountId;
+    providerUsed = `Outlook (${data.from})`;
   }
 
   // Record into CRM database & contact interaction log with accurate sender_email
   const record = await db.saveEmail({
     contact_id: params.contactId || null,
     recipient_email: params.recipientEmail,
-    sender_email: activeUserEmail || effectiveReplyTo,
+    sender_email: senderEmail,
+    email_account_id: accountId,
     subject: params.subject,
     body: params.body,
     ai_generated: params.aiGenerated || false,
     sent_by: params.senderId || null,
     sent_at: new Date().toISOString(),
-    status: remoteSuccess ? 'sent' : 'failed',
-    error_message: remoteError,
+    status: 'sent',
+    error_message: null,
   });
 
   // Also log an interaction of type 'email' under the contact with full communication history
@@ -480,51 +182,37 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
     });
 
     // 2. Advance the auto follow-up sequence (Follow-up 1 -> Follow-up 2 -> done).
-    // A failed send is about to throw below, so it must not advance the sequence.
-    const sendFailed = !remoteSuccess && Boolean(remoteError) && !params.logOnly;
-    if (!sendFailed) {
-      try {
-        const plan = planFollowUp(
-          await db.getReminders(),
-          params.contactId,
-          lastReplyTime(await db.getEmails(params.contactId))
-        );
-        const nowIso = new Date().toISOString();
-        for (const r of plan.complete) {
-          await db.saveReminder({ ...r, done: true, completed_at: nowIso });
-        }
-        if (plan.nextStep) {
-          await db.saveReminder({
-            contact_id: params.contactId,
-            assigned_to: params.senderId || plan.complete[0]?.assigned_to || null,
-            due_date: new Date(Date.now() + FOLLOW_UP_DELAY_MS).toISOString(),
-            note: `Follow-up ${plan.nextStep}: Send follow-up email ${plan.nextStep} if ${params.recipientName || 'lead'} does not reply within 3 days.`,
-            done: false,
-          });
-        }
-      } catch (reminderErr) {
-        console.warn('Failed to auto-schedule follow-up reminder:', reminderErr);
+    try {
+      const plan = planFollowUp(
+        await db.getReminders(),
+        params.contactId,
+        lastReplyTime(await db.getEmails(params.contactId))
+      );
+      const nowIso = new Date().toISOString();
+      for (const r of plan.complete) {
+        await db.saveReminder({ ...r, done: true, completed_at: nowIso });
       }
+      if (plan.nextStep) {
+        await db.saveReminder({
+          contact_id: params.contactId,
+          assigned_to: params.senderId || plan.complete[0]?.assigned_to || null,
+          due_date: new Date(Date.now() + FOLLOW_UP_DELAY_MS).toISOString(),
+          note: `Follow-up ${plan.nextStep}: Send follow-up email ${plan.nextStep} if ${params.recipientName || 'lead'} does not reply within 3 days.`,
+          done: false,
+        });
+      }
+    } catch (reminderErr) {
+      console.warn('Failed to auto-schedule follow-up reminder:', reminderErr);
     }
-  }
-
-  // If live delivery was attempted and failed, throw error
-  if (!remoteSuccess && remoteError && !params.logOnly) {
-    const customErr: any = new Error(remoteError);
-    customErr.isSandboxRestricted = isSandboxRestricted;
-    customErr.record = record;
-    throw customErr;
   }
 
   return {
     success: true,
-    message: remoteSuccess
-      ? `Email delivered to ${params.recipientEmail} via ${providerUsed}!`
-      : `Email saved to CRM history.`,
+    message: params.logOnly
+      ? `Email saved to CRM history.`
+      : `Email delivered to ${params.recipientEmail} via ${providerUsed}!`,
     record,
     provider: providerUsed,
-    warning: warningMessage,
-    isSandboxRestricted,
   };
 }
 
