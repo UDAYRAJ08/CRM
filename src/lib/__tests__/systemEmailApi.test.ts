@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('../../../api/_lib/auth.js', () => ({ requireUser: vi.fn(), adminDb: vi.fn() }));
 
 import handler from '../../../api/system-email';
-import { requireUser } from '../../../api/_lib/auth.js';
+import { requireUser, adminDb } from '../../../api/_lib/auth.js';
 
 function mockRes() {
   const res: any = { statusCode: 200, body: undefined as unknown };
@@ -14,6 +14,9 @@ function mockRes() {
 
 const body = { to: 'x@y.com', subject: 'Hi', html: '<p>yo</p>' };
 
+let teamRow: { data: any; error: any };
+const teamEqs: [string, unknown][] = [];
+
 describe('api/system-email', () => {
   const fetchMock = vi.fn();
   beforeEach(() => {
@@ -21,6 +24,10 @@ describe('api/system-email', () => {
     process.env.RESEND_API_KEY = 'server-key';
     process.env.RESEND_FROM_EMAIL = 'CRM <crm@x.com>';
     vi.stubGlobal('fetch', fetchMock);
+    teamRow = { data: { id: 'tm1' }, error: null };
+    teamEqs.length = 0;
+    const q: any = { select: () => q, eq: (k: string, v: unknown) => (teamEqs.push([k, v]), q), maybeSingle: async () => teamRow };
+    (adminDb as any).mockReturnValue({ from: (t: string) => (t === 'team_members' ? q : null) });
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -33,6 +40,26 @@ describe('api/system-email', () => {
     const res = mockRes();
     await handler({ method: 'POST', headers: {}, body }, res);
     expect(res.statusCode).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('403 for a signed-in user who is not a team member', async () => {
+    (requireUser as any).mockResolvedValue({ id: 'stranger', email: null });
+    teamRow = { data: null, error: null };
+    const res = mockRes();
+    await handler({ method: 'POST', headers: {}, body }, res);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ code: 'FORBIDDEN', error: 'Only team members can send system email.' });
+    expect(teamEqs).toContainEqual(['auth_user_id', 'stranger']);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('403 when the team lookup errors', async () => {
+    (requireUser as any).mockResolvedValue({ id: 'u1', email: null });
+    teamRow = { data: null, error: { message: 'x' } };
+    const res = mockRes();
+    await handler({ method: 'POST', headers: {}, body }, res);
+    expect(res.statusCode).toBe(403);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

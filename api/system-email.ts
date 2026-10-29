@@ -1,12 +1,21 @@
 /// <reference types="node" />
-import { requireUser } from './_lib/auth.js';
+import { adminDb, requireUser } from './_lib/auth.js';
 
-// shortcut: any signed-in user can send system mail to any address, restrict to admins/invites if abused
+// Only team members may send system mail (invites, settings tests); a bare sign-up cannot.
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ code: 'METHOD' });
   let user;
   try { user = await requireUser(req); } catch { user = null; }
   if (!user) return res.status(401).json({ code: 'UNAUTHORIZED' });
+
+  let member: unknown = null;
+  try {
+    const { data, error } = await adminDb().from('team_members').select('id').eq('auth_user_id', user.id).maybeSingle();
+    member = error ? null : data;
+  } catch {
+    member = null;
+  }
+  if (!member) return res.status(403).json({ code: 'FORBIDDEN', error: 'Only team members can send system email.' });
 
   const { to, subject, html } = req.body || {};
   if (typeof to !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || !subject || typeof subject !== 'string' || !html || typeof html !== 'string') {
