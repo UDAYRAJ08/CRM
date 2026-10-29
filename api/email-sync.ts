@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { requireUser, adminDb } from './_lib/auth.js';
-import { GraphError, getFreshAccessToken, listInbox, type AccountRow } from './_lib/graph.js';
+import { GraphError, expireOnGraph401, getFreshAccessToken, listInbox, type AccountRow } from './_lib/graph.js';
 
 // Returns recent inbox messages per connected mailbox; the browser does reply matching.
 export default async function handler(req: any, res: any) {
@@ -15,7 +15,15 @@ export default async function handler(req: any, res: any) {
   const accounts = (data || []) as AccountRow[];
 
   const results = await Promise.allSettled(
-    accounts.map(async (a) => listInbox(await getFreshAccessToken(db, a))),
+    accounts.map(async (a) => {
+      const token = await getFreshAccessToken(db, a);
+      try {
+        return await listInbox(token);
+      } catch (e) {
+        await expireOnGraph401(db, a.id, e);
+        throw e;
+      }
+    }),
   );
   const mailboxes: { accountId: string; email: string; messages: any[] }[] = [];
   const errors: { accountId: string; code: string }[] = [];

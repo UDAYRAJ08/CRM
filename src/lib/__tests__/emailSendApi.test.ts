@@ -25,16 +25,19 @@ const req = (b: any = body, method = 'POST') => ({ method, headers: { authorizat
 let account: any;
 let eqs: [string, unknown][];
 let rpcResult: { data: any; error: any };
+let updates: any[];
 
 beforeEach(() => {
   vi.resetAllMocks();
   eqs = [];
+  updates = [];
   account = { id: 'acc1', email: 'me@corp.com', status: 'active' };
   rpcResult = { data: true, error: null };
   vi.mocked(requireUser).mockResolvedValue({ id: 'u1', email: 'me@corp.com' });
   const q: any = {
     select: () => q,
     eq: (k: string, v: unknown) => (eqs.push([k, v]), q),
+    update: (v: unknown) => (updates.push(v), q),
     maybeSingle: async () => ({ data: account, error: null }),
   };
   vi.mocked(adminDb).mockReturnValue({ from: () => q, rpc: async () => rpcResult } as any);
@@ -109,6 +112,19 @@ describe('api/email-send', () => {
     await handler(req(), res);
     expect(res.statusCode).toBe(409);
     expect(res.body).toEqual({ code: 'REAUTH_REQUIRED' });
+  });
+
+  it('Graph 401 on send: 409 and expires the stored token without marking reauth', async () => {
+    vi.mocked(sendMail).mockRejectedValue(new GraphError('REAUTH_REQUIRED', 401));
+    const before = Date.now();
+    const res = mockRes();
+    await handler(req(), res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ code: 'REAUTH_REQUIRED' });
+    expect(updates).toHaveLength(1);
+    expect(Object.keys(updates[0])).toEqual(['expires_at']);
+    expect(new Date(updates[0].expires_at).getTime()).toBeGreaterThanOrEqual(before - 1000);
+    expect(eqs).toContainEqual(['id', 'acc1']);
   });
 
   it('409 when the account is already reauth_required', async () => {

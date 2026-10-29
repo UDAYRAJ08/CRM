@@ -128,7 +128,13 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
       replyTo: params.replyTo,
       attachments: params.attachments?.map((a) => ({ name: a.name, dataUrl: a.dataUrl })),
     });
-    if (!ok) throw apiError(status, data);
+    if (!ok) {
+      // Lets the reconnect banner pick up the expired mailbox without a page reload.
+      if ((data as any)?.code === 'REAUTH_REQUIRED' && typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('crm_email_accounts_updated'));
+      }
+      throw apiError(status, data);
+    }
     senderEmail = data.from;
     accountId = data.accountId;
     providerUsed = `Outlook (${data.from})`;

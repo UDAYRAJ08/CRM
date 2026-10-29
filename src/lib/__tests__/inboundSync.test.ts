@@ -87,8 +87,12 @@ describe('syncOutlookInbox', () => {
       data: { mailboxes: [], errors: [{ accountId: 'acc-9', code: 'REAUTH_REQUIRED' }] },
     });
     listMyEmailAccounts.mockResolvedValue([{ id: 'acc-9', email: 'old@team.com' }]);
+    const seen = vi.fn();
+    window.addEventListener('crm_email_accounts_updated', seen);
     const res = await syncOutlookInbox();
+    window.removeEventListener('crm_email_accounts_updated', seen);
     expect(res.message).toContain('Reconnect old@team.com in Email settings.');
+    expect(seen).toHaveBeenCalledTimes(1);
   });
 
   it('handles 401 and no mailboxes', async () => {

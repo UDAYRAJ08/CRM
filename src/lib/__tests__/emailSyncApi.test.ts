@@ -17,8 +17,17 @@ function mockRes() {
   return res;
 }
 
+let updates: any[] = [];
+let eqs: [string, unknown][] = [];
 function dbWith(result: { data: any; error: any }) {
-  const q: any = { select: () => q, eq: () => q, then: (f: any) => Promise.resolve(result).then(f) };
+  updates = [];
+  eqs = [];
+  const q: any = {
+    select: () => q,
+    eq: (k: string, v: unknown) => (eqs.push([k, v]), q),
+    update: (v: unknown) => (updates.push(v), q),
+    then: (f: any) => Promise.resolve(result).then(f),
+  };
   (adminDb as any).mockReturnValue({ from: () => q });
 }
 
@@ -53,6 +62,19 @@ describe('api/email-sync', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.mailboxes).toEqual([{ accountId: 'a2', email: 'two@x.com', messages: [{ id: 'm1' }] }]);
     expect(res.body.errors).toEqual([{ accountId: 'a1', code: 'REAUTH_REQUIRED' }]);
+  });
+
+  it('Graph 401 on listInbox: reports REAUTH_REQUIRED and expires the stored token without marking reauth', async () => {
+    (requireUser as any).mockResolvedValue({ id: 'u1', email: null });
+    dbWith({ data: [acct('a1', 'one@x.com')], error: null });
+    (getFreshAccessToken as any).mockResolvedValue('tok');
+    (listInbox as any).mockRejectedValue(new GraphError('REAUTH_REQUIRED', 401));
+    const res = mockRes();
+    await handler({ method: 'POST', headers: {} }, res);
+    expect(res.body.errors).toEqual([{ accountId: 'a1', code: 'REAUTH_REQUIRED' }]);
+    expect(updates).toHaveLength(1);
+    expect(Object.keys(updates[0])).toEqual(['expires_at']);
+    expect(eqs).toContainEqual(['id', 'a1']);
   });
 
   it('maps unknown errors to GRAPH_FAILED and DB errors to 502', async () => {

@@ -50,6 +50,7 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
     let reconnectNote = '';
     const reauthIds = errors.filter((e) => e.code === 'REAUTH_REQUIRED').map((e) => e.accountId);
     if (reauthIds.length > 0) {
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('crm_email_accounts_updated'));
       const accounts = await listMyEmailAccounts();
       const emails = reauthIds.map((id) => accounts.find((a) => a.id === id)?.email).filter(Boolean);
       if (emails.length > 0) reconnectNote = ` Reconnect ${emails.join(', ')} in Email settings.`;

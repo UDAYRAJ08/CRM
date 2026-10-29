@@ -131,6 +131,14 @@ export async function getFreshAccessToken(db: any, account: AccountRow): Promise
   return j.access_token;
 }
 
+// A Graph 401 only expires the cached token: the next call refreshes, and a revoked grant then
+// marks reauth_required via invalid_grant. A bare 401 never disconnects the mailbox by itself.
+export async function expireOnGraph401(db: any, accountId: string, e: unknown): Promise<void> {
+  if (e instanceof GraphError && e.status === 401) {
+    await db.from('email_accounts').update({ expires_at: new Date().toISOString() }).eq('id', accountId);
+  }
+}
+
 export function buildGraphMessage(p: {
   to: string;
   subject: string;

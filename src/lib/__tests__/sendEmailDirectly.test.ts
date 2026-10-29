@@ -59,6 +59,17 @@ describe('sendEmailDirectly', () => {
     expect((await db.getEmails()).length).toBe(before);
   });
 
+  it('REAUTH_REQUIRED asks the app to refresh mailbox status', async () => {
+    const seen = vi.fn();
+    window.addEventListener('crm_email_accounts_updated', seen);
+    apiPost.mockResolvedValue({ ok: false, status: 409, data: { code: 'REAUTH_REQUIRED' } });
+    await expect(sendEmailDirectly(base)).rejects.toMatchObject({ code: 'REAUTH_REQUIRED' });
+    apiPost.mockResolvedValue({ ok: false, status: 429, data: { code: 'DAILY_LIMIT', limit: 1 } });
+    await expect(sendEmailDirectly(base)).rejects.toMatchObject({ code: 'DAILY_LIMIT' });
+    window.removeEventListener('crm_email_accounts_updated', seen);
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
   it('logOnly never calls the API', async () => {
     const res = await sendEmailDirectly({ ...base, logOnly: true });
     expect(apiPost).not.toHaveBeenCalled();

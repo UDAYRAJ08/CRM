@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { adminDb, requireUser } from './_lib/auth.js';
-import { GraphError, buildGraphMessage, getFreshAccessToken, sendMail, type AccountRow } from './_lib/graph.js';
+import { GraphError, buildGraphMessage, expireOnGraph401, getFreshAccessToken, sendMail, type AccountRow } from './_lib/graph.js';
 
 const MAX_ATTACH_BYTES = 3 * 1024 * 1024;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -65,7 +65,12 @@ export default async function handler(req: any, res: any) {
     if (!ok) return res.status(429).json({ code: 'DAILY_LIMIT', limit: account.daily_limit });
 
     const token = await getFreshAccessToken(db, account);
-    await sendMail(token, buildGraphMessage({ to, subject, html, replyTo, attachments }));
+    try {
+      await sendMail(token, buildGraphMessage({ to, subject, html, replyTo, attachments }));
+    } catch (e) {
+      await expireOnGraph401(db, account.id, e);
+      throw e;
+    }
     return res.status(200).json({ from: account.email, accountId: account.id });
   } catch (e) {
     if (e instanceof GraphError) {
