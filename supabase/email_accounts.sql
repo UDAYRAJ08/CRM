@@ -15,7 +15,7 @@ create table if not exists email_accounts (
   refresh_token_enc text,
   expires_at        timestamptz,
   is_default        boolean not null default false,
-  daily_limit       int not null default 200,
+  daily_limit       int not null default 200 check (daily_limit >= 0),
   sent_today        int not null default 0,
   sent_today_date   date,
   status            text not null default 'active'
@@ -55,7 +55,7 @@ grant select (id, auth_user_id, provider, email, display_name, expires_at, is_de
               daily_limit, sent_today, sent_today_date, status, error_message,
               created_at, updated_at)
   on email_accounts to authenticated;
-grant update (is_default, daily_limit) on email_accounts to authenticated;
+grant update (is_default) on email_accounts to authenticated;
 grant delete on email_accounts to authenticated;
 
 -- Which mailbox sent each email.
