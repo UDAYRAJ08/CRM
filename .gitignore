@@ -37,3 +37,6 @@ public/linkedin-connector.zip
 
 # Supabase CLI local state
 supabase/.temp/
+
+# Brainstorm mockups
+.superpowers/

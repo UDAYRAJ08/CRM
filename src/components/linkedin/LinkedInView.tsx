@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Users, BarChart3, Settings, Sparkles, Shield, ArrowRight, Clock } from 'lucide-react';
+import { Users, BarChart3, Settings, Sparkles, Shield, ArrowRight, Clock, Send } from 'lucide-react';
 import { Linkedin } from './LinkedInIcon';
 import { LinkedInAccountsView } from './LinkedInAccountsView';
 import { LinkedInCampaignsView } from './LinkedInCampaignsView';
 import { LinkedInAnalyticsView } from './LinkedInAnalyticsView';
+import { LinkedInInvitesView } from './LinkedInInvitesView';
 import { LinkedInAgentModal } from './LinkedInAgentModal';
 import { fetchLinkedInQuota, LinkedInQuotaInfo } from '../../lib/linkedinAutomationService';
 import { Contact } from '../../types/crm';
@@ -11,18 +12,20 @@ import { Contact } from '../../types/crm';
 interface LinkedInViewProps {
   contacts: Contact[];
   onRefresh?: () => void;
+  onOpenContact?: (contact: Contact) => void;
 }
 
-type LinkedInTab = 'accounts' | 'agent' | 'campaigns' | 'analytics';
+type LinkedInTab = 'accounts' | 'agent' | 'campaigns' | 'invites' | 'analytics';
 
 const tabs: { id: LinkedInTab; label: string; icon: React.ReactNode }[] = [
   { id: 'accounts', label: 'Accounts', icon: <Settings className="w-4 h-4" /> },
   { id: 'agent', label: 'Prospecting Agent', icon: <Sparkles className="w-4 h-4 text-purple-600" /> },
   { id: 'campaigns', label: 'Campaigns', icon: <Users className="w-4 h-4" /> },
+  { id: 'invites', label: 'Sent Invites', icon: <Send className="w-4 h-4" /> },
   { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-4 h-4" /> },
 ];
 
-export const LinkedInView: React.FC<LinkedInViewProps> = ({ contacts, onRefresh }) => {
+export const LinkedInView: React.FC<LinkedInViewProps> = ({ contacts, onRefresh, onOpenContact }) => {
   const [activeTab, setActiveTab] = useState<LinkedInTab>('accounts');
   const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
   const [quota, setQuota] = useState<LinkedInQuotaInfo>({
@@ -168,6 +171,7 @@ export const LinkedInView: React.FC<LinkedInViewProps> = ({ contacts, onRefresh 
       )}
 
       {activeTab === 'campaigns' && <LinkedInCampaignsView contacts={contacts} onRefresh={onRefresh} />}
+      {activeTab === 'invites' && <LinkedInInvitesView contacts={contacts} onOpenContact={onOpenContact} />}
       {activeTab === 'analytics' && <LinkedInAnalyticsView />}
 
       {/* Prospecting Agent Modal */}
