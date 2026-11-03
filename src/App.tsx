@@ -15,6 +15,7 @@ import { syncOutlookInbox } from './lib/inboundSyncService';
 import { sendDueScheduledEmails } from './lib/scheduledEmailRunner';
 import { runNextLinkedInAction } from './lib/linkedinQueueRunner';
 import { LoginPage } from './components/auth/LoginPage';
+import { OAuthConsentPage } from './components/auth/OAuthConsentPage';
 import { MobileNavDrawer } from './components/layout/MobileNavDrawer';
 import { Footer } from './components/layout/Footer';
 import { NotFoundView } from './components/common/NotFoundView';
@@ -343,6 +344,10 @@ const CRMMain: React.FC = () => {
     return <LoginPage />;
   }
 
+  if (window.location.pathname === '/oauth/consent') {
+    return <OAuthConsentPage />;
+  }
+
   return (
     <div className="flex min-h-screen bg-slate-50 overflow-x-clip w-full">
       {/* Name Picker Modal (triggered on load or manually) */}
@@ -478,7 +483,7 @@ const CRMMain: React.FC = () => {
               )}
 
               {activeView === 'linkedin' && (
-                <LinkedInView contacts={contacts} onRefresh={refreshAllData} />
+                <LinkedInView contacts={contacts} onRefresh={refreshAllData} onOpenContact={(c) => setSelectedContact(c)} />
               )}
 
               {activeView === '404' && (

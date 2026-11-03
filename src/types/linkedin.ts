@@ -193,3 +193,20 @@ export const CAMPAIGN_STATUS_COLORS: Record<LinkedInCampaignStatus, string> = {
   completed: 'bg-indigo-100 text-indigo-700',
   cancelled: 'bg-red-100 text-red-600',
 };
+
+// A LinkedIn connection request sent by an AI agent (Claude) and recorded through the MCP connector.
+export interface LinkedInInvite {
+  id: string;
+  contact_id: string | null;
+  linkedin_url: string;
+  name: string;
+  headline: string | null;
+  company: string | null;
+  note: string | null;
+  status: 'pending' | 'accepted';
+  source: string;
+  sent_by: string | null;
+  sent_at: string;
+  accepted_at: string | null;
+  sender?: { name: string } | null;
+}

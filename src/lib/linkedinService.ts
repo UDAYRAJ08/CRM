@@ -2,7 +2,7 @@
 // Handles all Supabase DB operations for LinkedIn integration.
 // Designed to be auth-type agnostic — cookie now, OAuth/hybrid later.
 
-import { supabase } from './supabase';
+import { supabase, fetchAllPages, db } from './supabase';
 import { requestLinkedInSession } from './linkedinExtensionBridge';
 import {
   LinkedInAccount,
@@ -11,6 +11,7 @@ import {
   LinkedInActionQueueItem,
   CampaignBuilderForm,
   CampaignBuilderStep,
+  LinkedInInvite,
 } from '../types/linkedin';
 
 function getClient() {
@@ -466,4 +467,39 @@ export async function getLinkedInAnalytics(): Promise<{
     totalReplies: campaigns.reduce((acc: number, c: any) => acc + (c.replies_received || 0), 0),
     recentQueue: queue as LinkedInActionQueueItem[],
   };
+}
+
+// ==============================================================================
+// INVITES SENT BY CLAUDE (recorded through the MCP connector, api/mcp.ts)
+// ==============================================================================
+
+export async function getLinkedInInvites(): Promise<LinkedInInvite[]> {
+  const { data, error } = await fetchAllPages<LinkedInInvite>((from, to) =>
+    getClient()
+      .from('linkedin_invites')
+      .select('*, sender:team_members(name)')
+      .order('sent_at', { ascending: false })
+      .order('id')
+      .range(from, to)
+  );
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function setLinkedInInviteStatus(
+  invite: LinkedInInvite,
+  status: LinkedInInvite['status'],
+  teamMemberId: string | null
+): Promise<LinkedInInvite> {
+  const { data, error } = await getClient()
+    .from('linkedin_invites')
+    .update({ status, accepted_at: status === 'accepted' ? new Date().toISOString() : null })
+    .eq('id', invite.id)
+    .select('*, sender:team_members(name)')
+    .single();
+  if (error) throw error;
+  if (status === 'accepted' && invite.contact_id) {
+    await db.addInteraction({ contact_id: invite.contact_id, type: 'linkedin', content: 'LinkedIn invite accepted.', created_by: teamMemberId });
+  }
+  return data as LinkedInInvite;
 }

@@ -5,6 +5,10 @@
       "destination": "https://api.resend.com/:match*"
     },
     {
+      "source": "/.well-known/:kind(oauth-protected-resource|oauth-authorization-server)/:rest*",
+      "destination": "/api/oauth-metadata?kind=:kind"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

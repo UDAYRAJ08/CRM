@@ -113,6 +113,44 @@ permission), re-checks the calling site on every request, and never sends the se
 
 ---
 
+## Claude connector (MCP)
+
+The CRM is also a remote MCP server at `https://<your-crm>/api/mcp`, so it can be added to Claude
+(claude.ai, Claude in Chrome, Claude Code) as a custom connector. The main use: Claude sends LinkedIn
+connection requests in your browser and records each one in the CRM. The list shows under
+**LinkedIn Outreach > Sent Invites** with Accepted / Not accepted status.
+
+Tools Claude gets:
+
+| Tool | What it does |
+|------|--------------|
+| `check_linkedin_invite` | Before sending: already invited by anyone on the team? Invites left today? (`allowed`) |
+| `record_linkedin_invite` | After sending: creates or links the contact, saves the invite, logs it on the timeline |
+| `update_linkedin_invite_status` | Marks an invite `accepted` / `not_accepted` |
+| `list_linkedin_invites` | Lists recorded invites, filterable by status |
+| `search_contacts` | Searches contacts by name or email |
+
+The daily limit is the `daily_connection_limit` on your active LinkedIn account (default 25),
+counted per team member from midnight UTC. Recording never fails on the limit, because the invite
+already happened. Only `check_linkedin_invite` blocks. Invites are never deleted.
+
+**One-time setup**
+
+1. Run `supabase/claude_mcp.sql` in the Supabase SQL editor.
+2. In Supabase, open **Authentication > OAuth Server** and enable it. Set the **Authorization URL**
+   path to `/oauth/consent`, set the Site URL to your deployed CRM, and turn on **Dynamic client
+   registration** (Claude registers itself).
+3. In Vercel **Settings > Environment Variables** add `SUPABASE_SERVICE_ROLE_KEY` (Supabase
+   **Project Settings > API Keys**, the secret/service_role key). Never prefix it with `VITE_`.
+4. Deploy. `vercel.json` routes `/.well-known/oauth-protected-resource` and
+   `/.well-known/oauth-authorization-server` to `api/oauth-metadata.ts`.
+5. Each person: in Claude open **Settings > Connectors > Add custom connector**, paste the URL shown
+   under **Sent Invites > How to connect**, sign in to the CRM and press **Allow**.
+
+Only CRM team members can use the connector. A signed-in user with no `team_members` row gets 403.
+
+---
+
 ## Security notes (read before deploying)
 
 - **Anything prefixed `VITE_` is compiled into the public JavaScript bundle.** That includes the
