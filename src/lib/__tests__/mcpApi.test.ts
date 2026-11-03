@@ -23,7 +23,8 @@ function fakeDb(tables: Record<string, Row[]>) {
     const filters: ((r: Row) => boolean)[] = [];
     let payload: Row | null = null;
     let head = false;
-    const rows = () => (tables[table] ||= []).filter((r) => filters.every((f) => f(r)));
+    let max = Infinity;
+    const rows = () => (tables[table] ||= []).filter((r) => filters.every((f) => f(r))).slice(0, max);
     const q: any = {
       select: (_c?: string, opts?: { head?: boolean }) => ((head = Boolean(opts?.head)), q),
       eq: (k: string, v: unknown) => (filters.push((r) => r[k] === v), q),
@@ -35,7 +36,7 @@ function fakeDb(tables: Record<string, Row[]>) {
       },
       or: () => q,
       order: () => q,
-      limit: () => q,
+      limit: (n: number) => ((max = n), q),
       insert: (p: Row) => {
         payload = { id: `${table}-${(tables[table] ||= []).length + 1}`, sent_at: new Date().toISOString(), status: 'pending', ...p };
         (inserts[table] ||= []).push(payload);
@@ -43,7 +44,9 @@ function fakeDb(tables: Record<string, Row[]>) {
         return q;
       },
       update: (p: Row) => ((payload = p), q),
-      maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
+      // Like PostgREST: maybeSingle() errors when more than one row matches.
+      maybeSingle: async () =>
+        rows().length > 1 ? { data: null, error: { code: 'PGRST116' } } : { data: rows()[0] ?? null, error: null },
       single: async () => {
         if (payload && !('id' in payload)) Object.assign(rows()[0], payload);
         return { data: payload && 'id' in payload ? payload : rows()[0], error: null };
@@ -105,6 +108,13 @@ describe('api/mcp', () => {
     const res = mockRes();
     await handler(call('tools/list'), res);
     expect(res.statusCode).toBe(403);
+  });
+
+  it('accepts a login linked to duplicate team_members rows', async () => {
+    tables.team_members.push({ id: 'tm1-dup', auth_user_id: 'u1', name: 'Uday' });
+    const res = mockRes();
+    await handler(call('tools/list'), res);
+    expect(res.statusCode).toBe(200);
   });
 
   it('405 on GET', async () => {

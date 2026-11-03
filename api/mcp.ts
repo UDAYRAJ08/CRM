@@ -41,7 +41,9 @@ export default async function handler(req: any, res: any) {
   let memberId: string | null = null;
   try {
     db = adminDb();
-    const { data } = await db.from('team_members').select('id').eq('auth_user_id', user.id).maybeSingle();
+    // limit(1): a login can be linked to duplicate member rows, and maybeSingle() errors on 2+.
+    const { data } = await db.from('team_members').select('id').eq('auth_user_id', user.id)
+      .order('created_at').limit(1).maybeSingle();
     memberId = (data as any)?.id ?? null;
   } catch {
     return res.status(500).json(rpcError(null, -32603, 'CRM server is not configured.'));
