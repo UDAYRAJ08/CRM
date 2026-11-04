@@ -17,6 +17,8 @@ interface TeamContextValue {
   setIsPickerOpen: (open: boolean) => void;
   refreshTeam: () => Promise<void>;
   isLoading: boolean;
+  /** Signed in, but this login is not on the team list. */
+  accessDenied: boolean;
 }
 
 const TeamContext = createContext<TeamContextValue | undefined>(undefined);
@@ -29,8 +31,10 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeMember, setActiveMemberState] = useState<TeamMember | null>(null);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const refreshTeam = useCallback(async () => {
+    setAccessDenied(false);
     if (!user) {
       setActiveMemberState(null);
       setIsLoading(false);
@@ -55,22 +59,24 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // 3. If user has no team member record, auto-create one
+      // 3. Only the very first login on an empty CRM creates its own (Admin) member.
+      //    Everyone else must be added by an admin first (Invite adds the member row).
       if (!matched) {
+        if (members.length > 0) {
+          setActiveMemberState(null);
+          setAccessDenied(true);
+          return;
+        }
         const metadataName = user.user_metadata?.full_name as string | undefined;
         const fallbackName = user.email ? user.email.split('@')[0] : 'Team Member';
         const formattedName =
           metadataName ||
           fallbackName.charAt(0).toUpperCase() + fallbackName.slice(1).replace(/[._]/g, ' ');
-        const isFirstUser = members.length === 0;
-        const role =
-          (user.user_metadata?.role as string) ||
-          (isFirstUser ? 'Admin' : 'Sales Representative');
 
         matched = await db.addTeamMember({
           name: formattedName,
           email: user.email || '',
-          role,
+          role: 'Admin',
           auth_user_id: user.id,
         });
         setTeamMembers((prev) => [...prev, matched!]);
@@ -175,6 +181,7 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsPickerOpen,
         refreshTeam,
         isLoading,
+        accessDenied,
       }}
     >
       {children}

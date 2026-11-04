@@ -36,7 +36,7 @@ interface PendingInvite {
 const STORAGE_INVITES_KEY = 'crm_sent_invitations';
 
 export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => {
-  const { activeMember } = useTeam();
+  const { activeMember, teamMembers, addTeamMember } = useTeam();
   const { user } = useAuth();
   const { success, error, info } = useToast();
   const { canManageTeam, isAdmin } = usePermissions();
@@ -91,9 +91,19 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
     inviteRole
   );
 
+  // The team list is the access list: the invitee can only open the CRM once this row exists.
+  const ensureTeamMember = async (name: string, email: string, role: string) => {
+    const wanted = email.trim().toLowerCase();
+    if (teamMembers.some((m) => m.email?.trim().toLowerCase() === wanted)) return;
+    await addTeamMember(name || wanted.split('@')[0], wanted, role);
+  };
+
   // Copy link to clipboard
   const handleCopyLink = async () => {
     try {
+      if (inviteEmail.trim() && canManageTeam) {
+        await ensureTeamMember(inviteName.trim(), inviteEmail, inviteRole);
+      }
       await navigator.clipboard.writeText(currentInviteUrl);
       setHasCopied(true);
       setTimeout(() => setHasCopied(false), 2500);
@@ -138,6 +148,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
 
     setIsSending(true);
     try {
+      await ensureTeamMember(name, email, inviteRole);
       const res = await sendEmailDirectly({
         recipientEmail: email,
         recipientName: name || 'Colleague',

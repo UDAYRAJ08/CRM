@@ -50,7 +50,7 @@ const ViewFallback: React.FC = () => (
 
 const CRMMain: React.FC = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
-  const { activeMember, isLoading: isTeamLoading } = useTeam();
+  const { activeMember, isLoading: isTeamLoading, accessDenied, logout } = useTeam();
   const { success, info, error: toastError } = useToast();
 
   const [activeView, setActiveView] = useState<ViewType>('dashboard');
@@ -342,6 +342,26 @@ const CRMMain: React.FC = () => {
 
   if (!user) {
     return <LoginPage />;
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="max-w-sm w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center space-y-3">
+          <h1 className="text-lg font-semibold text-white">You're not on this CRM team</h1>
+          <p className="text-sm text-slate-400">
+            <span className="text-slate-200">{user.email}</span> isn't on the team list. Ask an admin to invite
+            you with this email, then sign in again.
+          </p>
+          <button
+            onClick={logout}
+            className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium py-2"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (window.location.pathname === '/oauth/consent') {
