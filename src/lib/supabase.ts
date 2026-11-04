@@ -224,6 +224,17 @@ export const db = {
     if (supabase) {
       const { data, error } = await supabase.from('team_members').insert(newMember).select().single();
       if (!error && data) return data;
+      // Unique index hit (this login or email is already on the team): return that row,
+      // never a browser-only copy that the database doesn't know about.
+      if (error?.code === '23505') {
+        const lookup = supabase.from('team_members').select('*');
+        const { data: existing } = await (newMember.auth_user_id
+          ? lookup.eq('auth_user_id', newMember.auth_user_id)
+          : lookup.ilike('email', (newMember.email ?? '').trim().replace(/[\\%_]/g, '\\$&'))
+        ).limit(1).maybeSingle();
+        if (existing) return existing;
+        throw new Error('This person is already on the team.');
+      }
     }
 
     const members = getLocal('team_members', INITIAL_TEAM);

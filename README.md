@@ -160,6 +160,8 @@ Only CRM team members can use the connector. A signed-in user with no `team_memb
   has ever been in a deployed bundle**.
 - `LINKEDIN_LI_AT` / `LINKEDIN_JSESSIONID` are full account credentials. Never prefix them with
   `VITE_`, never commit them, and prefer per-user accounts stored server-side.
+- Only people on the team list can open the CRM. Inviting someone adds them to it. Run
+  `supabase/team_members_unique.sql` so the same login or email can never be added twice.
 - Apply `supabase/security_hardening.sql` (and review `supabase/persona_pin_and_rls.sql`) in the
   Supabase SQL editor. The default policies let any authenticated user read and write every table;
   tighten them to roles before onboarding people outside the core team.
