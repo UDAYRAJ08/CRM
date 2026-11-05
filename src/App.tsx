@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { TeamProvider, useTeam } from './context/TeamContext';
 import { ToastProvider, useToast } from './context/ToastContext';
@@ -14,6 +14,7 @@ import { ReminderFormModal } from './components/reminders/ReminderFormModal';
 import { syncOutlookInbox } from './lib/inboundSyncService';
 import { sendDueScheduledEmails } from './lib/scheduledEmailRunner';
 import { runNextLinkedInAction } from './lib/linkedinQueueRunner';
+import { getInvitedContactIds } from './lib/linkedinService';
 import { LoginPage } from './components/auth/LoginPage';
 import { OAuthConsentPage } from './components/auth/OAuthConsentPage';
 import { MobileNavDrawer } from './components/layout/MobileNavDrawer';
@@ -39,7 +40,7 @@ const InviteModal = lazy(() => import('./components/team/InviteModal').then((m) 
 const DashboardView = lazy(() => import('./components/dashboard/DashboardView').then((m) => ({ default: m.DashboardView })));
 const PipelineView = lazy(() => import('./components/pipeline/PipelineView').then((m) => ({ default: m.PipelineView })));
 
-export type ViewType = 'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'drafts' | 'reminders' | 'companies' | 'imports' | 'linkedin' | '404';
+export type ViewType = 'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'drafts' | 'reminders' | 'companies' | 'imports' | 'linkedin' | 'linkedin-contacts' | '404';
 
 const ViewFallback: React.FC = () => (
   <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400">
@@ -56,6 +57,7 @@ const CRMMain: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewType>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [invitedContactIds, setInvitedContactIds] = useState<Set<string>>(new Set());
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [dealCount, setDealCount] = useState(0);
   const [inboxCount, setInboxCount] = useState(0);
@@ -102,12 +104,18 @@ const CRMMain: React.FC = () => {
   const refreshAllData = useCallback(async () => {
     if (!user) return;
     try {
-      const [fetchedContacts, fetchedReminders, fetchedDeals] = await Promise.all([
+      const [fetchedContacts, fetchedReminders, fetchedDeals, fetchedInvitedIds] = await Promise.all([
         db.getContacts(),
         db.getReminders(),
         db.getDeals(),
+        // A missing linkedin_invites table must not stop the CRM loading: everyone stays on Contacts.
+        getInvitedContactIds().catch((e) => {
+          console.warn('Could not load LinkedIn invites:', e);
+          return new Set<string>();
+        }),
       ]);
       setContacts(fetchedContacts);
+      setInvitedContactIds(fetchedInvitedIds);
       setReminders(fetchedReminders);
       setDealCount(fetchedDeals.filter((d) => d.stage !== 'won' && d.stage !== 'lost').length);
       countInboundReplies(fetchedContacts);
@@ -228,7 +236,7 @@ const CRMMain: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '').trim();
-  const validViews: ViewType[] = ['dashboard', 'pipeline', 'contacts', 'inbox', 'drafts', 'reminders', 'companies', 'imports', 'linkedin'];
+  const validViews: ViewType[] = ['dashboard', 'pipeline', 'contacts', 'inbox', 'drafts', 'reminders', 'companies', 'imports', 'linkedin', 'linkedin-contacts'];
       if (!hash) {
         setActiveView('dashboard');
       } else if (validViews.includes(hash as ViewType)) {
@@ -250,12 +258,21 @@ const CRMMain: React.FC = () => {
 
   const activeRemindersCount = reminders.filter((r) => !r.done).length;
 
+  // People we sent a LinkedIn invite to live on their own page, not in Contacts.
+  const [crmContacts, linkedinContacts] = useMemo(() => {
+    const crm: Contact[] = [];
+    const li: Contact[] = [];
+    contacts.forEach((c) => (invitedContactIds.has(c.id) ? li : crm).push(c));
+    return [crm, li];
+  }, [contacts, invitedContactIds]);
+
   // Dynamic document title updates
   useEffect(() => {
     const titles: Record<string, string> = {
       dashboard: 'Dashboard | Team CRM',
       pipeline: `Sales Pipeline (${dealCount} Deals) | Team CRM`,
-      contacts: `Contacts (${contacts.length}) | Team CRM`,
+      contacts: `Contacts (${crmContacts.length}) | Team CRM`,
+      'linkedin-contacts': `LinkedIn Contacts (${linkedinContacts.length}) | Team CRM`,
       inbox: inboxCount > 0 ? `Inbox (${inboxCount} New) | Team CRM` : 'Inbox & Replies | Team CRM',
       drafts: draftCount > 0 ? `Drafts (${draftCount}) | Team CRM` : 'Email Drafts | Team CRM',
       reminders: activeRemindersCount > 0 ? `Tasks (${activeRemindersCount} Due) | Team CRM` : 'Tasks & Reminders | Team CRM',
@@ -265,7 +282,7 @@ const CRMMain: React.FC = () => {
       '404': '404 Not Found | Team CRM',
     };
     document.title = titles[activeView] || 'Team CRM - Collaborative Workspace';
-  }, [activeView, contacts.length, dealCount, inboxCount, draftCount, activeRemindersCount]);
+  }, [activeView, crmContacts.length, linkedinContacts.length, dealCount, inboxCount, draftCount, activeRemindersCount]);
 
   const handleOpenEmailComposer = (contact: Contact, replySubject?: string, draft?: EmailDraft) => {
     setEmailTargetContact(contact);
@@ -359,7 +376,8 @@ const CRMMain: React.FC = () => {
         onClose={() => setIsMobileMenuOpen(false)}
         activeView={activeView}
         setActiveView={(v) => handleNavigate(v)}
-        contactCount={contacts.length}
+        contactCount={crmContacts.length}
+        linkedinContactCount={linkedinContacts.length}
         reminderCount={activeRemindersCount}
         inboxCount={inboxCount}
         dealCount={dealCount}
@@ -372,7 +390,8 @@ const CRMMain: React.FC = () => {
       <Sidebar
         activeView={activeView}
         setActiveView={(v) => handleNavigate(v)}
-        contactCount={contacts.length}
+        contactCount={crmContacts.length}
+        linkedinContactCount={linkedinContacts.length}
         reminderCount={activeRemindersCount}
         inboxCount={inboxCount}
         dealCount={dealCount}
@@ -420,7 +439,27 @@ const CRMMain: React.FC = () => {
 
               {activeView === 'contacts' && (
                 <ContactList
-                  contacts={contacts}
+                  contacts={crmContacts}
+                  searchQuery={searchQuery}
+                  onSelectContact={(c) => setSelectedContact(c)}
+                  onEditContact={(c) => {
+                    setEditingContact(c);
+                    setIsContactFormOpen(true);
+                  }}
+                  onOpenEmailComposer={(c) => handleOpenEmailComposer(c)}
+                  onOpenLinkedIn={handleOpenLinkedInComposer}
+                  onOpenBulkEmail={handleOpenBulkEmail}
+                  onAddNewContact={() => {
+                    setEditingContact(null);
+                    setIsContactFormOpen(true);
+                  }}
+                  onRefresh={refreshAllData}
+                />
+              )}
+
+              {activeView === 'linkedin-contacts' && (
+                <ContactList
+                  contacts={linkedinContacts}
                   searchQuery={searchQuery}
                   onSelectContact={(c) => setSelectedContact(c)}
                   onEditContact={(c) => {

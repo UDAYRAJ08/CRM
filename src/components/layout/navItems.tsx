@@ -13,6 +13,7 @@ import { Linkedin } from '../linkedin/LinkedInIcon';
 
 export interface NavCounts {
   contactCount: number;
+  linkedinContactCount?: number;
   reminderCount: number;
   inboxCount?: number;
   dealCount?: number;
@@ -54,7 +55,10 @@ export const buildNavSections = (c: NavCounts, iconClass = 'w-4 h-4'): NavSectio
   },
   {
     title: 'Outreach',
-    items: [{ id: 'linkedin', label: 'LinkedIn', icon: <Linkedin className={iconClass} /> }],
+    items: [
+      { id: 'linkedin', label: 'LinkedIn', icon: <Linkedin className={iconClass} /> },
+      { id: 'linkedin-contacts', label: 'LinkedIn Contacts', icon: <Users className={iconClass} />, badge: c.linkedinContactCount },
+    ],
   },
   {
     title: 'Data',

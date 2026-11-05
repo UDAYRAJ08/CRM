@@ -486,6 +486,15 @@ export async function getLinkedInInvites(): Promise<LinkedInInvite[]> {
   return data ?? [];
 }
 
+/** Ids of contacts with at least one sent invite. These show on the LinkedIn Contacts page, not Contacts. */
+export async function getInvitedContactIds(): Promise<Set<string>> {
+  const { data, error } = await fetchAllPages<{ contact_id: string | null }>((from, to) =>
+    getClient().from('linkedin_invites').select('contact_id').order('id').range(from, to)
+  );
+  if (error) throw error;
+  return new Set((data ?? []).flatMap((r) => (r.contact_id ? [r.contact_id] : [])));
+}
+
 export async function setLinkedInInviteStatus(
   invite: LinkedInInvite,
   status: LinkedInInvite['status'],

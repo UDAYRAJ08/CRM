@@ -6,6 +6,7 @@ interface SidebarProps {
   activeView: string;
   setActiveView: (view: string) => void;
   contactCount: number;
+  linkedinContactCount?: number;
   reminderCount: number;
   inboxCount?: number;
   dealCount?: number;

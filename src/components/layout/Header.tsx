@@ -86,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Search Input for Contacts or Section Header Title */}
       <div className="flex-1 max-w-md min-w-0">
-        {activeView === 'contacts' ? (
+        {activeView === 'contacts' || activeView === 'linkedin-contacts' ? (
           <div className="relative flex items-center">
             <Search className="w-4 h-4 text-slate-400 absolute left-2.5 sm:left-3 pointer-events-none" />
             <input
