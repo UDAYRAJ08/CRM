@@ -40,6 +40,8 @@ import {
   X,
   Globe,
   RotateCw,
+  ArrowLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 interface ContactListProps {
@@ -195,7 +197,7 @@ export const ContactList: React.FC<ContactListProps> = ({
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'accordion' | 'table' | 'cards'>('accordion');
-  const [expandedDateKeys, setExpandedDateKeys] = useState<Set<string>>(new Set());
+  const [openDateKey, setOpenDateKey] = useState<string | null>(null);
 
   // Density: 'compact' | 'comfortable'
   const [density, setDensity] = useState<'compact' | 'comfortable'>(() => {
@@ -386,32 +388,10 @@ export const ContactList: React.FC<ContactListProps> = ({
       });
   }, [filteredContacts]);
 
-  // Auto-expand the first date group by default
-  useEffect(() => {
-    if (dateGroups.length > 0 && expandedDateKeys.size === 0) {
-      setExpandedDateKeys(new Set([dateGroups[0].key]));
-    }
-  }, [dateGroups]);
-
-  const toggleDateGroup = (key: string) => {
-    setExpandedDateKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  };
-
-  const expandAllDates = () => {
-    setExpandedDateKeys(new Set(dateGroups.map((g) => g.key)));
-  };
-
-  const collapseAllDates = () => {
-    setExpandedDateKeys(new Set());
-  };
+  // The date page opened from the list (null = show the list of dates).
+  const openGroup = dateGroups.find((g) => g.key === openDateKey);
+  const openGroupAllSelected =
+    !!openGroup && openGroup.contacts.length > 0 && openGroup.contacts.every((c) => selectedIds.has(c.id));
 
   // Handle Sort Column Click
   const handleSort = (field: 'name' | 'created_at' | 'company' | 'status') => {
@@ -798,106 +778,31 @@ export const ContactList: React.FC<ContactListProps> = ({
           </Button>
         </div>
       ) : viewMode === 'accordion' ? (
+        openGroup ? (
         <div className="space-y-4">
-          {/* Top Accordion Info & Controls */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 text-xs text-slate-500">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-indigo-600" />
-                <span>Grouped by Date Added:</span>
-              </span>
-              <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full font-bold">
-                {dateGroups.length} {dateGroups.length === 1 ? 'Date' : 'Dates'}
-              </span>
-              <span>•</span>
-              <span className="font-medium text-slate-600">{filteredContacts.length} people total</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={expandAllDates}
-                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
-              >
-                Expand All
-              </button>
-              <span className="text-slate-300">•</span>
-              <button
-                type="button"
-                onClick={collapseAllDates}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-800 hover:underline cursor-pointer"
-              >
-                Collapse All
-              </button>
-            </div>
+          {/* Date page: the people added on one date */}
+          <div className="flex flex-wrap items-center gap-3 px-1">
+            <button
+              type="button"
+              onClick={() => setOpenDateKey(null)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              All dates
+            </button>
+            <span className="text-slate-300">•</span>
+            <h3 className="font-bold text-slate-900 text-sm md:text-base tracking-tight">{openGroup.displayLabel}</h3>
+            <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/70">
+              {openGroup.count} {openGroup.count === 1 ? 'person added' : 'people added'}
+            </span>
           </div>
-
-          {/* Accordion List (Matching Screenshot Style) */}
-          <div className="space-y-3.5">
-            {dateGroups.map((group) => {
-              const isExpanded = expandedDateKeys.has(group.key);
-              const allGroupSelected =
-                group.contacts.length > 0 && group.contacts.every((c) => selectedIds.has(c.id));
-
-              return (
-                <div
-                  key={group.key}
-                  className={`bg-white border rounded-2xl overflow-hidden transition-all duration-200 ${
-                    isExpanded
-                      ? 'border-indigo-300 shadow-md ring-2 ring-indigo-500/10'
-                      : 'border-slate-200 hover:border-slate-300 shadow-xs hover:shadow-sm'
-                  }`}
-                >
-                  {/* Header Bar */}
-                  <div
-                    onClick={() => toggleDateGroup(group.key)}
-                    className={`px-5 md:px-6 py-4 flex items-center justify-between gap-4 select-none cursor-pointer transition-colors duration-150 ${
-                      isExpanded
-                        ? 'bg-slate-50/70 border-b border-slate-200/80 hover:bg-slate-100/50'
-                        : 'bg-white hover:bg-slate-50/70'
-                    }`}
-                  >
-                    {/* Left: Date Title & Count */}
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100/80 shrink-0">
-                        <Calendar className="w-4 h-4" />
-                      </div>
-                      <h3 className="font-bold text-slate-900 text-sm md:text-base tracking-tight">
-                        {group.displayLabel}
-                      </h3>
-                      <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/70 shadow-2xs">
-                        {group.count} {group.count === 1 ? 'person added' : 'people added'}
-                      </span>
-                    </div>
-
-                    {/* Right: Circular (+) / (-) toggle button matching exact uploaded image */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleDateGroup(group.key);
-                      }}
-                      className={`w-9 h-9 md:w-10 md:h-10 rounded-full bg-[#fbbf24] hover:bg-[#f59e0b] border-[1.5px] border-slate-900 flex items-center justify-center text-slate-950 font-bold shrink-0 shadow-xs transition-all duration-200 ease-out active:scale-90 cursor-pointer ${
-                        isExpanded ? 'rotate-45' : 'rotate-0'
-                      }`}
-                      title={isExpanded ? 'Collapse date' : 'Expand to view people added'}
-                    >
-                      <Plus className="w-5 h-5 stroke-[2.5] text-slate-950 transition-transform duration-200" />
-                    </button>
-                  </div>
-
-                  {/* Expanded Body: "the people we added" - Animated with CSS Grid */}
-                  <div
-                    className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
-                      isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0 pointer-events-none'
-                    }`}
-                  >
-                    <div className="overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-2xl">
                       <div className="p-3 sm:p-4 space-y-3 bg-slate-50/40">
                         <div className="flex items-center justify-between px-1">
                           <div className="flex items-center gap-2">
                             <Users className="w-4 h-4 text-indigo-600" />
                             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                              People Added On This Date ({group.contacts.length})
+                              People Added On This Date ({openGroup.contacts.length})
                             </span>
                           </div>
                           <button
@@ -905,16 +810,16 @@ export const ContactList: React.FC<ContactListProps> = ({
                             onClick={(e) => {
                             e.stopPropagation();
                             const next = new Set(selectedIds);
-                            if (allGroupSelected) {
-                              group.contacts.forEach((c) => next.delete(c.id));
+                            if (openGroupAllSelected) {
+                              openGroup.contacts.forEach((c) => next.delete(c.id));
                             } else {
-                              group.contacts.forEach((c) => next.add(c.id));
+                              openGroup.contacts.forEach((c) => next.add(c.id));
                             }
                             setSelectedIds(next);
                           }}
                           className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
                         >
-                          {allGroupSelected ? 'Deselect All on Date' : 'Select All on Date'}
+                          {openGroupAllSelected ? 'Deselect All on Date' : 'Select All on Date'}
                         </button>
                       </div>
 
@@ -927,13 +832,13 @@ export const ContactList: React.FC<ContactListProps> = ({
                                 <th className="p-3 w-10 text-center whitespace-nowrap">
                                   <input
                                     type="checkbox"
-                                    checked={allGroupSelected}
+                                    checked={openGroupAllSelected}
                                     onChange={(e) => {
                                       const next = new Set(selectedIds);
                                       if (e.target.checked) {
-                                        group.contacts.forEach((c) => next.add(c.id));
+                                        openGroup.contacts.forEach((c) => next.add(c.id));
                                       } else {
-                                        group.contacts.forEach((c) => next.delete(c.id));
+                                        openGroup.contacts.forEach((c) => next.delete(c.id));
                                       }
                                       setSelectedIds(next);
                                     }}
@@ -949,7 +854,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
-                              {group.contacts.map((contact) => {
+                              {openGroup.contacts.map((contact) => {
                                 const isSelected = selectedIds.has(contact.id);
                                 const followUp = getFollowUpInfo(contact);
                                 const statusConf = STATUS_CONFIG[contact.status] || STATUS_CONFIG.new;
@@ -1163,13 +1068,50 @@ export const ContactList: React.FC<ContactListProps> = ({
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-            );
-            })}
           </div>
         </div>
+        ) : (
+        <div className="space-y-4">
+          {/* Top Accordion Info & Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 text-xs text-slate-500">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-indigo-600" />
+                <span>Grouped by Date Added:</span>
+              </span>
+              <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full font-bold">
+                {dateGroups.length} {dateGroups.length === 1 ? 'Date' : 'Dates'}
+              </span>
+              <span>•</span>
+              <span className="font-medium text-slate-600">{filteredContacts.length} people total</span>
+            </div>
+          </div>
+
+          {/* One row per date; clicking opens that date's page */}
+          <div className="space-y-3.5">
+            {dateGroups.map((group) => (
+              <button
+                type="button"
+                key={group.key}
+                onClick={() => setOpenDateKey(group.key)}
+                className="w-full text-left bg-white border border-slate-200 hover:border-indigo-300 rounded-2xl px-5 md:px-6 py-4 flex items-center justify-between gap-4 shadow-xs hover:shadow-sm transition cursor-pointer"
+                title="Open the people added on this date"
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100/80 shrink-0">
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold text-slate-900 text-sm md:text-base tracking-tight">{group.displayLabel}</h3>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/70 shadow-2xs">
+                    {group.count} {group.count === 1 ? 'person added' : 'people added'}
+                  </span>
+                </div>
+                <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
+              </button>
+            ))}
+          </div>
+        </div>
+        )
       ) : viewMode === 'table' ? (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
