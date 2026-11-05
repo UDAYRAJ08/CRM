@@ -6,6 +6,10 @@ interface Props {
   children: ReactNode;
 }
 
+const CHUNK_RELOAD_KEY = 'crm_chunk_reload';
+// Browser wording for a lazy chunk that no longer exists after a deploy (Chrome / Safari / Firefox)
+const CHUNK_ERROR_RE = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i;
+
 interface State {
   hasError: boolean;
   error: Error | null;
@@ -17,11 +21,43 @@ export class ErrorBoundary extends Component<Props, State> {
     error: null,
   };
 
+  private clearFlagTimer?: ReturnType<typeof setTimeout>;
+
+  /** Reload the page once per failure streak; returns false if we already tried. */
+  public static reloadOnce(): boolean {
+    try {
+      if (sessionStorage.getItem(CHUNK_RELOAD_KEY)) return false;
+      sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+    } catch {
+      return false;
+    }
+    window.location.reload();
+    return true;
+  }
+
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
+  public componentDidMount() {
+    // Clear the flag only once the app has run for a while without crashing, so a chunk
+    // that is still missing after the reload shows this screen instead of a reload loop.
+    this.clearFlagTimer = setTimeout(() => {
+      if (this.state.hasError) return;
+      try {
+        sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+      } catch {
+        // storage blocked: nothing to clear
+      }
+    }, 10000);
+  }
+
+  public componentWillUnmount() {
+    clearTimeout(this.clearFlagTimer);
+  }
+
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    if (CHUNK_ERROR_RE.test(error?.message || '') && ErrorBoundary.reloadOnce()) return;
     console.error('Uncaught CRM Error:', error, errorInfo);
   }
 

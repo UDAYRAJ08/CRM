@@ -1,7 +1,7 @@
 // CRM LinkedIn Connector - service worker.
 //
-// Reads the LinkedIn session (li_at + JSESSIONID) from the user's own logged-in
-// browser and hands it ONLY to CRM sites the user explicitly linked from the popup.
+// Uses the LinkedIn session (li_at + JSESSIONID) of the user's own logged-in browser
+// on behalf of CRM sites the user explicitly linked from the popup. The cookies never leave the extension.
 // A site is linked by granting Chrome's host permission for it, then it gets the
 // page-bridge content script. Every request is re-checked against the stored list.
 
@@ -98,13 +98,11 @@ async function unlinkOrigin(origin) {
 async function readCookies() {
   // Only cookies Chrome actually sends to www.linkedin.com. A domain-wide getAll() can
   // return a stale JSESSIONID from another subdomain first, which fails the CSRF check.
-  const cookies = await chrome.cookies.getAll({ url: LINKEDIN });
   const get = (name) => chrome.cookies.get({ url: LINKEDIN, name }).then((c) => c?.value || '');
   const [liAt, jsessionId] = await Promise.all([get('li_at'), get('JSESSIONID')]);
   return {
     liAt,
     jsessionId: jsessionId.replace(/^["']|["']$/g, ''),
-    rawCookie: cookies.map((c) => `${c.name}=${c.value}`).join('; '),
   };
 }
 
@@ -152,7 +150,8 @@ async function getSession() {
   }
   if (!c.jsessionId) return { ok: false, error: 'NO_CSRF_TOKEN' };
   const profile = await fetchProfile(c.jsessionId);
-  return { ok: true, liAt: c.liAt, jsessionId: c.jsessionId, rawCookie: c.rawCookie, profile };
+  // Never hand the cookies to the page: any script on the CRM origin could read them.
+  return { ok: true, loggedIn: true, profile };
 }
 
 // ---------- LinkedIn actions ----------

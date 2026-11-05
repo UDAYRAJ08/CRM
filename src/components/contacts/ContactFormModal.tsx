@@ -43,6 +43,8 @@ export const ContactFormModal: React.FC<ContactFormModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       db.getCompanies().then(setCompanies);
+      setNewCompanyName('');
+      setTagInput('');
 
       if (contact) {
         setName(contact.name || '');
@@ -59,13 +61,12 @@ export const ContactFormModal: React.FC<ContactFormModalProps> = ({
         setPhone('');
         setTitle('');
         setCompanyId('');
-        setNewCompanyName('');
         setOwnerId(activeMember?.id || '');
         setStatus('new');
         setTags([]);
       }
     }
-  }, [isOpen, contact, activeMember]);
+  }, [isOpen, contact?.id, activeMember?.id]);
 
   const handleAddTag = () => {
     const trimmed = tagInput.trim();

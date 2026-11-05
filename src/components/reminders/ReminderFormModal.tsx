@@ -7,6 +7,7 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Input, Textarea, Select } from '../ui/Input';
 import { CalendarCheck2, Clock, User, Calendar } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface ReminderFormModalProps {
   isOpen: boolean;
@@ -40,7 +41,7 @@ export const ReminderFormModal: React.FC<ReminderFormModalProps> = ({
       if (reminder) {
         setContactId(reminder.contact_id);
         setAssignedTo(reminder.assigned_to || activeMember?.id || '');
-        setDueDate(reminder.due_date ? reminder.due_date.slice(0, 16) : '');
+        setDueDate(reminder.due_date ? format(new Date(reminder.due_date), "yyyy-MM-dd'T'HH:mm") : '');
         setNote(reminder.note || '');
       } else {
         setContactId(contact?.id || '');
@@ -49,11 +50,11 @@ export const ReminderFormModal: React.FC<ReminderFormModalProps> = ({
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         tomorrow.setHours(10, 0, 0, 0);
-        setDueDate(tomorrow.toISOString().slice(0, 16));
+        setDueDate(format(tomorrow, "yyyy-MM-dd'T'HH:mm"));
         setNote('');
       }
     }
-  }, [isOpen, contact, reminder, activeMember]);
+  }, [isOpen, contact?.id, reminder, activeMember?.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

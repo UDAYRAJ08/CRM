@@ -148,12 +148,13 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
     }
   };
 
+  // Refetch whenever App hands over fresh contact data (e.g. after a send); reset the tab only for a new contact.
   useEffect(() => {
-    if (isOpen && contact) {
-      fetchDetails();
-      setActiveTab('timeline');
-    }
+    if (isOpen && contact) fetchDetails();
   }, [isOpen, contact]);
+  useEffect(() => {
+    if (isOpen) setActiveTab('timeline');
+  }, [isOpen, contact?.id]);
 
   if (!isOpen || !contact) return null;
 
@@ -175,7 +176,11 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   };
 
   const handleToggleReminder = async (rem: Reminder) => {
-    await db.toggleReminder(rem.id, !rem.done);
+    try {
+      await db.toggleReminder(rem.id, !rem.done);
+    } catch (e: any) {
+      error('Update Failed', e?.message || 'Could not update the reminder.');
+    }
     fetchDetails();
   };
 
@@ -188,8 +193,13 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   };
 
   const confirmDeleteContact = async () => {
+    try {
+      await db.deleteContact(contact.id);
+    } catch (err: any) {
+      error('Delete Failed', err.message || 'Could not delete contact.');
+      return;
+    }
     onClose();
-    await db.deleteContact(contact.id);
     success('Contact Deleted', `${contact.name} was removed.`);
     onContactUpdated();
   };
@@ -213,7 +223,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   const isFollowUpOverdue = contact.status === 'contacted' && diffDays >= 3;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true">
       {/* Backdrop overlay */}
       <div
         className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"

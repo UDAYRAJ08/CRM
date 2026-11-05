@@ -13,6 +13,7 @@ import {
   getSelectedModel,
   isAutoFallbackEnabled,
 } from './aiConfig';
+import { supabase } from './supabase';
 
 export interface AICompletionRequest {
   provider?: AIProviderId;
@@ -148,14 +149,15 @@ export async function executeAICompletion(
   // If Supabase edge function is available, try it before local fallback
   const edgeFunctionsUrl = (import.meta as any).env?.VITE_SUPABASE_FUNCTIONS_URL;
   const anonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
-  if (edgeFunctionsUrl && anonKey && !edgeFunctionsUrl.includes('your-project-ref')) {
+  const accessToken = supabase ? (await supabase.auth.getSession()).data.session?.access_token : undefined;
+  if (edgeFunctionsUrl && anonKey && accessToken && !edgeFunctionsUrl.includes('your-project-ref')) {
     try {
       const edgeStart = Date.now();
       const edgeRes = await fetch(`${edgeFunctionsUrl}/generate-ai-draft`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${anonKey}`,
+          Authorization: `Bearer ${accessToken}`,
           apikey: anonKey,
         },
         body: JSON.stringify({

@@ -56,7 +56,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
   const initials = getInitials(activeMember?.name || user?.email, 'U');
 
   return (
-    <div className="fixed inset-0 z-50 md:hidden flex">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 md:hidden flex">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-slate-900/40"

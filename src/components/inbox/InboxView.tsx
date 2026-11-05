@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useAuth } from '../../context/AuthContext';
 import { Contact, EmailRecord, Interaction } from '../../types/crm';
@@ -51,7 +51,10 @@ export const InboxView: React.FC<InboxViewProps> = ({
   const { user } = useAuth();
   const activeUserEmail = (activeMember?.email || user?.email || localStorage.getItem('crm_active_user_email') || 'workspace inbox').trim();
 
-  const [messages, setMessages] = useState<InboundMessageItem[]>([]);
+  const [rawInbound, setRawInbound] = useState<{
+    interactions: Awaited<ReturnType<typeof db.getAllInboundInteractions>>;
+    emails: EmailRecord[];
+  }>({ interactions: [], emails: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedMessageId, setExpandedMessageId] = useState<string | null>(null);
@@ -68,96 +71,14 @@ export const InboxView: React.FC<InboxViewProps> = ({
     return map;
   }, [contacts]);
 
+  // Downloads only; matching to contacts happens in the memo below so a contacts refresh does not refetch.
   const loadInboundMessages = async () => {
     setIsLoading(true);
     try {
-      const items: InboundMessageItem[] = [];
-      const seenKeys = new Set<string>();
-
       // 1. Fetch all inbound interactions across all contacts in one unified query
-      const allInboundInteractions = await db.getAllInboundInteractions();
-      for (const inter of allInboundInteractions) {
-        const contact = inter.contact || (inter.contact_id ? contactMap.get(inter.contact_id) : null);
-        if (!contact) continue;
-
-        // Extract from content
-        const subjectMatch = inter.content.match(/Subject:\s*([^\n]+)/i);
-        const fromMatch = inter.content.match(/From:\s*([^\n<]+)(?:<([^>]+)>)?/i);
-        const subject = subjectMatch ? subjectMatch[1].trim() : 'Email Reply';
-        const senderName = fromMatch ? fromMatch[1].trim() : contact.name;
-        const senderEmail = fromMatch && fromMatch[2] ? fromMatch[2].trim() : contact.email || '';
-
-        // Extract body (after Subject line)
-        let body = inter.content;
-        const lines = inter.content.split('\n');
-        const subjectIdx = lines.findIndex((l) => l.toLowerCase().startsWith('subject:'));
-        if (subjectIdx !== -1 && subjectIdx + 1 < lines.length) {
-          body = lines
-            .slice(subjectIdx + 1)
-            .join('\n')
-            .replace(/\[MsgID:[^\]]+\]/g, '')
-            .trim();
-        }
-
-        const key = `${contact.id}_${subject}_${inter.created_at.slice(0, 16)}`;
-        if (!seenKeys.has(key)) {
-          seenKeys.add(key);
-          items.push({
-            id: inter.id,
-            contactId: contact.id,
-            contact: contact,
-            senderName: senderName || contact.name,
-            senderEmail: senderEmail || contact.email || '',
-            subject: subject,
-            body: body,
-            receivedAt: inter.created_at,
-            interactionId: inter.id,
-          });
-        }
-      }
-
-      // 2. Fetch from emails table where subject starts with Inbound or status is received
-      const allEmails = await db.getEmails();
-      for (const email of allEmails) {
-        if (
-          email.status === 'received' ||
-          email.is_inbound ||
-          email.subject.toLowerCase().startsWith('re:') ||
-          email.subject.toLowerCase().includes('inbound')
-        ) {
-          const contact = email.contact_id ? contactMap.get(email.contact_id) : null;
-          const senderEmail = (email.sender_email || email.recipient_email || '').toLowerCase().trim();
-          const matchedContact = contact || (senderEmail ? contactMap.get(senderEmail) : null);
-
-          if (matchedContact) {
-            const key = `${matchedContact.id}_${email.subject}_${(email.sent_at || email.created_at || '').slice(0, 16)}`;
-            if (!seenKeys.has(key)) {
-              seenKeys.add(key);
-              items.push({
-                id: email.id,
-                contactId: matchedContact.id,
-                contact: matchedContact,
-                senderName: matchedContact.name,
-                senderEmail: email.sender_email || matchedContact.email || '',
-                subject: email.subject,
-                body: email.body,
-                receivedAt: email.sent_at || email.created_at || new Date().toISOString(),
-                emailRecordId: email.id,
-              });
-            }
-          }
-        }
-      }
-
-      // Sort newest first
-      items.sort(
-        (a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
-      );
-
-      setMessages(items);
-      if (items.length > 0 && !expandedMessageId) {
-        setExpandedMessageId(items[0].id);
-      }
+      // 2. Fetch from emails table (filtered to inbound below)
+      const [interactions, emails] = await Promise.all([db.getAllInboundInteractions(), db.getEmails()]);
+      setRawInbound({ interactions, emails });
     } catch (err) {
       console.error('Error loading inbound messages:', err);
     } finally {
@@ -165,9 +86,105 @@ export const InboxView: React.FC<InboxViewProps> = ({
     }
   };
 
+  const messages = useMemo(() => {
+    const items: InboundMessageItem[] = [];
+    const seenKeys = new Set<string>();
+
+    for (const inter of rawInbound.interactions) {
+      // Prefer the live contact: the joined copy is only refreshed after a sync.
+      const contact = (inter.contact_id && contactMap.get(inter.contact_id)) || inter.contact;
+      if (!contact) continue;
+
+      // Extract from content
+      const subjectMatch = inter.content.match(/Subject:\s*([^\n]+)/i);
+      const fromMatch = inter.content.match(/From:\s*([^\n<]+)(?:<([^>]+)>)?/i);
+      const subject = subjectMatch ? subjectMatch[1].trim() : 'Email Reply';
+      const senderName = fromMatch ? fromMatch[1].trim() : contact.name;
+      const senderEmail = fromMatch && fromMatch[2] ? fromMatch[2].trim() : contact.email || '';
+
+      // Extract body (after Subject line)
+      let body = inter.content;
+      const lines = inter.content.split('\n');
+      const subjectIdx = lines.findIndex((l) => l.toLowerCase().startsWith('subject:'));
+      if (subjectIdx !== -1 && subjectIdx + 1 < lines.length) {
+        body = lines
+          .slice(subjectIdx + 1)
+          .join('\n')
+          .replace(/\[MsgID:[^\]]+\]/g, '')
+          .trim();
+      }
+
+      const key = `${contact.id}_${subject}_${inter.created_at.slice(0, 16)}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        items.push({
+          id: inter.id,
+          contactId: contact.id,
+          contact: contact,
+          senderName: senderName || contact.name,
+          senderEmail: senderEmail || contact.email || '',
+          subject: subject,
+          body: body,
+          receivedAt: inter.created_at,
+          interactionId: inter.id,
+        });
+      }
+    }
+
+    // Emails table rows where subject starts with Inbound or status is received
+    for (const email of rawInbound.emails) {
+      if (
+        email.status === 'received' ||
+        email.is_inbound ||
+        email.subject.toLowerCase().startsWith('re:') ||
+        email.subject.toLowerCase().includes('inbound')
+      ) {
+        const contact = email.contact_id ? contactMap.get(email.contact_id) : null;
+        const senderEmail = (email.sender_email || email.recipient_email || '').toLowerCase().trim();
+        const matchedContact = contact || (senderEmail ? contactMap.get(senderEmail) : null);
+
+        if (matchedContact) {
+          const key = `${matchedContact.id}_${email.subject}_${(email.sent_at || email.created_at || '').slice(0, 16)}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            items.push({
+              id: email.id,
+              contactId: matchedContact.id,
+              contact: matchedContact,
+              senderName: matchedContact.name,
+              senderEmail: email.sender_email || matchedContact.email || '',
+              subject: email.subject,
+              body: email.body,
+              receivedAt: email.sent_at || email.created_at || new Date().toISOString(),
+              emailRecordId: email.id,
+            });
+          }
+        }
+      }
+    }
+
+    // Sort newest first
+    items.sort(
+      (a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
+    );
+
+    return items;
+  }, [rawInbound, contactMap]);
+
+  // Load on mount (even mid-sync, so cached replies show at once) and whenever a sync finishes.
+  const hasLoadedRef = useRef(false);
   useEffect(() => {
-    loadInboundMessages();
-  }, [contacts]);
+    if (!isSyncing || !hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      loadInboundMessages();
+    }
+  }, [isSyncing]);
+
+  useEffect(() => {
+    if (messages.length > 0 && !expandedMessageId) {
+      setExpandedMessageId(messages[0].id);
+    }
+  }, [messages]);
 
   // Bounce reports logged before bounce detection existed stay out of the inbox too.
   const replies = useMemo(
@@ -197,7 +214,6 @@ export const InboxView: React.FC<InboxViewProps> = ({
 
   const handleSync = async () => {
     await onSyncInbox();
-    await loadInboundMessages();
   };
 
   return (

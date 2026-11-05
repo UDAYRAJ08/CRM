@@ -279,23 +279,47 @@ export const ContactList: React.FC<ContactListProps> = ({
     };
   }, [contacts]);
 
+  // Contacts matching search, owner and tag filters (everything except the pipeline tab)
+  const baseFilteredContacts = useMemo(() => {
+    return contacts.filter((c) => {
+      // Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchName = c.name.toLowerCase().includes(q);
+        const matchEmail = c.email?.toLowerCase().includes(q) || false;
+        const matchPhone = c.phone?.includes(q) || false;
+        const matchCompany = c.company?.name.toLowerCase().includes(q) || false;
+        const matchTag = c.tags?.some((t) => t.toLowerCase().includes(q)) || false;
+        if (!matchName && !matchEmail && !matchPhone && !matchCompany && !matchTag) {
+          return false;
+        }
+      }
+
+      // Owner filter
+      if (ownerFilter !== 'all') {
+        if (ownerFilter === 'unassigned' && c.owner_id) return false;
+        if (ownerFilter !== 'unassigned' && c.owner_id !== ownerFilter) return false;
+      }
+
+      // Tag filter
+      if (tagFilter !== 'all' && (!c.tags || !c.tags.includes(tagFilter))) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [contacts, searchQuery, ownerFilter, tagFilter]);
+
+  // Due follow-ups within the current owner/tag/search filters
+  const dueContacts = useMemo(
+    () => baseFilteredContacts.filter((c) => getFollowUpInfo(c).isOverdue),
+    [baseFilteredContacts]
+  );
+
   // Filter and Sort contacts
   const filteredContacts = useMemo(() => {
-    return contacts
+    return baseFilteredContacts
       .filter((c) => {
-        // Search query
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
-          const matchName = c.name.toLowerCase().includes(q);
-          const matchEmail = c.email?.toLowerCase().includes(q) || false;
-          const matchPhone = c.phone?.includes(q) || false;
-          const matchCompany = c.company?.name.toLowerCase().includes(q) || false;
-          const matchTag = c.tags?.some((t) => t.toLowerCase().includes(q)) || false;
-          if (!matchName && !matchEmail && !matchPhone && !matchCompany && !matchTag) {
-            return false;
-          }
-        }
-
         // Pipeline segment tab
         if (pipelineTab === 'uncontacted' && c.status !== 'new') {
           return false;
@@ -308,17 +332,6 @@ export const ContactList: React.FC<ContactListProps> = ({
           const contactDate = new Date(c.updated_at || c.created_at).getTime();
           const diffDays = Math.floor((Date.now() - contactDate) / (1000 * 60 * 60 * 24));
           if (diffDays < 3) return false;
-        }
-
-        // Owner filter
-        if (ownerFilter !== 'all') {
-          if (ownerFilter === 'unassigned' && c.owner_id) return false;
-          if (ownerFilter !== 'unassigned' && c.owner_id !== ownerFilter) return false;
-        }
-
-        // Tag filter
-        if (tagFilter !== 'all' && (!c.tags || !c.tags.includes(tagFilter))) {
-          return false;
         }
 
         return true;
@@ -336,7 +349,13 @@ export const ContactList: React.FC<ContactListProps> = ({
         }
         return sortOrder === 'asc' ? -comparison : comparison;
       });
-  }, [contacts, searchQuery, pipelineTab, ownerFilter, tagFilter, sortBy, sortOrder]);
+  }, [baseFilteredContacts, pipelineTab, sortBy, sortOrder]);
+
+  // Drop the selection when the view changes. Not on search: people type to find one more contact,
+  // and selectedContacts already limits bulk actions to visible rows.
+  useEffect(() => {
+    setSelectedIds((prev) => (prev.size ? new Set() : prev));
+  }, [pipelineTab, ownerFilter, tagFilter, openDateKey, viewMode]);
 
   // Group contacts by Date Added (created_at) for the Accordion View
   const dateGroups = useMemo(() => {
@@ -407,6 +426,7 @@ export const ContactList: React.FC<ContactListProps> = ({
 
   // Keyboard Shortcuts Listener (J/K to move, Enter/Space to open, E to email, Esc to deselect)
   useEffect(() => {
+    if (viewMode !== 'table') return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement;
       const isInput =
@@ -416,7 +436,9 @@ export const ContactList: React.FC<ContactListProps> = ({
           activeEl.tagName === 'SELECT' ||
           (activeEl as HTMLElement).isContentEditable);
 
-      if (isInput) return;
+      if (isInput || document.querySelector('[role="dialog"]')) return;
+      // Leave arrow keys to page scrolling until a row is active
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && focusedIndex < 0) return;
 
       if (e.key === 'j' || e.key === 'J' || e.key === 'ArrowDown') {
         e.preventDefault();
@@ -443,7 +465,7 @@ export const ContactList: React.FC<ContactListProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [filteredContacts, focusedIndex, onSelectContact, onOpenEmailComposer]);
+  }, [viewMode, filteredContacts, focusedIndex, onSelectContact, onOpenEmailComposer]);
 
   // Selection handlers
   const handleSelectAll = (checked: boolean) => {
@@ -466,8 +488,8 @@ export const ContactList: React.FC<ContactListProps> = ({
   };
 
   const selectedContacts = useMemo(() => {
-    return contacts.filter((c) => selectedIds.has(c.id));
-  }, [contacts, selectedIds]);
+    return filteredContacts.filter((c) => selectedIds.has(c.id));
+  }, [filteredContacts, selectedIds]);
 
   // Bulk Status Update
   const handleBulkStatusChange = async (newStatus: ContactStatus) => {
@@ -673,22 +695,15 @@ export const ContactList: React.FC<ContactListProps> = ({
             </select>
 
             {/* Quick 1-Click Bulk Follow-up for Due Leads */}
-            {pipelineCounts.due > 0 && (
+            {dueContacts.length > 0 && (
               <button
                 type="button"
-                onClick={() => {
-                  const dueContacts = contacts.filter((c) => {
-                    const contactDate = new Date(c.updated_at || c.created_at).getTime();
-                    const diffDays = Math.floor((Date.now() - contactDate) / (1000 * 60 * 60 * 24));
-                    return c.status === 'contacted' && diffDays >= 3;
-                  });
-                  onOpenBulkEmail(dueContacts, 'followup');
-                }}
+                onClick={() => onOpenBulkEmail(dueContacts, 'followup')}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300/80 rounded-xl font-bold shadow-2xs transition cursor-pointer"
                 title="Launch Bulk Follow-up Sender for all due contacts"
               >
                 <RotateCw className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Follow up ({pipelineCounts.due})</span>
+                <span>Follow up ({dueContacts.length})</span>
               </button>
             )}
 
@@ -1117,7 +1132,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                       type="checkbox"
                       checked={
                         filteredContacts.length > 0 &&
-                        selectedIds.size === filteredContacts.length
+                        filteredContacts.every((c) => selectedIds.has(c.id))
                       }
                       onChange={(e) => handleSelectAll(e.target.checked)}
                       className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
@@ -1511,7 +1526,7 @@ export const ContactList: React.FC<ContactListProps> = ({
       {/* ===================================================================== */}
       {/* 3. FLOATING ACTION BAR (SLIDES UP ON SELECTION)                        */}
       {/* ===================================================================== */}
-      {selectedIds.size > 0 && (
+      {selectedContacts.length > 0 && (
         <div className="fixed bottom-6 inset-x-0 mx-auto max-w-2xl px-4 z-40 animate-in slide-in-from-bottom-5 duration-200">
           <div className="bg-slate-900 text-white rounded-2xl p-3.5 shadow-lg border border-slate-700/80 flex flex-wrap items-center justify-between gap-3">
 
@@ -1519,7 +1534,7 @@ export const ContactList: React.FC<ContactListProps> = ({
             <div className="flex items-center gap-2.5">
               <span className="px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-500/30 flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
-                <span>{selectedIds.size} Selected</span>
+                <span>{selectedContacts.length} Selected</span>
               </span>
             </div>
 

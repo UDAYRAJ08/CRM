@@ -44,8 +44,15 @@ export interface QueueRunResult {
   message?: string;
 }
 
-/** Execute at most one due action for this team member's LinkedIn account. */
+/** Execute at most one due action for this team member's LinkedIn account. Only one open tab runs this at a time. */
 export async function runNextLinkedInAction(teamMemberId: string): Promise<QueueRunResult> {
+  if (typeof navigator === 'undefined' || !navigator.locks) return runNext(teamMemberId);
+  return navigator.locks.request('crm-linkedin-queue', { ifAvailable: true }, (lock) =>
+    lock ? runNext(teamMemberId) : { processed: false }
+  );
+}
+
+async function runNext(teamMemberId: string): Promise<QueueRunResult> {
   if (!supabase) return { processed: false };
   const client = supabase;
 
@@ -117,7 +124,9 @@ export async function runNextLinkedInAction(teamMemberId: string): Promise<Queue
       await finish({ status: 'pending', scheduled_at: nextMorning() });
       return { processed: false, message: 'Daily LinkedIn invite limit reached; action moved to tomorrow.' };
     }
-    if (code === 'EXTENSION_NOT_DETECTED' || code === 'NOT_LOGGED_IN' || code === 'NO_CSRF_TOKEN' || code === 'ORIGIN_NOT_LINKED') {
+    // A timeout (EXTENSION_NOT_DETECTED) mid-send may still have sent the message, so that one fails below instead of retrying.
+    const mayHaveSent = code === 'EXTENSION_NOT_DETECTED' && type === 'send_message';
+    if (!mayHaveSent && (code === 'EXTENSION_NOT_DETECTED' || code === 'NOT_LOGGED_IN' || code === 'NO_CSRF_TOKEN' || code === 'ORIGIN_NOT_LINKED')) {
       await finish({ status: 'pending' });
       return { processed: false, message: (err as Error).message };
     }
@@ -140,9 +149,12 @@ export async function runNextLinkedInAction(teamMemberId: string): Promise<Queue
     .update({ [statField]: Number(campaign?.[statField] || 0) + 1, updated_at: new Date().toISOString() })
     .eq('id', action.campaign_id);
   if (!failure) {
+    // Re-read: another browser may have bumped the counter since `used` was loaded.
+    const { data: fresh } = await client.from('linkedin_accounts').select(counter.used).eq('id', account.id).single();
+    const current = Number((fresh as any)?.[counter.used] ?? used);
     await client
       .from('linkedin_accounts')
-      .update({ [counter.used]: used + 1, last_action_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .update({ [counter.used]: current + 1, last_action_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('id', account.id);
   }
 

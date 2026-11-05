@@ -225,7 +225,7 @@ export const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
     setSandboxError(null);
     db.getInteractions(contact.id).then(setInteractions);
     db.getEmails(contact.id).then((emails) => setPastEmails(emails || []));
-  }, [isOpen, contact, activeMember, initialSubject, initialBody, resumeDraft]);
+  }, [isOpen, contact?.id, initialSubject, initialBody, resumeDraft]);
 
   // ── Close all popovers on outside click ────────────────────────────────────
   useEffect(() => {

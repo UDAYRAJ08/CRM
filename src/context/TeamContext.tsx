@@ -63,9 +63,8 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
           metadataName ||
           fallbackName.charAt(0).toUpperCase() + fallbackName.slice(1).replace(/[._]/g, ' ');
         const isFirstUser = members.length === 0;
-        const role =
-          (user.user_metadata?.role as string) ||
-          (isFirstUser ? 'Admin' : 'Sales Representative');
+        // Never from user_metadata: the user picks that at sign-up.
+        const role = isFirstUser ? 'Admin' : 'Sales Representative';
 
         matched = await db.addTeamMember({
           name: formattedName,

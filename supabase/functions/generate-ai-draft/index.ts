@@ -4,6 +4,7 @@
 // Deno runtime
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -41,8 +42,24 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  const fail = (status: number, error: string) =>
+    new Response(JSON.stringify({ error }), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
   try {
+    // Only signed-in CRM team members may spend the server's AI keys.
+    const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+    const admin = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "", {
+      auth: { persistSession: false },
+    });
+    const { data: who } = token ? await admin.auth.getUser(token) : { data: { user: null } };
+    if (!who.user) return fail(401, "Sign in to the CRM first.");
+    const { data: member, error: memberError } = await admin.from("team_members").select("id")
+      .eq("auth_user_id", who.user.id).order("created_at").limit(1).maybeSingle();
+    if (memberError) return fail(500, "CRM server is not configured.");
+    if (!member) return fail(403, "Only CRM team members can generate drafts.");
+
     const payload: AIProxyRequest = await req.json();
+    payload.maxTokens = Math.min(Math.max(1, Math.floor(Number(payload.maxTokens)) || 2048), 4000);
 
     // Determine target provider
     const provider = payload.provider || "anthropic";

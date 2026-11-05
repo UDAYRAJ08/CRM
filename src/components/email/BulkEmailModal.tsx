@@ -384,7 +384,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
     ? substituteMergeFields(subjectTemplate, previewContact)
     : '';
   const renderedBody = previewContact
-    ? substituteMergeFields(bodyTemplate, previewContact)
+    ? substituteMergeFields(bodyTemplate, previewContact, true)
     : '';
 
   // Switch static template
@@ -469,7 +469,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
         contact_id: contact.id,
         recipient_email: contact.email!,
         subject: substituteMergeFields(subjectTemplate, contact),
-        body: substituteMergeFields(bodyTemplate, contact),
+        body: substituteMergeFields(bodyTemplate, contact, true),
         ai_generated: activeTemplateKey === 'ai_generated',
         sender_email: activeSenderEmail || null,
         attachments,
@@ -527,7 +527,7 @@ export const BulkEmailModal: React.FC<BulkEmailModalProps> = ({
     for (let i = 0; i < contactsWithEmail.length; i++) {
       const contact = contactsWithEmail[i];
       const customSub = substituteMergeFields(subjectTemplate, contact);
-      const customBody = substituteMergeFields(bodyTemplate, contact);
+      const customBody = substituteMergeFields(bodyTemplate, contact, true);
 
       try {
         await sendEmailDirectly({

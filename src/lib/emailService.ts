@@ -106,7 +106,42 @@ export async function composioFetch(payload: unknown): Promise<Response> {
   return fetch('/api/composio', { method: 'POST', headers, body: JSON.stringify(payload) });
 }
 
-// Helper: Dispatch via Composio (supports both Gmail & Outlook)
+/**
+ * True only when every tool in a COMPOSIO_MULTI_EXECUTE_TOOL response reports successful === true.
+ * The body is JSON or SSE (`data: {...}` lines); the tool results sit in result.content[].text as a JSON string.
+ */
+export function composioSendSucceeded(rawText: string): boolean {
+  const dataLines = rawText
+    .split('\n')
+    .filter((line) => line.startsWith('data: '))
+    .map((line) => line.replace(/^data:\s*/, '').trim())
+    .filter(Boolean);
+  try {
+    const parsed = JSON.parse(dataLines.length ? dataLines.join('') : rawText);
+    if (parsed?.error || parsed?.result?.isError) return false;
+    const payloads = [parsed?.result, parsed];
+    for (const c of parsed?.result?.content || []) {
+      if (c?.type === 'text' && c.text) {
+        try {
+          payloads.unshift(JSON.parse(c.text));
+        } catch {
+          // plain-text content: not a tool result
+        }
+      }
+    }
+    for (const p of payloads) {
+      const results = p?.data?.results || p?.results;
+      if (Array.isArray(results) && results.length) {
+        return results.every((r: any) => (r?.response?.successful ?? r?.successful) === true);
+      }
+    }
+    return payloads.some((p) => p?.successful === true && !p?.error);
+  } catch {
+    return false;
+  }
+}
+
+// Helper: Dispatch via Composio (Gmail for gmail.com senders, otherwise Outlook)
 async function sendViaComposio(
   recipient: string,
   subject: string,
@@ -118,6 +153,7 @@ async function sendViaComposio(
 
     const htmlContent = buildEmailHtml(body);
 
+    // One tool only: both tools in one multi-execute call could deliver the email twice.
     const toolsToAttempt = isGmailSender
       ? [
           {
@@ -129,30 +165,12 @@ async function sendViaComposio(
               is_html: true,
             },
           },
-          {
-            tool_slug: 'OUTLOOK_SEND_EMAIL',
-            arguments: {
-              to: recipient.trim(),
-              subject: subject.trim(),
-              body: htmlContent,
-              is_html: true,
-            },
-          },
         ]
       : [
           {
             tool_slug: 'OUTLOOK_SEND_EMAIL',
             arguments: {
               to: recipient.trim(),
-              subject: subject.trim(),
-              body: htmlContent,
-              is_html: true,
-            },
-          },
-          {
-            tool_slug: 'GMAIL_SEND_EMAIL',
-            arguments: {
-              recipient_email: recipient.trim(),
               subject: subject.trim(),
               body: htmlContent,
               is_html: true,
@@ -175,11 +193,7 @@ async function sendViaComposio(
     });
 
     const resText = await res.text();
-    if (
-      resText.includes('"successful":true') ||
-      resText.includes('"status_code":202') ||
-      resText.includes('202')
-    ) {
+    if (res.ok && composioSendSucceeded(resText)) {
       return { success: true };
     }
     return { success: false, error: `Composio error: ${resText.slice(0, 180)}` };
@@ -210,18 +224,21 @@ async function sendViaResend(
     const endpoint = '/api/resend/emails';
 
     const isHtml = /<[a-z][\s\S]*>/i.test(body);
-    const plainText = isHtml
+    // Merge fields are HTML-escaped even in plain bodies, so decode entities for the text part too.
+    const plainText = (isHtml
       ? body
           .replace(/<br\s*[\/]?>/gi, '\n')
           .replace(/<\/p>/gi, '\n\n')
           .replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1')
           .replace(/<[^>]+>/g, '')
-          .replace(/&nbsp;/gi, ' ')
-          .replace(/&amp;/gi, '&')
-          .replace(/&lt;/gi, '<')
-          .replace(/&gt;/gi, '>')
-          .trim()
-      : body.trim();
+      : body)
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&amp;/gi, '&')
+      .trim();
     const htmlBody = buildEmailHtml(body);
 
     const payload: any = {
@@ -451,34 +468,43 @@ export async function sendEmailDirectly(params: SendEmailParams): Promise<SendEm
   }
 
   // Record into CRM database & contact interaction log with accurate sender_email
-  const record = await db.saveEmail({
-    contact_id: params.contactId || null,
-    recipient_email: params.recipientEmail,
-    sender_email: activeUserEmail || effectiveReplyTo,
-    subject: params.subject,
-    body: params.body,
-    ai_generated: params.aiGenerated || false,
-    sent_by: params.senderId || null,
-    sent_at: new Date().toISOString(),
-    status: remoteSuccess ? 'sent' : 'failed',
-    error_message: remoteError,
-  });
+  let record: EmailRecord;
+  try {
+    record = await db.saveEmail({
+      contact_id: params.contactId || null,
+      recipient_email: params.recipientEmail,
+      sender_email: activeUserEmail || effectiveReplyTo,
+      subject: params.subject,
+      body: params.body,
+      ai_generated: params.aiGenerated || false,
+      sent_by: params.senderId || null,
+      sent_at: new Date().toISOString(),
+      status: remoteSuccess ? 'sent' : 'failed',
+      error_message: remoteError,
+    });
 
-  // Also log an interaction of type 'email' under the contact with full communication history
+    // Also log an interaction of type 'email' under the contact with full communication history
+    if (params.contactId) {
+      await db.addInteraction({
+        contact_id: params.contactId,
+        type: 'email',
+        content: `Subject: ${params.subject}\n\n${params.body}`,
+        created_by: params.senderId || null,
+      });
+
+      // 1. Automatically update contact status from 'new' to 'contacted'
+      await db.saveContact({
+        id: params.contactId,
+        status: 'contacted',
+      });
+    }
+  } catch (err: any) {
+    if (!remoteSuccess) throw err;
+    // Say it was delivered, so nobody re-sends it to the lead.
+    throw new Error(`Email was delivered to ${params.recipientEmail}, but saving it to the CRM failed: ${err?.message || err}`);
+  }
+
   if (params.contactId) {
-    await db.addInteraction({
-      contact_id: params.contactId,
-      type: 'email',
-      content: `Subject: ${params.subject}\n\n${params.body}`,
-      created_by: params.senderId || null,
-    });
-
-    // 1. Automatically update contact status from 'new' to 'contacted'
-    await db.saveContact({
-      id: params.contactId,
-      status: 'contacted',
-    });
-
     // 2. Advance the auto follow-up sequence (Follow-up 1 -> Follow-up 2 -> done).
     // A failed send is about to throw below, so it must not advance the sequence.
     const sendFailed = !remoteSuccess && Boolean(remoteError) && !params.logOnly;
@@ -591,23 +617,35 @@ export function resolveContactCompany(contact: Contact): string {
   return '';
 }
 
-export function substituteMergeFields(template: string, contact: Contact): string {
+const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+/**
+ * Fill {{name}}, {{company}}... from the contact. Pass html=true for an HTML body so contact data
+ * can't inject markup; plain-text templates (subjects) get the raw values.
+ */
+export function substituteMergeFields(
+  template: string,
+  contact: Contact,
+  html = /<[a-z][\s\S]*>/i.test(template)
+): string {
+  // A function replacement also stops "$&" etc. in contact data being read as replace patterns.
+  const val = (v: string) => () => (html ? v.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]) : v);
   const firstName = contact.name.split(' ')[0] || contact.name;
   const company = resolveContactCompany(contact);
 
   let res = template
-    .replace(/\{\{\s*name\s*\}\}/gi, contact.name)
-    .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
-    .replace(/\{\{\s*title\s*\}\}/gi, contact.title || 'team member')
-    .replace(/\{\{\s*email\s*\}\}/gi, contact.email || '')
-    .replace(/\{\{\s*phone\s*\}\}/gi, contact.phone || '');
+    .replace(/\{\{\s*name\s*\}\}/gi, val(contact.name))
+    .replace(/\{\{\s*first_name\s*\}\}/gi, val(firstName))
+    .replace(/\{\{\s*title\s*\}\}/gi, val(contact.title || 'team member'))
+    .replace(/\{\{\s*email\s*\}\}/gi, val(contact.email || ''))
+    .replace(/\{\{\s*phone\s*\}\}/gi, val(contact.phone || ''));
 
   if (company) {
-    res = res.replace(/\{\{\s*company\s*\}\}/gi, company);
+    res = res.replace(/\{\{\s*company\s*\}\}/gi, val(company));
   } else {
     // If no company name can be detected at all:
     res = res
-      .replace(/Following up\s*[-–—]\s*\{\{\s*company\s*\}\}/gi, `Following up - ${firstName}`)
+      .replace(/Following up\s*[-–—]\s*\{\{\s*company\s*\}\}/gi, val(`Following up - ${firstName}`))
       .replace(/for\s*\{\{\s*company\s*\}\}/gi, `for your team`)
       .replace(/at\s*\{\{\s*company\s*\}\}/gi, `at your company`)
       .replace(/\{\{\s*company\s*\}\}/gi, 'your team');

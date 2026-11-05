@@ -42,10 +42,12 @@ export default async function handler(req: any, res: any) {
   try {
     db = adminDb();
     // limit(1): a login can be linked to duplicate member rows, and maybeSingle() errors on 2+.
-    const { data } = await db.from('team_members').select('id').eq('auth_user_id', user.id)
+    const { data, error } = await db.from('team_members').select('id').eq('auth_user_id', user.id)
       .order('created_at').limit(1).maybeSingle();
+    if (error) throw error;
     memberId = (data as any)?.id ?? null;
-  } catch {
+  } catch (e) {
+    console.error('mcp team_members lookup failed:', e);
     return res.status(500).json(rpcError(null, -32603, 'CRM server is not configured.'));
   }
   if (!memberId) return res.status(403).json(rpcError(null, -32001, 'Only CRM team members can use this connector.'));

@@ -138,17 +138,11 @@ export const LinkedInAccountsView: React.FC<LinkedInAccountsViewProps> = ({ onOp
 
   /** Persist a captured LinkedIn session (from the extension or the dev-only Chrome launcher). */
   const saveCapturedSession = async (data: {
-    liAt: string;
-    csrfToken: string;
-    rawCookie?: string;
     profile?: { name?: string; publicIdentifier?: string; avatarUrl?: string } | null;
   }) => {
     if (!activeMember?.id) throw new Error('No active persona/team member selected.');
 
-    // Keep localStorage primed for immediate Vibe Prospecting use
-    localStorage.setItem('crm_custom_li_at', data.liAt);
-    if (data.csrfToken) localStorage.setItem('crm_custom_jsessionid', data.csrfToken);
-    if (data.rawCookie) localStorage.setItem('crm_custom_raw_cookie', data.rawCookie);
+    // No cookies here: the extension acts with the browser's own LinkedIn session.
     localStorage.setItem('crm_linkedin_credential_mode', 'saved');
 
     const profileName = data.profile?.name || activeMember.name || 'LinkedIn User';
@@ -158,8 +152,8 @@ export const LinkedInAccountsView: React.FC<LinkedInAccountsViewProps> = ({ onOp
 
     const updated = await connectLinkedInCookie(
       activeMember.id,
-      data.liAt,
-      data.csrfToken || '',
+      '',
+      '',
       data.profile?.avatarUrl,
       profileUrl,
       profileName
@@ -198,12 +192,7 @@ export const LinkedInAccountsView: React.FC<LinkedInAccountsViewProps> = ({ onOp
       const session = await requestLinkedInSession();
       setExtensionStatus('ready');
       setShowExtensionGuide(false);
-      await saveCapturedSession({
-        liAt: session.liAt,
-        csrfToken: session.jsessionId,
-        rawCookie: session.rawCookie,
-        profile: session.profile,
-      });
+      await saveCapturedSession({ profile: session.profile });
     } catch (e: any) {
       if (e instanceof ExtensionBridgeError && e.code === 'EXTENSION_NOT_DETECTED') {
         setExtensionStatus('missing');
@@ -241,12 +230,7 @@ export const LinkedInAccountsView: React.FC<LinkedInAccountsViewProps> = ({ onOp
       const data = await res.json();
 
       if (data.success && data.liAt) {
-        await saveCapturedSession({
-          liAt: data.liAt,
-          csrfToken: data.csrfToken || '',
-          rawCookie: data.rawCookie,
-          profile: data.profile,
-        });
+        await saveCapturedSession({ profile: data.profile });
       } else {
         showError('Login Incomplete', data.error || 'Could not capture session from browser.');
       }
@@ -264,11 +248,6 @@ export const LinkedInAccountsView: React.FC<LinkedInAccountsViewProps> = ({ onOp
     if (parsed) {
       setLiAt(parsed.liAt);
       setJsessionId(parsed.jsessionId);
-      if (parsed.rawCookie) {
-        localStorage.setItem('crm_custom_raw_cookie', parsed.rawCookie);
-      }
-      localStorage.setItem('crm_custom_li_at', parsed.liAt);
-      localStorage.setItem('crm_custom_jsessionid', parsed.jsessionId);
       const keySummary = parsed.detectedKeys.slice(0, 5).join(', ') + (parsed.detectedKeys.length > 5 ? '...' : '');
       setParsedSummary(`Parsed ${parsed.count} cookies (${keySummary})`);
     } else if (!jsonStr.trim()) {
@@ -286,9 +265,7 @@ export const LinkedInAccountsView: React.FC<LinkedInAccountsViewProps> = ({ onOp
 
     setIsConnecting(true);
     try {
-      // Keep localStorage primed for Vibe Prospecting
-      localStorage.setItem('crm_custom_li_at', cleanLiAt);
-      localStorage.setItem('crm_custom_jsessionid', cleanJsessionId);
+      // The session cookie is not kept in browser storage: page scripts could read it, and the extension does the work.
       localStorage.setItem('crm_linkedin_credential_mode', 'saved');
 
       const updated = await connectLinkedInCookie(
@@ -844,7 +821,7 @@ export const LinkedInAccountsView: React.FC<LinkedInAccountsViewProps> = ({ onOp
 
       {/* Edit Profile Details Modal */}
       {editingAccount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
           <div className="bg-white rounded-xl shadow-lg border border-slate-200 max-w-md w-full p-5 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">

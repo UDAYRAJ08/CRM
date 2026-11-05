@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Company, Contact, Deal } from '../../types/crm';
 import { db } from '../../lib/supabase';
 import { cleanCompanyName, getCompanyUrl } from '../../lib/utils';
@@ -79,6 +79,17 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
     }
   };
 
+  const contactsByCompany = useMemo(() => {
+    const map = new Map<string, Contact[]>();
+    contacts.forEach((c) => {
+      if (!c.company_id) return;
+      const list = map.get(c.company_id);
+      if (list) list.push(c);
+      else map.set(c.company_id, [c]);
+    });
+    return map;
+  }, [contacts]);
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -103,7 +114,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {companies.map((comp) => {
-          const associatedContacts = contacts.filter((c) => c.company_id === comp.id);
+          const associatedContacts = contactsByCompany.get(comp.id) || [];
           const compDeals = deals.filter((d) => d.company_id === comp.id);
           const compDealValue = compDeals.reduce((sum, d) => sum + Number(d.value || 0), 0);
           const displayWebsite = comp.website || (comp.name.includes('.') ? getCompanyUrl(comp) : '');

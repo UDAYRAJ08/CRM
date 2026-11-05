@@ -78,13 +78,39 @@ function parseComposioResponse(rawText: string): any[] {
   return messages;
 }
 
+/** True when this inbox message was already saved to the contact's timeline (full Outlook id, as written below). */
+export function isAlreadyLogged(
+  interactions: Pick<Interaction, 'content' | 'created_at'>[],
+  messageId: string,
+  subject: string,
+  receivedAt: string
+): boolean {
+  return interactions.some(
+    (i) =>
+      (messageId && i.content.includes(`[MsgID:${messageId}]`)) ||
+      (i.content.includes(subject) && i.created_at.slice(0, 16) === receivedAt.slice(0, 16))
+  );
+}
+
 function cleanReplyBody(raw: string): string {
   if (!raw) return '';
   const splitMatch = raw.split(/\r?\n\s*On\s+[A-Za-z]+,\s+\d+.*wrote:/i)[0];
   return (splitMatch || raw).replace(/\[MsgID:[^\]]+\]/g, '').trim();
 }
 
+/** Pull new replies from the Outlook inbox. Only one open tab syncs at a time, so a reply is never saved twice. */
 export async function syncOutlookInbox(): Promise<InboundSyncResult> {
+  // shortcut: the lock covers one browser only; two teammates syncing at once can still save a reply twice.
+  // Add a unique index on received emails if that shows up.
+  if (typeof navigator === 'undefined' || !navigator.locks) return syncInbox();
+  return navigator.locks.request('crm-inbox-sync', { ifAvailable: true }, (lock) =>
+    lock
+      ? syncInbox()
+      : { success: true, totalChecked: 0, newRepliesCount: 0, matchedContacts: [], message: 'Inbox sync is already running.' }
+  );
+}
+
+async function syncInbox(): Promise<InboundSyncResult> {
   try {
     // Query last 50 inbox emails from connected Outlook mailbox (key added server-side by /api/composio)
     const composioRes = await composioFetch({
@@ -149,7 +175,8 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
     // Also map sent emails recipient_email -> contact
     const sentRecipientMap = new Map<string, Contact>();
     sentEmails.forEach((e) => {
-      if (e.recipient_email && e.contact_id) {
+      // Saved replies store the teammate's own address as recipient, so they must not map to the lead.
+      if (e.recipient_email && e.contact_id && !e.is_inbound && e.status !== 'received') {
         const found = contacts.find((c) => c.id === e.contact_id);
         if (found) {
           sentRecipientMap.set(e.recipient_email.trim().toLowerCase(), found);
@@ -226,15 +253,18 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
 
       // Check if this interaction / email was already logged for this contact
       const existingInteractions = await db.getInteractions(matchedContact.id);
-      const alreadyLogged = existingInteractions.some(
-        (i) =>
-          (messageId && i.content.includes(messageId.slice(0, 15))) ||
-          (i.content.includes(subject) && i.created_at.slice(0, 16) === receivedAt.slice(0, 16))
-      );
+      if (isAlreadyLogged(existingInteractions, messageId, subject, receivedAt)) continue;
 
-      if (alreadyLogged) continue;
+      // 1. Log into the timeline first: its [MsgID:] tag is what marks this reply as already saved,
+      //    so a failure below can't make the next sync save the email row again.
+      await db.addInteraction({
+        contact_id: matchedContact.id,
+        type: 'email',
+        content: `📥 Inbound Email Reply Received\nFrom: ${senderName} <${fromEmail}>\nSubject: ${subject}\n\n${bodyPreview}\n[MsgID:${messageId}]`,
+        created_at: receivedAt,
+      });
 
-      // 1. Log into emails table as an Inbound email
+      // 2. Log into emails table as an Inbound email
       await db.saveEmail({
         contact_id: matchedContact.id,
         recipient_email: localStorage.getItem('crm_active_user_email') || 'team@workspace.crm',
@@ -247,7 +277,7 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
         status: 'received',
       });
 
-      // 1b. Mark replied_at on the most-recent outbound email to this contact
+      // 2b. Mark replied_at on the most-recent outbound email to this contact
       // (enables dashboard reply-rate metrics via replied_at column)
       try {
         if (supabase) {
@@ -275,14 +305,6 @@ export async function syncOutlookInbox(): Promise<InboundSyncResult> {
       } catch (replyErr) {
         console.warn('Could not update replied_at on outbound email', replyErr);
       }
-
-      // 2. Log into interactions timeline
-      await db.addInteraction({
-        contact_id: matchedContact.id,
-        type: 'email',
-        content: `📥 Inbound Email Reply Received\nFrom: ${senderName} <${fromEmail}>\nSubject: ${subject}\n\n${bodyPreview}\n[MsgID:${messageId}]`,
-        created_at: receivedAt,
-      });
 
       // 3. They replied: close the automatic follow-ups (manual reminders stay).
       try {

@@ -179,6 +179,16 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
       });
   }, [deals, activeTab, selectedStageFilter, searchQuery, sortField, sortOrder, activeMember]);
 
+  // Bulk actions only touch selected deals that are still visible
+  const visibleSelectedIds = useMemo(
+    () => filteredDeals.filter((d) => selectedDeals.includes(d.id)).map((d) => d.id),
+    [filteredDeals, selectedDeals]
+  );
+
+  useEffect(() => {
+    setSelectedDeals((prev) => (prev.length ? [] : prev));
+  }, [activeTab, selectedStageFilter]);
+
   // Bulk selection handlers
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
@@ -231,7 +241,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
   };
 
   const handleBulkDelete = () => {
-    if (selectedDeals.length === 0) return;
+    if (visibleSelectedIds.length === 0) return;
 
     setConfirmConfig({
       isOpen: true,
@@ -240,7 +250,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
       message: (
         <div className="space-y-3">
           <p className="text-sm text-slate-600">
-            Permanently delete <strong className="text-slate-900 font-bold">{selectedDeals.length} selected {selectedDeals.length === 1 ? 'deal' : 'deals'}</strong>? This action cannot be undone.
+            Permanently delete <strong className="text-slate-900 font-bold">{visibleSelectedIds.length} selected {visibleSelectedIds.length === 1 ? 'deal' : 'deals'}</strong>? This action cannot be undone.
           </p>
           <div className="bg-rose-50/80 border border-rose-200/80 rounded-2xl p-3 flex items-center justify-between text-xs text-rose-700 shadow-2xs">
             <span className="font-medium">Impact</span>
@@ -250,12 +260,12 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
           </div>
         </div>
       ),
-      confirmText: `Delete ${selectedDeals.length} ${selectedDeals.length === 1 ? 'Deal' : 'Deals'}`,
+      confirmText: `Delete ${visibleSelectedIds.length} ${visibleSelectedIds.length === 1 ? 'Deal' : 'Deals'}`,
       variant: 'danger',
       icon: <Trash2 className="w-7 h-7 text-rose-600" />,
       onConfirm: async () => {
         try {
-          const idsToDelete = [...selectedDeals];
+          const idsToDelete = [...visibleSelectedIds];
           setDeals((prev) => prev.filter((d) => !idsToDelete.includes(d.id)));
           setSelectedDeals([]);
           await Promise.all(idsToDelete.map((id) => db.deleteDeal(id)));
@@ -637,11 +647,11 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
           </div>
 
           {/* Batch delete button if items are selected */}
-          {selectedDeals.length > 0 && (
+          {visibleSelectedIds.length > 0 && (
             <button
               onClick={handleBulkDelete}
               className="p-2 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition cursor-pointer"
-              title={`Delete ${selectedDeals.length} selected`}
+              title={`Delete ${visibleSelectedIds.length} selected`}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -672,7 +682,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ onOpenContact, onRef
                       type="checkbox"
                       checked={
                         filteredDeals.length > 0 &&
-                        selectedDeals.length === filteredDeals.length
+                        visibleSelectedIds.length === filteredDeals.length
                       }
                       onChange={handleSelectAll}
                       className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"

@@ -110,6 +110,14 @@ describe('api/mcp', () => {
     expect(res.statusCode).toBe(403);
   });
 
+  it('500 (not 403) when the team_members lookup errors', async () => {
+    const q: any = { select: () => q, eq: () => q, order: () => q, limit: () => q, maybeSingle: async () => ({ data: null, error: { message: 'boom' } }) };
+    (adminDb as any).mockReturnValue({ from: () => q });
+    const res = mockRes();
+    await handler(call('tools/list'), res);
+    expect(res.statusCode).toBe(500);
+  });
+
   it('accepts a login linked to duplicate team_members rows', async () => {
     tables.team_members.push({ id: 'tm1-dup', auth_user_id: 'u1', name: 'Uday' });
     const res = mockRes();

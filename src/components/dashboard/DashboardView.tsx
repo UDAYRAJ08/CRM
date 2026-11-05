@@ -120,7 +120,7 @@ export const DashboardView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Dashboard</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Organisation-wide snapshot · auto-refreshes every 60s
+            Organisation-wide snapshot · auto-refreshes every 3 min
           </p>
         </div>
 

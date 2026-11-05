@@ -3,6 +3,7 @@ import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
 import { Reminder, Contact } from '../../types/crm';
 import { db } from '../../lib/supabase';
+import { followUpStep } from '../../lib/emailService';
 import { Button } from '../ui/Button';
 import { ConfirmModal, ConfirmVariant } from '../ui/ConfirmModal';
 import {
@@ -173,7 +174,12 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
 
   const handleToggle = async (reminder: Reminder) => {
     const nextDone = !reminder.done;
-    await db.toggleReminder(reminder.id, nextDone);
+    try {
+      await db.toggleReminder(reminder.id, nextDone);
+    } catch (e: any) {
+      error('Update Failed', e?.message || 'Could not update the task.');
+      return;
+    }
     success(
       nextDone ? 'Task Completed!' : 'Task Reopened',
       `"${reminder.note}"`
@@ -283,8 +289,9 @@ export const RemindersDashboard: React.FC<RemindersDashboardProps> = ({
 
   // Group open reminders by contact_id to detect duplicates
   const activeByContact = new Map<string, Reminder[]>();
+  // Only auto follow-ups count, matching db.deduplicateReminders (hand-written reminders are kept).
   for (const r of openReminders) {
-    if (r.contact_id) {
+    if (r.contact_id && followUpStep(r.note || '') !== null) {
       const list = activeByContact.get(r.contact_id) || [];
       list.push(r);
       activeByContact.set(r.contact_id, list);

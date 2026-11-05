@@ -17,10 +17,8 @@ export interface ExtensionProfile {
   avatarUrl?: string;
 }
 
+/** The extension keeps the LinkedIn cookies to itself; the page only gets the profile. */
 export interface ExtensionSession {
-  liAt: string;
-  jsessionId: string;
-  rawCookie: string;
   profile: ExtensionProfile | null;
 }
 
@@ -128,15 +126,8 @@ export async function pingExtension(timeoutMs = 1000, win: Window = window): Pro
 export async function requestLinkedInSession(timeoutMs = 10000, win: Window = window): Promise<ExtensionSession> {
   const reply = await request('GET_SESSION', timeoutMs, win);
   if (!reply.ok) throw toBridgeError(reply.error);
-  const liAt = String(reply.liAt || '');
-  const jsessionId = String(reply.jsessionId || '');
-  if (!liAt || !jsessionId) throw toBridgeError('NOT_LOGGED_IN');
-  return {
-    liAt,
-    jsessionId,
-    rawCookie: String(reply.rawCookie || ''),
-    profile: (reply.profile as ExtensionProfile | null) || null,
-  };
+  if (reply.loggedIn === false) throw toBridgeError('NOT_LOGGED_IN');
+  return { profile: (reply.profile as ExtensionProfile | null) || null };
 }
 
 export interface ExtensionQuota {

@@ -101,8 +101,12 @@ const CRMMain: React.FC = () => {
     }
   };
 
+  // Overlapping refreshes can finish out of order; only the newest one may write state.
+  const refreshSeqRef = React.useRef(0);
+
   const refreshAllData = useCallback(async () => {
     if (!user) return;
+    const seq = ++refreshSeqRef.current;
     try {
       const [fetchedContacts, fetchedReminders, fetchedDeals, fetchedInvitedIds] = await Promise.all([
         db.getContacts(),
@@ -114,6 +118,7 @@ const CRMMain: React.FC = () => {
           return new Set<string>();
         }),
       ]);
+      if (seq !== refreshSeqRef.current) return;
       setContacts(fetchedContacts);
       setInvitedContactIds(fetchedInvitedIds);
       setReminders(fetchedReminders);
@@ -130,7 +135,7 @@ const CRMMain: React.FC = () => {
     } catch (e) {
       console.error('Error refreshing CRM data', e);
     } finally {
-      setIsLoading(false);
+      if (seq === refreshSeqRef.current) setIsLoading(false);
     }
   }, [user]);
 
@@ -292,10 +297,11 @@ const CRMMain: React.FC = () => {
   };
 
   const handleResumeDraft = (draft: EmailDraft) => {
-    // Find the contact associated with the draft, or use a placeholder
-    const contact = contacts.find((c) => c.id === draft.contact_id) ||
-      (contacts.length > 0 ? contacts[0] : null);
-    if (!contact) return;
+    const contact = contacts.find((c) => c.id === draft.contact_id);
+    if (!contact) {
+      toastError('Cannot open draft', 'Contact for this draft no longer exists');
+      return;
+    }
     handleOpenEmailComposer(contact, undefined, draft);
   };
 
@@ -313,8 +319,11 @@ const CRMMain: React.FC = () => {
     const handleDraftsChange = () => {
       refreshDraftCount();
     };
+    // Bulk actions fire one event per contact; collapse them into a single reload.
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     const handleDataChange = () => {
-      refreshAllData();
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(refreshAllData, 300);
     };
 
     window.addEventListener('crm_drafts_updated', handleDraftsChange);
@@ -323,6 +332,7 @@ const CRMMain: React.FC = () => {
     window.addEventListener('crm_reminders_updated', handleDataChange);
 
     return () => {
+      clearTimeout(refreshTimer);
       window.removeEventListener('crm_drafts_updated', handleDraftsChange);
       window.removeEventListener('crm_contacts_updated', handleDataChange);
       window.removeEventListener('crm_deals_updated', handleDataChange);

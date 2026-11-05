@@ -374,27 +374,42 @@ export async function launchCampaign(campaignId: string): Promise<void> {
     }
   }
 
-  // Bulk insert queue items
-  if (queueItems.length > 0) {
-    // Insert in batches of 100 to avoid payload limits
-    for (let i = 0; i < queueItems.length; i += 100) {
-      const batch = queueItems.slice(i, i + 100);
-      const { error } = await getClient().from('linkedin_action_queue').insert(batch);
-      if (error) throw error;
-    }
-  }
-
-  // Mark campaign as active
-  const { error } = await getClient()
+  // Claim the launch first (draft -> active) so a double click or second tab can't queue every action twice.
+  const { data: claimed, error: claimErr } = await getClient()
     .from('linkedin_campaigns')
     .update({
       status: 'active',
       launched_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq('id', campaignId);
+    .eq('id', campaignId)
+    .eq('status', 'draft')
+    .select('id');
+  if (claimErr) throw claimErr;
+  if (!claimed?.length) throw new Error('Campaign was already launched (it is no longer a draft).');
 
-  if (error) throw error;
+  // Bulk insert queue items
+  if (queueItems.length > 0) {
+    // Insert in batches of 100 to avoid payload limits
+    for (let i = 0; i < queueItems.length; i += 100) {
+      const batch = queueItems.slice(i, i + 100);
+      const { error } = await getClient().from('linkedin_action_queue').insert(batch);
+      if (error) {
+        // Undo the partial launch. The runner may already have done some actions from earlier
+        // batches: keep those and pause, so a relaunch can't send them twice.
+        await getClient().from('linkedin_action_queue').delete().eq('campaign_id', campaignId).eq('status', 'pending');
+        const { count } = await getClient()
+          .from('linkedin_action_queue')
+          .select('id', { count: 'exact', head: true })
+          .eq('campaign_id', campaignId);
+        await getClient()
+          .from('linkedin_campaigns')
+          .update(count ? { status: 'paused' } : { status: 'draft', launched_at: null })
+          .eq('id', campaignId);
+        throw error;
+      }
+    }
+  }
 }
 
 export async function pauseCampaign(campaignId: string): Promise<void> {
@@ -414,24 +429,6 @@ export async function resumeCampaign(campaignId: string): Promise<void> {
 }
 
 // ==============================================================================
-// ACTION QUEUE
-// ==============================================================================
-
-export async function getCampaignQueue(campaignId: string): Promise<LinkedInActionQueueItem[]> {
-  const { data, error } = await getClient()
-    .from('linkedin_action_queue')
-    .select(`
-      *,
-      contact:contacts (name, linkedin_url)
-    `)
-    .eq('campaign_id', campaignId)
-    .order('scheduled_at', { ascending: true });
-
-  if (error) throw error;
-  return (data || []) as LinkedInActionQueueItem[];
-}
-
-// ==============================================================================
 // ANALYTICS
 // ==============================================================================
 
@@ -445,7 +442,7 @@ export async function getLinkedInAnalytics(): Promise<{
   recentQueue: LinkedInActionQueueItem[];
 }> {
   const client = getClient();
-  const [campaignsRes, queueRes] = await Promise.all([
+  const [campaignsRes, queueRes, connectionsRes] = await Promise.all([
     client.from('linkedin_campaigns').select('status, actions_completed, connections_accepted, replies_received'),
     client
       .from('linkedin_action_queue')
@@ -453,6 +450,12 @@ export async function getLinkedInAnalytics(): Promise<{
       .in('status', ['completed', 'failed', 'pending'])
       .order('updated_at', { ascending: false })
       .limit(20),
+    // Campaigns only store accepted connections; sent ones are the completed send_connection queue rows.
+    client
+      .from('linkedin_action_queue')
+      .select('id', { count: 'exact', head: true })
+      .eq('action_type', 'send_connection')
+      .eq('status', 'completed'),
   ]);
 
   const campaigns = campaignsRes.data || [];
@@ -462,7 +465,7 @@ export async function getLinkedInAnalytics(): Promise<{
     totalCampaigns: campaigns.length,
     activeCampaigns: campaigns.filter((c: any) => c.status === 'active').length,
     totalActionsCompleted: campaigns.reduce((acc: number, c: any) => acc + (c.actions_completed || 0), 0),
-    totalConnectionsSent: campaigns.reduce((acc: number, c: any) => acc + (c.connections_accepted || 0), 0),
+    totalConnectionsSent: connectionsRes.count || 0,
     totalMessagesSent: 0, // from queue later
     totalReplies: campaigns.reduce((acc: number, c: any) => acc + (c.replies_received || 0), 0),
     recentQueue: queue as LinkedInActionQueueItem[],
@@ -508,7 +511,10 @@ export async function setLinkedInInviteStatus(
     .single();
   if (error) throw error;
   if (status === 'accepted' && invite.contact_id) {
-    await db.addInteraction({ contact_id: invite.contact_id, type: 'linkedin', content: 'LinkedIn invite accepted.', created_by: teamMemberId });
+    // The status is already saved; a failed timeline note must not show as a failed update (same as api/_lib/mcpTools.ts).
+    await db
+      .addInteraction({ contact_id: invite.contact_id, type: 'linkedin', content: 'LinkedIn invite accepted.', created_by: teamMemberId })
+      .catch((e) => console.error('LinkedIn interaction log failed:', e));
   }
   return data as LinkedInInvite;
 }

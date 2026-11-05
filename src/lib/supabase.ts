@@ -1,4 +1,5 @@
 import { isBounceMessage } from './bounce';
+import { followUpStep } from './emailService';
 import { createClient } from '@supabase/supabase-js';
 import {
   TeamMember,
@@ -138,6 +139,17 @@ export function notifyCRMEvent(event: string): void {
 
 const PAGE_SIZE = 1000;
 
+// 100 ids per request: one big .in() list makes a URL the API gateway rejects.
+async function deleteRemindersByIds(ids: string[]): Promise<number> {
+  let removed = 0;
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await supabase!.from('reminders').delete().in('id', ids.slice(i, i + 100)).select('id');
+    if (error) throw new Error(error.message);
+    removed += data?.length || 0;
+  }
+  return removed;
+}
+
 export async function fetchAllPages<T = any>(
   buildPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
 ): Promise<{ data: T[] | null; error: any }> {
@@ -185,10 +197,12 @@ export const db = {
 
   async linkTeamMemberAuth(memberId: string, authUserId: string): Promise<void> {
     if (supabase) {
-      await supabase
+      const { error } = await supabase
         .from('team_members')
         .update({ auth_user_id: authUserId })
         .eq('id', memberId);
+      // Don't block sign-in: the member is still matched by email this session.
+      if (error) console.error('Linking team member to login failed:', error);
     }
     const members = getLocal('team_members', INITIAL_TEAM);
     const updated = members.map((m) =>
@@ -201,7 +215,8 @@ export const db = {
     invalidateCache('team_members');
     if (supabase) {
       const { data, error } = await supabase.from('team_members').update(updates).eq('id', memberId).select().single();
-      if (!error && data) return data;
+      if (error) throw new Error(error.message);
+      return data;
     }
     const members = getLocal('team_members', INITIAL_TEAM);
     const updated = members.map((m) => (m.id === memberId ? { ...m, ...updates } : m));
@@ -333,7 +348,8 @@ export const db = {
           .select('*, company:companies(*), owner:team_members(*)')
           .single();
 
-        if (!error && data) return data;
+        if (error) throw new Error(error.message);
+        return data;
       } else {
         // Insert new contact
         const insertPayload: Record<string, any> = {
@@ -466,7 +482,8 @@ export const db = {
       } catch (err) {
         console.warn('Could not cascade delete reminders in Supabase:', err);
       }
-      await supabase.from('contacts').delete().eq('id', id);
+      const { error } = await supabase.from('contacts').delete().eq('id', id);
+      if (error) throw new Error(error.message);
     } else {
       const contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
       setLocal('contacts', contacts.filter((c) => c.id !== id));
@@ -515,7 +532,8 @@ export const db = {
         .insert(payload)
         .select('*, creator:team_members(*)')
         .single();
-      if (!error && data) return data;
+      if (error) throw new Error(error.message);
+      return data;
     }
 
     const list = getLocal<Interaction[]>('interactions', INITIAL_INTERACTIONS);
@@ -578,10 +596,9 @@ export const db = {
         .upsert(payload)
         .select('*, contact:contacts(*), assignee:team_members(*)')
         .single();
-      if (!error && data) {
-        notifyCRMEvent('crm_reminders_updated');
-        return data;
-      }
+      if (error) throw new Error(error.message);
+      notifyCRMEvent('crm_reminders_updated');
+      return data;
     }
 
     const list = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
@@ -609,7 +626,8 @@ export const db = {
   async toggleReminder(id: string, done: boolean): Promise<void> {
     const completed_at = done ? new Date().toISOString() : null;
     if (supabase) {
-      await supabase.from('reminders').update({ done, completed_at }).eq('id', id);
+      const { error } = await supabase.from('reminders').update({ done, completed_at }).eq('id', id);
+      if (error) throw new Error(error.message);
     } else {
       const list = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
       setLocal(
@@ -649,7 +667,7 @@ export const db = {
   async bulkDeleteReminders(ids: string[]): Promise<void> {
     if (!ids || ids.length === 0) return;
     if (supabase) {
-      await supabase.from('reminders').delete().in('id', ids);
+      await deleteRemindersByIds(ids);
     } else {
       const idSet = new Set(ids);
       const list = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
@@ -669,7 +687,7 @@ export const db = {
       reminders = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
     }
 
-    // Keep only the newest open reminder for each contact_id
+    // Keep only the newest open automatic follow-up for each contact_id; reminders the user wrote are never removed
     const seenActiveContactIds = new Set<string>();
     const toDeleteIds: string[] = [];
 
@@ -682,7 +700,7 @@ export const db = {
 
     const keptReminders: Reminder[] = [];
     for (const r of sorted) {
-      if (!r.done && r.contact_id) {
+      if (!r.done && r.contact_id && followUpStep(r.note || '') !== null) {
         if (seenActiveContactIds.has(r.contact_id)) {
           toDeleteIds.push(r.id);
         } else {
@@ -696,7 +714,7 @@ export const db = {
 
     if (toDeleteIds.length > 0) {
       if (supabase) {
-        await supabase.from('reminders').delete().in('id', toDeleteIds);
+        await deleteRemindersByIds(toDeleteIds);
       } else {
         setLocal('reminders', keptReminders);
       }
@@ -709,9 +727,11 @@ export const db = {
   async cleanupOrphanedReminders(): Promise<{ removedCount: number }> {
     let contacts: Array<{ id: string }> = [];
     if (supabase) {
-      const { data } = await fetchAllPages<{ id: string }>((from, to) =>
+      const { data, error } = await fetchAllPages<{ id: string }>((from, to) =>
         supabase!.from('contacts').select('id').order('id').range(from, to)
       );
+      // Without the contact list every reminder would look orphaned and be deleted.
+      if (error) throw new Error(error.message);
       contacts = (data as Array<{ id: string }>) || [];
     } else {
       contacts = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
@@ -720,9 +740,10 @@ export const db = {
 
     let reminders: Reminder[] = [];
     if (supabase) {
-      const { data } = await fetchAllPages<Reminder>((from, to) =>
+      const { data, error } = await fetchAllPages<Reminder>((from, to) =>
         supabase!.from('reminders').select('*').order('id').range(from, to)
       );
+      if (error) throw new Error(error.message);
       reminders = data || [];
     } else {
       reminders = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
@@ -734,7 +755,7 @@ export const db = {
 
     if (orphanedIds.length > 0) {
       if (supabase) {
-        await supabase.from('reminders').delete().in('id', orphanedIds);
+        await deleteRemindersByIds(orphanedIds);
       } else {
         const orphanSet = new Set(orphanedIds);
         setLocal('reminders', reminders.filter((r) => !orphanSet.has(r.id)));
@@ -747,13 +768,13 @@ export const db = {
 
   async clearCompletedReminders(): Promise<{ removedCount: number }> {
     if (supabase) {
-      const { data } = await supabase.from('reminders').select('id').eq('done', true);
-      const completedIds = (data || []).map((r: any) => r.id);
-      if (completedIds.length > 0) {
-        await supabase.from('reminders').delete().in('id', completedIds);
-      }
+      const { data, error } = await fetchAllPages<{ id: string }>((from, to) =>
+        supabase!.from('reminders').select('id').eq('done', true).order('id').range(from, to)
+      );
+      if (error) throw new Error(error.message);
+      const removedCount = await deleteRemindersByIds((data || []).map((r) => r.id));
       notifyCRMEvent('crm_reminders_updated');
-      return { removedCount: completedIds.length };
+      return { removedCount };
     } else {
       const reminders = getLocal<Reminder[]>('reminders', INITIAL_REMINDERS);
       const remaining = reminders.filter((r) => !r.done);
@@ -819,14 +840,14 @@ export const db = {
   },
 
   async saveEmail(email: Partial<EmailRecord>): Promise<EmailRecord> {
-    const validStatus =
-      email.status === 'received' ? 'sent' : email.status || 'sent';
+    const validStatus = email.status || 'sent';
 
     const payload = {
       id: email.id || crypto.randomUUID(),
       contact_id: email.contact_id || null,
       recipient_email: email.recipient_email || '',
       sender_email: email.sender_email || null,
+      is_inbound: email.is_inbound || false,
       subject: email.subject || '',
       body: email.body || '',
       ai_generated: email.ai_generated || false,
@@ -842,6 +863,8 @@ export const db = {
         id: payload.id,
         contact_id: payload.contact_id,
         recipient_email: payload.recipient_email,
+        sender_email: payload.sender_email,
+        is_inbound: payload.is_inbound,
         subject: payload.subject,
         body: payload.body,
         ai_generated: payload.ai_generated,
@@ -852,24 +875,17 @@ export const db = {
         created_at: payload.created_at,
       };
 
-      try {
-        const { data, error } = await supabase
-          .from('emails')
-          .insert(dbPayload)
-          .select('*')
-          .single();
-        if (!error && data) {
-          const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
-          return {
-            ...data,
-            sender: team.find((t) => t.id === data.sent_by) || null,
-            is_inbound: email.is_inbound,
-            sender_email: email.sender_email,
-          };
-        }
-      } catch (err) {
-        console.warn('Supabase saveEmail fallback to local:', err);
-      }
+      const { data, error } = await supabase
+        .from('emails')
+        .insert(dbPayload)
+        .select('*')
+        .single();
+      if (error) throw new Error(error.message);
+      const team = getLocal<TeamMember[]>('team_members', INITIAL_TEAM);
+      return {
+        ...data,
+        sender: team.find((t) => t.id === data.sent_by) || null,
+      };
     }
 
     const list = getLocal<EmailRecord[]>('emails', []);
@@ -878,8 +894,6 @@ export const db = {
     return {
       ...payload,
       sender: team.find((t) => t.id === payload.sent_by) || null,
-      is_inbound: email.is_inbound,
-      sender_email: email.sender_email,
     } as EmailRecord;
   },
 
@@ -1063,28 +1077,14 @@ export const db = {
           (c) => c.created_at >= todayStartISO && c.created_at < todayEndISO
         ).length;
 
-        // Replies: count inbound received emails + outbound with replied_at set
-        const repliesReceivedToday =
-          inboundReplies.filter(
-            (e) => e.sent_at >= todayStartISO && e.sent_at < todayEndISO
-          ).length +
-          sentEmails.filter(
-            (e) =>
-              e.replied_at &&
-              e.replied_at >= todayStartISO &&
-              e.replied_at < todayEndISO
-          ).length;
+        // Replies: inbound received emails only. Each reply also sets replied_at on an outbound email, so adding those would count it twice.
+        const repliesReceivedToday = inboundReplies.filter(
+          (e) => e.sent_at >= todayStartISO && e.sent_at < todayEndISO
+        ).length;
 
-        const repliesReceivedThisWeek =
-          inboundReplies.filter(
-            (e) => e.sent_at >= weekStartISO && e.sent_at < weekEndISO
-          ).length +
-          sentEmails.filter(
-            (e) =>
-              e.replied_at &&
-              e.replied_at >= weekStartISO &&
-              e.replied_at < weekEndISO
-          ).length;
+        const repliesReceivedThisWeek = inboundReplies.filter(
+          (e) => e.sent_at >= weekStartISO && e.sent_at < weekEndISO
+        ).length;
 
         const replyRateToday =
           emailsSentToday > 0
@@ -1104,11 +1104,7 @@ export const db = {
             (e) => e.sent_at >= dayStart && e.sent_at < dayEnd
           ).length;
 
-          const replies =
-            inboundReplies.filter((e) => e.sent_at >= dayStart && e.sent_at < dayEnd).length +
-            sentEmails.filter(
-              (e) => e.replied_at && e.replied_at >= dayStart && e.replied_at < dayEnd
-            ).length;
+          const replies = inboundReplies.filter((e) => e.sent_at >= dayStart && e.sent_at < dayEnd).length;
 
           return { date, sent, replies };
         });
@@ -1425,15 +1421,14 @@ export const db = {
           owner:team_members(id, name)
         `)
         .single();
-      if (!error && data) {
-        notifyCRMEvent('crm_deals_updated');
-        return {
-          ...data,
-          contact_name: data.contact?.name,
-          company_name: data.company?.name,
-          owner_name: data.owner?.name,
-        };
-      }
+      if (error) throw new Error(error.message);
+      notifyCRMEvent('crm_deals_updated');
+      return {
+        ...data,
+        contact_name: data.contact?.name,
+        company_name: data.company?.name,
+        owner_name: data.owner?.name,
+      };
     }
 
     const list = getLocal<Deal[]>('deals', INITIAL_DEALS);
@@ -1462,15 +1457,14 @@ export const db = {
           owner:team_members(id, name)
         `)
         .single();
-      if (!error && data) {
-        notifyCRMEvent('crm_deals_updated');
-        return {
-          ...data,
-          contact_name: data.contact?.name,
-          company_name: data.company?.name,
-          owner_name: data.owner?.name,
-        };
-      }
+      if (error) throw new Error(error.message);
+      notifyCRMEvent('crm_deals_updated');
+      return {
+        ...data,
+        contact_name: data.contact?.name,
+        company_name: data.company?.name,
+        owner_name: data.owner?.name,
+      };
     }
 
     const list = getLocal<Deal[]>('deals', INITIAL_DEALS);

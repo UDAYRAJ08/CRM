@@ -64,15 +64,12 @@ describe('requestLinkedInSession', () => {
   it('returns the session', async () => {
     uninstall = installFakeExtension(() => ({
       ok: true,
+      loggedIn: true,
       liAt: 'AQEDAR',
-      jsessionId: 'ajax:123',
-      rawCookie: 'li_at=AQEDAR; JSESSIONID="ajax:123"',
       profile: { name: 'Jane Doe', publicIdentifier: 'jane-doe' },
     }));
     const session = await requestLinkedInSession(500);
-    expect(session.liAt).toBe('AQEDAR');
-    expect(session.jsessionId).toBe('ajax:123');
-    expect(session.profile?.name).toBe('Jane Doe');
+    expect(session).toEqual({ profile: { name: 'Jane Doe', publicIdentifier: 'jane-doe' } });
   });
 
   it('throws NOT_LOGGED_IN when the user is signed out', async () => {
@@ -86,20 +83,20 @@ describe('requestLinkedInSession', () => {
     expect(err.code).toBe('EXTENSION_NOT_DETECTED');
   });
 
-  it('rejects an ok reply with missing cookies', async () => {
-    uninstall = installFakeExtension(() => ({ ok: true, liAt: '', jsessionId: '' }));
+  it('rejects an ok reply that says the user is logged out', async () => {
+    uninstall = installFakeExtension(() => ({ ok: true, loggedIn: false }));
     await expect(requestLinkedInSession(500)).rejects.toMatchObject({ code: 'NOT_LOGGED_IN' });
   });
 
   it('ignores replies for other requests', async () => {
-    uninstall = installFakeExtension(() => ({ ok: true, liAt: 'x', jsessionId: 'y' }));
+    uninstall = installFakeExtension(() => ({ ok: true, loggedIn: true, profile: { name: 'x' } }));
     // A stray message with a wrong requestId must not resolve a pending request.
     const pending = requestLinkedInSession(80);
     window.postMessage(
       { source: 'crm-linkedin-extension', requestId: 'someone-else', ok: false, error: 'NOT_LOGGED_IN' },
       window.location.origin
     );
-    await expect(pending).resolves.toMatchObject({ liAt: 'x' });
+    await expect(pending).resolves.toMatchObject({ profile: { name: 'x' } });
   });
 });
 

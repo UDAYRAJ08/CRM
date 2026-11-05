@@ -145,12 +145,14 @@ async function recordInvite(ctx: ToolContext, args: Args) {
   }
   const invite = check(ins);
 
-  await ctx.db.from('interactions').insert({
+  const logged = await ctx.db.from('interactions').insert({
     contact_id: contact.id,
     type: 'linkedin',
     content: note ? `LinkedIn invite sent via Claude with note: "${note}"` : 'LinkedIn invite sent via Claude (no note).',
     created_by: ctx.memberId,
   });
+  // The invite is already recorded, so a failed activity log must not fail the tool.
+  if (logged.error) console.error('mcp interactions insert failed:', logged.error);
 
   return { recorded: true, invite: shapeInvite(invite), contact_id: contact.id, created_contact: createdContact, ...(await usage(ctx)) };
 }
@@ -167,9 +169,10 @@ async function updateStatus(ctx: ToolContext, args: Args) {
     .update({ status: accepted ? 'accepted' : 'pending', accepted_at: accepted ? new Date().toISOString() : null })
     .eq('id', invite.id).select(INVITE_FIELDS).single());
   if (accepted && invite.contact_id) {
-    await ctx.db.from('interactions').insert({
+    const logged = await ctx.db.from('interactions').insert({
       contact_id: invite.contact_id, type: 'linkedin', content: 'LinkedIn invite accepted.', created_by: ctx.memberId,
     });
+    if (logged.error) console.error('mcp interactions insert failed:', logged.error);
   }
   return { changed: true, invite: shapeInvite(updated) };
 }
