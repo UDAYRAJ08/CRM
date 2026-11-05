@@ -460,6 +460,7 @@ const CRMMain: React.FC = () => {
               {activeView === 'linkedin-contacts' && (
                 <ContactList
                   contacts={linkedinContacts}
+                  title="LinkedIn Contacts"
                   searchQuery={searchQuery}
                   onSelectContact={(c) => setSelectedContact(c)}
                   onEditContact={(c) => {

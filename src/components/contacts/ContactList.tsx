@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 
 interface ContactListProps {
+  title?: string;
   contacts: Contact[];
   searchQuery: string;
   onSelectContact: (contact: Contact) => void;
@@ -187,6 +188,7 @@ export const ContactList: React.FC<ContactListProps> = ({
   onOpenBulkEmail,
   onAddNewContact,
   onRefresh,
+  title = 'Contacts',
 }) => {
   const { teamMembers } = useTeam();
   const { success, error, info } = useToast();
@@ -540,21 +542,21 @@ export const ContactList: React.FC<ContactListProps> = ({
 
   return (
     <div className="space-y-4 relative">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Contacts</h1>
-        <p className="text-sm text-slate-500 mt-1">Everyone you are working with, by stage and owner.</p>
+      <div className="flex items-baseline gap-2">
+        <h1 className="text-xl font-semibold tracking-tight text-slate-900">{title}</h1>
+        <span className="text-sm text-slate-500 tabular-nums">{filteredContacts.length}</span>
       </div>
       {/* ===================================================================== */}
       {/* 1. TOP PIPELINE WORKFLOW TABS & TOOLBAR                               */}
       {/* ===================================================================== */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200 space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
         {/* Row 1: Pipeline Stage Segmented Tabs */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="contents">
           {/* Segmented Control */}
           <div className="inline-flex p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 overflow-x-auto no-scrollbar max-w-full">
             <button
               onClick={() => setPipelineTab('all')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
                 pipelineTab === 'all'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
@@ -574,7 +576,7 @@ export const ContactList: React.FC<ContactListProps> = ({
 
             <button
               onClick={() => setPipelineTab('uncontacted')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
                 pipelineTab === 'uncontacted'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
@@ -594,7 +596,7 @@ export const ContactList: React.FC<ContactListProps> = ({
 
             <button
               onClick={() => setPipelineTab('due')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
                 pipelineTab === 'due'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
@@ -614,7 +616,7 @@ export const ContactList: React.FC<ContactListProps> = ({
 
             <button
               onClick={() => setPipelineTab('replied')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer ${
                 pipelineTab === 'replied'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
@@ -633,20 +635,12 @@ export const ContactList: React.FC<ContactListProps> = ({
             </button>
           </div>
 
-          {/* Quick Counter / Info */}
-          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 shrink-0">
-            <span className="font-bold text-slate-800">{filteredContacts.length}</span>
-            <span>contacts showing</span>
-          </div>
         </div>
 
-        {/* Divider line */}
-        <div className="h-px bg-slate-100" />
-
         {/* Row 2: Filters on Left, View Modes on Right */}
-        <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="contents">
           {/* Filters on Left */}
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="contents">
             {/* Tag Filter */}
             {allTags.length > 0 && (
               <select
@@ -694,7 +688,7 @@ export const ContactList: React.FC<ContactListProps> = ({
                 title="Launch Bulk Follow-up Sender for all due contacts"
               >
                 <RotateCw className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Bulk Follow-up Due ({pipelineCounts.due})</span>
+                <span>Follow up ({pipelineCounts.due})</span>
               </button>
             )}
 
@@ -706,15 +700,15 @@ export const ContactList: React.FC<ContactListProps> = ({
                   ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-bold'
                   : 'bg-slate-50 hover:bg-white border-slate-200 text-slate-600 hover:text-slate-900'
               }`}
-              title="Toggle Table Density (Compact / Comfortable)"
+              title={`Density: ${density} (click to switch)`}
+              aria-label={`Density: ${density}`}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span className="capitalize">{density}</span>
             </button>
           </div>
 
           {/* View Modes on Right */}
-          <div className="inline-flex p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 shrink-0">
+          <div className="inline-flex p-1 bg-slate-100/90 rounded-xl border border-slate-200/70 shrink-0 ml-auto">
             <button
               onClick={() => setViewMode('accordion')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
@@ -725,7 +719,7 @@ export const ContactList: React.FC<ContactListProps> = ({
               title="Group by Dates (Accordion)"
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>By Date</span>
+              <span className="sr-only">By Date</span>
             </button>
             <button
               onClick={() => setViewMode('table')}
@@ -737,7 +731,7 @@ export const ContactList: React.FC<ContactListProps> = ({
               title="Classic Table View"
             >
               <List className="w-3.5 h-3.5" />
-              <span>Table</span>
+              <span className="sr-only">Table</span>
             </button>
             <button
               onClick={() => setViewMode('cards')}
@@ -749,7 +743,7 @@ export const ContactList: React.FC<ContactListProps> = ({
               title="Grid Card View"
             >
               <LayoutGrid className="w-3.5 h-3.5" />
-              <span>Cards</span>
+              <span className="sr-only">Cards</span>
             </button>
           </div>
         </div>
