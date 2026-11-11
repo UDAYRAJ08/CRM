@@ -38,6 +38,7 @@ export const Badge: React.FC<BadgeProps> = ({
 export const STATUS_BADGE_CONFIG: Record<ContactStatus, { label: string; variant: BadgeProps['variant'] }> = {
   new: { label: 'New', variant: 'primary' },
   contacted: { label: 'Contacted', variant: 'warning' },
+  connected: { label: 'Connected', variant: 'primary' },
   qualified: { label: 'Qualified', variant: 'purple' },
   proposal: { label: 'Proposal Sent', variant: 'warning' },
   won: { label: 'Won', variant: 'success' },

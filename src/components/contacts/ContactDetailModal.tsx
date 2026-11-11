@@ -65,6 +65,13 @@ const statusConfig: Record<
     text: 'text-amber-700',
     border: 'border-amber-200',
   },
+  connected: {
+    label: 'Connected',
+    dot: 'bg-sky-500',
+    bg: 'bg-sky-50/80',
+    text: 'text-sky-700',
+    border: 'border-sky-200',
+  },
   qualified: {
     label: 'Replied & Qualified',
     dot: 'bg-purple-500',
@@ -211,7 +218,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
     info('Copied!', `${label} copied to clipboard`);
   };
 
-  const statuses: ContactStatus[] = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost', 'inactive'];
+  const statuses: ContactStatus[] = ['new', 'contacted', 'connected', 'qualified', 'proposal', 'won', 'lost', 'inactive'];
   const currentStatus = statusConfig[contact.status] || statusConfig.new;
 
   // Normalize company website url using shared utility

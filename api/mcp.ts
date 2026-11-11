@@ -12,6 +12,8 @@ const INSTRUCTIONS = [
   '1. Call check_linkedin_invite before each request and skip the person unless "allowed" is true.',
   '2. Call record_linkedin_invite immediately after each request is sent.',
   '3. Stop for the day when remaining_today reaches 0.',
+  'When you send a LinkedIn message to someone in the CRM, call record_linkedin_message right after.',
+  'When you read LinkedIn messages and find a reply from someone in the CRM, call record_linkedin_reply with their profile URL and the reply text.',
 ].join('\n');
 
 export function baseUrl(req: any): string {

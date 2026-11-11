@@ -51,8 +51,11 @@ function fakeDb(tables: Record<string, Row[]>) {
         if (payload && !('id' in payload)) Object.assign(rows()[0], payload);
         return { data: payload && 'id' in payload ? payload : rows()[0], error: null };
       },
-      then: (ok: any, bad: any) =>
-        Promise.resolve(head ? { count: rows().length, error: null } : { data: payload ? [payload] : rows(), error: null }).then(ok, bad),
+      then: (ok: any, bad: any) => {
+        // An awaited update (payload without an id) changes the matching rows, like PostgREST.
+        if (payload && !('id' in payload)) rows().forEach((r) => Object.assign(r, payload));
+        return Promise.resolve(head ? { count: rows().length, error: null } : { data: payload ? [payload] : rows(), error: null }).then(ok, bad);
+      },
     };
     return q;
   };
@@ -187,6 +190,41 @@ describe('api/mcp', () => {
     const res = mockRes();
     await handler(call('tools/call', { name: 'check_linkedin_invite', arguments: { linkedin_url: 'linkedin.com/in/new-person' } }), res);
     expect(toolResult(res)).toMatchObject({ allowed: false, remaining_today: 0 });
+  });
+
+  it('saves a LinkedIn reply once and moves the contact to Replied & Qualified', async () => {
+    tables.contacts.push({ id: 'c-jane', name: 'Jane', status: 'connected', linkedin_url: 'https://www.linkedin.com/in/jane-doe' });
+    const args = { linkedin_url: 'https://www.linkedin.com/in/jane-doe', message: 'Thanks, happy to chat', received_at: '2026-11-10T09:30:00Z' };
+
+    let res = mockRes();
+    await handler(call('tools/call', { name: 'record_linkedin_reply', arguments: args }), res);
+    expect(toolResult(res)).toMatchObject({ recorded: true, contact_id: 'c-jane', contact_status: 'qualified' });
+    expect(tables.contacts.find((c) => c.id === 'c-jane')!.status).toBe('qualified');
+    expect(fake.inserts.interactions[0]).toMatchObject({
+      contact_id: 'c-jane', type: 'linkedin', created_by: 'tm1',
+      content: 'LinkedIn reply received: "Thanks, happy to chat"', created_at: '2026-11-10T09:30:00.000Z',
+    });
+
+    res = mockRes();
+    await handler(call('tools/call', { name: 'record_linkedin_reply', arguments: args }), res);
+    expect(toolResult(res)).toMatchObject({ recorded: false, already_recorded: true });
+    expect(fake.inserts.interactions).toHaveLength(1);
+  });
+
+  it('saves a sent LinkedIn message without changing a later-stage status', async () => {
+    tables.contacts.push({ id: 'c-won', name: 'Won', status: 'won', linkedin_url: 'https://www.linkedin.com/in/won-person' });
+    const res = mockRes();
+    await handler(call('tools/call', { name: 'record_linkedin_message', arguments: { linkedin_url: 'linkedin.com/in/won-person', message: 'Hi!' } }), res);
+    expect(toolResult(res)).toMatchObject({ recorded: true, contact_id: 'c-won' });
+    expect(fake.inserts.interactions[0].content).toBe('LinkedIn message sent: "Hi!"');
+    expect(tables.contacts.find((c) => c.id === 'c-won')!.status).toBe('won');
+  });
+
+  it('refuses a message for someone who is not in the CRM', async () => {
+    const res = mockRes();
+    await handler(call('tools/call', { name: 'record_linkedin_message', arguments: { linkedin_url: 'linkedin.com/in/nobody', message: 'Hi' } }), res);
+    expect(res.body.result.isError).toBe(true);
+    expect(res.body.result.content[0].text).toMatch(/not in the CRM/);
   });
 
   it('returns a tool error for a non-profile URL', async () => {

@@ -135,6 +135,7 @@ export const ContactFormModal: React.FC<ContactFormModalProps> = ({
   const statusOptions = [
     { value: 'new', label: 'New Lead' },
     { value: 'contacted', label: 'Contacted' },
+    { value: 'connected', label: 'Connected' },
     { value: 'qualified', label: 'Qualified' },
     { value: 'proposal', label: 'Proposal Sent' },
     { value: 'won', label: 'Closed Won' },

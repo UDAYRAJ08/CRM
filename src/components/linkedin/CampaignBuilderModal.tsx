@@ -165,7 +165,7 @@ export const CampaignBuilderModal: React.FC<CampaignBuilderModalProps> = ({
   const allCompanies = [...new Map(
     contacts.filter((c) => c.company_id && c.company).map((c) => [c.company_id, c.company])
   ).values()];
-  const pipelineStages = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost', 'inactive'];
+  const pipelineStages = ['new', 'contacted', 'connected', 'qualified', 'proposal', 'won', 'lost', 'inactive'];
 
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4">

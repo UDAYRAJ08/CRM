@@ -177,6 +177,43 @@ async function updateStatus(ctx: ToolContext, args: Args) {
   return { changed: true, invite: shapeInvite(updated) };
 }
 
+// Saves one LinkedIn message on the contact's timeline. The same text is saved once, so Claude can re-check a chat safely.
+async function logLinkedInMessage(ctx: ToolContext, args: Args, prefix: string, createdAt?: string) {
+  const vanity = requireVanity(args);
+  const message = text(args, 'message', 5000, true)!;
+  const contact = await findContact(ctx, vanity);
+  if (!contact) throw new ToolError('This person is not in the CRM. Record them with record_linkedin_invite first.');
+  const content = `${prefix}: "${message}"`;
+
+  const dup = check(await ctx.db.from('interactions').select('id')
+    .eq('contact_id', contact.id).eq('type', 'linkedin').eq('content', content).limit(1)) as any[];
+  if (dup?.length) return { contact, recorded: false, already_recorded: true };
+
+  check(await ctx.db.from('interactions').insert({
+    contact_id: contact.id, type: 'linkedin', content, created_by: ctx.memberId, ...(createdAt ? { created_at: createdAt } : {}),
+  }));
+  return { contact, recorded: true };
+}
+
+async function recordMessage(ctx: ToolContext, args: Args) {
+  const { contact, ...result } = await logLinkedInMessage(ctx, args, 'LinkedIn message sent');
+  return { ...result, contact_id: contact.id };
+}
+
+async function recordReply(ctx: ToolContext, args: Args) {
+  const at = text(args, 'received_at', 40);
+  const receivedAt = at && !Number.isNaN(Date.parse(at)) ? new Date(at).toISOString() : undefined;
+  const { contact, ...result } = await logLinkedInMessage(ctx, args, 'LinkedIn reply received', receivedAt);
+
+  // A reply means they engaged: move early-stage contacts to "Replied & Qualified", same as an email reply.
+  let status = contact.status;
+  if (['new', 'contacted', 'connected'].includes(status)) {
+    check(await ctx.db.from('contacts').update({ status: 'qualified', updated_at: new Date().toISOString() }).eq('id', contact.id));
+    status = 'qualified';
+  }
+  return { ...result, contact_id: contact.id, contact_status: status };
+}
+
 async function listInvites(ctx: ToolContext, args: Args) {
   const status = args.status ?? 'all';
   if (!['all', 'accepted', 'not_accepted'].includes(status as string)) throw new ToolError('"status" must be "all", "accepted" or "not_accepted".');
@@ -233,6 +270,33 @@ export const TOOLS = [
       required: ['linkedin_url', 'status'],
     },
     run: updateStatus,
+  },
+  {
+    name: 'record_linkedin_message',
+    description: 'Call right AFTER sending a LinkedIn message to someone in the CRM. Saves the message on their timeline. Saving the same text twice is ignored.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        linkedin_url: linkedinUrlProp,
+        message: { type: 'string', description: 'The exact message that was sent' },
+      },
+      required: ['linkedin_url', 'message'],
+    },
+    run: recordMessage,
+  },
+  {
+    name: 'record_linkedin_reply',
+    description: 'Save a reply someone sent you on LinkedIn, e.g. while checking LinkedIn messages. Logs it on their timeline and moves a new, contacted or connected contact to "Replied & Qualified". Saving the same reply twice is ignored.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        linkedin_url: linkedinUrlProp,
+        message: { type: 'string', description: 'The reply text, exactly as written' },
+        received_at: { type: 'string', description: 'When the reply was sent, ISO 8601 (optional)' },
+      },
+      required: ['linkedin_url', 'message'],
+    },
+    run: recordReply,
   },
   {
     name: 'list_linkedin_invites',

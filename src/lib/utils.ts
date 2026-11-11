@@ -52,6 +52,8 @@ export function getStatusColor(status?: string): string {
       return 'bg-blue-100 text-blue-700 border-blue-200';
     case 'contacted':
       return 'bg-purple-100 text-purple-700 border-purple-200';
+    case 'connected':
+      return 'bg-sky-100 text-sky-700 border-sky-200';
     case 'qualified':
       return 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold';
     case 'proposal':

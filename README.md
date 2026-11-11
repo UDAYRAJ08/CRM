@@ -127,6 +127,8 @@ Tools Claude gets:
 | `check_linkedin_invite` | Before sending: already invited by anyone on the team? Invites left today? (`allowed`) |
 | `record_linkedin_invite` | After sending: creates or links the contact, saves the invite, logs it on the timeline |
 | `update_linkedin_invite_status` | Marks an invite `accepted` / `not_accepted` |
+| `record_linkedin_message` | After sending a LinkedIn message: saves it on the contact's timeline |
+| `record_linkedin_reply` | Saves a LinkedIn reply on the timeline and moves the contact to Replied & Qualified |
 | `list_linkedin_invites` | Lists recorded invites, filterable by status |
 | `search_contacts` | Searches contacts by name or email |
 
@@ -136,7 +138,8 @@ already happened. Only `check_linkedin_invite` blocks. Invites are never deleted
 
 **One-time setup**
 
-1. Run `supabase/claude_mcp.sql` in the Supabase SQL editor.
+1. Run `supabase/claude_mcp.sql`, then `supabase/linkedin_connected.sql`, in the Supabase SQL editor.
+   The second adds the **Connected** status: when an invite is marked accepted, the contact moves to it.
 2. In Supabase, open **Authentication > OAuth Server** and enable it. Set the **Authorization URL**
    path to `/oauth/consent`, set the Site URL to your deployed CRM, and turn on **Dynamic client
    registration** (Claude registers itself).

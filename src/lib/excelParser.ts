@@ -99,7 +99,7 @@ export function parseExcelOrCsv(
           break;
         case 'status': {
           const s = val.toLowerCase();
-          if (['new', 'contacted', 'qualified', 'proposal', 'won', 'lost', 'inactive'].includes(s)) {
+          if (['new', 'contacted', 'connected', 'qualified', 'proposal', 'won', 'lost', 'inactive'].includes(s)) {
             resolvedStatus = s as ContactStatus;
           }
           break;

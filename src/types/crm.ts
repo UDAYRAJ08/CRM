@@ -1,6 +1,7 @@
 export type ContactStatus =
   | 'new'
   | 'contacted'
+  | 'connected'
   | 'qualified'
   | 'proposal'
   | 'won'

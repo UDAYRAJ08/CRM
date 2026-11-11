@@ -75,6 +75,13 @@ export const STATUS_CONFIG: Record<
     text: 'text-amber-700',
     border: 'border-amber-200',
   },
+  connected: {
+    label: 'Connected',
+    dot: 'bg-sky-500',
+    bg: 'bg-sky-50/90',
+    text: 'text-sky-700',
+    border: 'border-sky-200',
+  },
   qualified: {
     label: 'Replied & Qualified',
     dot: 'bg-emerald-500',
