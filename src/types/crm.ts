@@ -193,3 +193,45 @@ export interface Deal {
   owner_name?: string;
 }
 
+
+export interface ContactList {
+  id: string;
+  name: string;
+  description?: string | null;
+  created_by?: string | null;
+  import_log_id?: string | null;
+  archived: boolean;
+  created_at: string;
+  total: number;
+  unassigned: number;
+}
+
+export type ActivityAction =
+  | 'list_created'
+  | 'assigned'
+  | 'unassigned'
+  | 'list_contacts_added'
+  | 'list_contacts_removed'
+  | 'owner_changed'
+  | 'status_changed';
+
+export interface ActivityLog {
+  id: string;
+  actor_id: string | null;
+  action: ActivityAction;
+  list_id: string | null;
+  target_member_id: string | null;
+  contact_id: string | null;
+  contact_count: number;
+  contact_ids: string[];
+  details: Record<string, any>;
+  created_at: string;
+}
+
+export interface ListProgressRow {
+  owner_id: string | null;
+  total: number;
+  by_status: Partial<Record<ContactStatus, number>>;
+  touched: number;
+  last_activity: string | null;
+}

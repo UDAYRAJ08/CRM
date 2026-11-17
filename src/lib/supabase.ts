@@ -67,7 +67,7 @@ const INITIAL_REMINDERS: Reminder[] = [];
 const INITIAL_DEALS: Deal[] = [];
 
 // Helper to load/save JSON from localStorage
-function getLocal<T>(key: string, defaultVal: T): T {
+export function getLocal<T>(key: string, defaultVal: T): T {
   try {
     const item = localStorage.getItem(`crm_${key}`);
     return item ? JSON.parse(item) : defaultVal;
@@ -76,7 +76,7 @@ function getLocal<T>(key: string, defaultVal: T): T {
   }
 }
 
-function setLocal<T>(key: string, val: T): void {
+export function setLocal<T>(key: string, val: T): void {
   try {
     localStorage.setItem(`crm_${key}`, JSON.stringify(val));
   } catch (e) {
@@ -424,7 +424,10 @@ export const db = {
     } as Contact;
   },
 
-  async batchInsertContacts(contactsToInsert: Partial<Contact>[], uploadLogInfo?: { fileName: string; uploadedBy?: string; flaggedCount: number }): Promise<number> {
+  async batchInsertContacts(
+    contactsToInsert: Partial<Contact>[],
+    uploadLogInfo?: { fileName: string; uploadedBy?: string; flaggedCount: number }
+  ): Promise<{ count: number; contactIds: string[]; importLogId: string | null }> {
     const prepared = contactsToInsert.map((c) => ({
       id: c.id || crypto.randomUUID(),
       name: c.name || 'Unnamed Contact',
@@ -443,21 +446,28 @@ export const db = {
       const { data, error } = await supabase.from('contacts').insert(prepared).select();
       // Don't fall back to localStorage: imported contacts would never show up (lists read from Supabase)
       if (error) throw new Error(error.message);
+      let importLogId: string | null = null;
       if (uploadLogInfo) {
-        await supabase.from('import_logs').insert({
-          file_name: uploadLogInfo.fileName,
-          uploaded_by: uploadLogInfo.uploadedBy || null,
-          rows_imported: data.length,
-          rows_flagged: uploadLogInfo.flaggedCount,
-        });
+        const { data: log } = await supabase
+          .from('import_logs')
+          .insert({
+            file_name: uploadLogInfo.fileName,
+            uploaded_by: uploadLogInfo.uploadedBy || null,
+            rows_imported: data.length,
+            rows_flagged: uploadLogInfo.flaggedCount,
+          })
+          .select('id')
+          .single();
+        importLogId = log?.id ?? null;
       }
       notifyCRMEvent('crm_contacts_updated');
-      return data.length;
+      return { count: data.length, contactIds: data.map((c: { id: string }) => c.id), importLogId };
     }
 
     const existing = getLocal<Contact[]>('contacts', INITIAL_CONTACTS);
     setLocal('contacts', [...prepared, ...existing]);
 
+    let importLogId: string | null = null;
     if (uploadLogInfo) {
       const logs = getLocal<ImportLog[]>('import_logs', []);
       const newLog: ImportLog = {
@@ -469,10 +479,11 @@ export const db = {
         created_at: new Date().toISOString(),
       };
       setLocal('import_logs', [newLog, ...logs]);
+      importLogId = newLog.id;
     }
 
     notifyCRMEvent('crm_contacts_updated');
-    return prepared.length;
+    return { count: prepared.length, contactIds: prepared.map((c) => c.id), importLogId };
   },
 
   async deleteContact(id: string): Promise<void> {

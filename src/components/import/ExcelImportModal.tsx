@@ -158,7 +158,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         });
       }
 
-      const insertedCount = await db.batchInsertContacts(contactsPayload, {
+      const { count: insertedCount } = await db.batchInsertContacts(contactsPayload, {
         fileName: summary.fileName,
         uploadedBy: activeMember?.id,
         flaggedCount: summary.duplicateRows.length + summary.invalidRows.length,
