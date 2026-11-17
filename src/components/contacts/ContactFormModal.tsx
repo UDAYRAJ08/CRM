@@ -10,6 +10,12 @@ import { Button } from '../ui/Button';
 import { Input, Select } from '../ui/Input';
 import { User, Building, Mail, Phone, Tag, Briefcase, Plus, X } from 'lucide-react';
 
+// Editing keeps an unassigned contact unassigned; only new contacts default to their creator.
+export function resolveOwnerId(isExisting: boolean, selected: string, activeMemberId?: string | null): string | null {
+  if (selected) return selected;
+  return isExisting ? null : activeMemberId || null;
+}
+
 interface ContactFormModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -52,7 +58,7 @@ export const ContactFormModal: React.FC<ContactFormModalProps> = ({
         setPhone(contact.phone || '');
         setTitle(contact.title || '');
         setCompanyId(contact.company_id || '');
-        setOwnerId(contact.owner_id || activeMember?.id || '');
+        setOwnerId(contact.owner_id || '');
         setStatus(contact.status || 'new');
         setTags(contact.tags || []);
       } else {
@@ -113,7 +119,7 @@ export const ContactFormModal: React.FC<ContactFormModalProps> = ({
         phone: phone.trim() || null,
         title: title.trim() || null,
         company_id: finalCompanyId,
-        owner_id: ownerId || activeMember?.id || null,
+        owner_id: resolveOwnerId(!!contact?.id, ownerId, activeMember?.id),
         status,
         tags,
       };
