@@ -1,6 +1,7 @@
 import React from 'react';
 import { Layers, Sparkles, Settings } from 'lucide-react';
 import { buildNavSections, NavList } from './navItems';
+import { usePermissions } from '../../hooks/usePermissions';
 
 interface SidebarProps {
   activeView: string;
@@ -22,6 +23,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenEmailSettings,
   ...counts
 }) => {
+  const { isManager } = usePermissions();
   const footerLink =
     'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer';
 
@@ -40,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </button>
 
       <div className="flex-1 overflow-y-auto">
-        <NavList sections={buildNavSections(counts)} activeView={activeView} onSelect={setActiveView} />
+        <NavList sections={buildNavSections({ ...counts, showTeamTools: isManager })} activeView={activeView} onSelect={setActiveView} />
       </div>
 
       <div className="p-3 border-t border-slate-200 space-y-0.5 shrink-0">

@@ -39,6 +39,8 @@ const VIEW_TITLES: Record<string, string> = {
   reminders: 'Follow-ups',
   companies: 'Companies',
   imports: 'Import history',
+  lists: 'Lists',
+  activity: 'Activity',
   linkedin: 'LinkedIn',
 };
 

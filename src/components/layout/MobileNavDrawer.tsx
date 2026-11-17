@@ -32,7 +32,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
 }) => {
   const { activeMember, setIsPickerOpen, logout } = useTeam();
   const { user } = useAuth();
-  const { roleTitle } = usePermissions();
+  const { roleTitle, isManager } = usePermissions();
 
   // Prevent background scrolling when mobile menu is open
   useEffect(() => {
@@ -121,7 +121,7 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
           </div>
 
           <NavList
-            sections={buildNavSections(counts, 'w-5 h-5')}
+            sections={buildNavSections({ ...counts, showTeamTools: isManager }, 'w-5 h-5')}
             activeView={activeView}
             onSelect={handleSelectView}
           />

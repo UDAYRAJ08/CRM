@@ -21,6 +21,7 @@ import { MobileNavDrawer } from './components/layout/MobileNavDrawer';
 import { Footer } from './components/layout/Footer';
 import { NotFoundView } from './components/common/NotFoundView';
 import { Loader2 } from 'lucide-react';
+import { usePermissions } from './hooks/usePermissions';
 import type { BulkTemplateKey } from './components/email/BulkEmailModal';
 
 // Heavy views and rarely-opened modals are split into their own chunks
@@ -38,9 +39,11 @@ const LinkedInComposerModal = lazy(() => import('./components/linkedin/LinkedInC
 const LinkedInView = lazy(() => import('./components/linkedin/LinkedInView').then((m) => ({ default: m.LinkedInView })));
 const InviteModal = lazy(() => import('./components/team/InviteModal').then((m) => ({ default: m.InviteModal })));
 const DashboardView = lazy(() => import('./components/dashboard/DashboardView').then((m) => ({ default: m.DashboardView })));
+const ListsView = lazy(() => import('./components/lists/ListsView').then((m) => ({ default: m.ListsView })));
+const ListDetailView = lazy(() => import('./components/lists/ListDetailView').then((m) => ({ default: m.ListDetailView })));
 const PipelineView = lazy(() => import('./components/pipeline/PipelineView').then((m) => ({ default: m.PipelineView })));
 
-export type ViewType = 'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'drafts' | 'reminders' | 'companies' | 'imports' | 'linkedin' | 'linkedin-contacts' | '404';
+export type ViewType = 'dashboard' | 'pipeline' | 'contacts' | 'inbox' | 'drafts' | 'reminders' | 'companies' | 'imports' | 'linkedin' | 'linkedin-contacts' | 'lists' | 'activity' | '404';
 
 const ViewFallback: React.FC = () => (
   <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400">
@@ -52,6 +55,9 @@ const ViewFallback: React.FC = () => (
 const CRMMain: React.FC = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
   const { activeMember, isLoading: isTeamLoading } = useTeam();
+  const { isManager } = usePermissions();
+  // Open list on the Lists page, from hash #lists/<id>.
+  const [activeListId, setActiveListId] = useState<string | null>(null);
   const { success, info, error: toastError } = useToast();
 
   const [activeView, setActiveView] = useState<ViewType>('dashboard');
@@ -241,8 +247,12 @@ const CRMMain: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace(/^#\/?/, '').trim();
-  const validViews: ViewType[] = ['dashboard', 'pipeline', 'contacts', 'inbox', 'drafts', 'reminders', 'companies', 'imports', 'linkedin', 'linkedin-contacts'];
-      if (!hash) {
+  const validViews: ViewType[] = ['dashboard', 'pipeline', 'contacts', 'inbox', 'drafts', 'reminders', 'companies', 'imports', 'linkedin', 'linkedin-contacts', 'lists', 'activity'];
+      const listMatch = hash.match(/^lists\/(.+)$/);
+      setActiveListId(listMatch ? decodeURIComponent(listMatch[1]) : null);
+      if (listMatch) {
+        setActiveView('lists');
+      } else if (!hash) {
         setActiveView('dashboard');
       } else if (validViews.includes(hash as ViewType)) {
         setActiveView(hash as ViewType);
@@ -283,6 +293,8 @@ const CRMMain: React.FC = () => {
       reminders: activeRemindersCount > 0 ? `Tasks (${activeRemindersCount} Due) | Team CRM` : 'Tasks & Reminders | Team CRM',
       companies: 'Companies & Accounts | Team CRM',
       imports: 'Import History | Team CRM',
+      lists: 'Lists | Team CRM',
+      activity: 'Activity | Team CRM',
       linkedin: 'LinkedIn Outreach | Team CRM',
       '404': '404 Not Found | Team CRM',
     };
@@ -527,6 +539,21 @@ const CRMMain: React.FC = () => {
                   onSelectContact={(c) => setSelectedContact(c)}
                 />
               )}
+
+              {activeView === 'lists' &&
+                (!isManager ? (
+                  <NotFoundView onNavigate={(v) => handleNavigate(v)} requestedView={window.location.hash} />
+                ) : activeListId ? (
+                  <ListDetailView
+                    listId={activeListId}
+                    contacts={contacts}
+                    onBack={() => handleNavigate('lists')}
+                    onSelectContact={(c) => setSelectedContact(c)}
+                    onRefresh={refreshAllData}
+                  />
+                ) : (
+                  <ListsView onOpenList={(id) => (window.location.hash = `lists/${encodeURIComponent(id)}`)} />
+                ))}
 
               {activeView === 'imports' && (
                 <ImportHistoryView onRefreshNeeded={refreshAllData} />

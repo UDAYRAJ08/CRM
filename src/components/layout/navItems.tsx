@@ -8,6 +8,8 @@ import {
   LayoutDashboard,
   DollarSign,
   FileEdit,
+  ListChecks,
+  History,
 } from 'lucide-react';
 import { Linkedin } from '../linkedin/LinkedInIcon';
 
@@ -18,6 +20,8 @@ export interface NavCounts {
   inboxCount?: number;
   dealCount?: number;
   draftCount?: number;
+  /** Admins and managers see the Team section (Lists, Activity). */
+  showTeamTools?: boolean;
 }
 
 export interface NavItem {
@@ -60,6 +64,17 @@ export const buildNavSections = (c: NavCounts, iconClass = 'w-4 h-4'): NavSectio
       { id: 'linkedin-contacts', label: 'LinkedIn Contacts', icon: <Users className={iconClass} />, badge: c.linkedinContactCount },
     ],
   },
+  ...(c.showTeamTools
+    ? [
+        {
+          title: 'Team',
+          items: [
+            { id: 'lists', label: 'Lists', icon: <ListChecks className={iconClass} /> },
+            { id: 'activity', label: 'Activity', icon: <History className={iconClass} /> },
+          ],
+        },
+      ]
+    : []),
   {
     title: 'Data',
     items: [{ id: 'imports', label: 'Imports', icon: <FileSpreadsheet className={iconClass} /> }],
