@@ -1,16 +1,38 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import type { Contact, ActivityLog } from '../../types/crm';
 
-// Supabase mode: only rpc() is exercised, so the fake client records rpc calls.
+// Supabase mode: the fake client records rpc calls and every query builder chain.
 const rpcCalls: Array<[string, unknown]> = [];
+type Call = { table: string; ops: Array<[string, unknown[]]> };
+const calls: Call[] = [];
+let respond: (c: Call) => { data: unknown; error: unknown } = () => ({ data: [], error: null });
+function builder(table: string) {
+  const call: Call = { table, ops: [] };
+  calls.push(call);
+  const b: any = new Proxy(
+    {},
+    {
+      get(_t, prop: string) {
+        if (prop === 'then') return (ok: any, fail: any) => Promise.resolve(respond(call)).then(ok, fail);
+        return (...args: unknown[]) => {
+          call.ops.push([prop, args]);
+          return b;
+        };
+      },
+    }
+  );
+  return b;
+}
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
+    from: (t: string) => builder(t),
     rpc: (fn: string, args: unknown) => {
       rpcCalls.push([fn, args]);
       return Promise.resolve({ data: 3, error: null });
     },
   }),
 }));
+const op = (c: Call, name: string) => c.ops.find(([o]) => o === name)?.[1];
 
 const contact = (id: string, owner_id: string | null = null): Contact => ({
   id,
@@ -176,5 +198,30 @@ describe('listsDb (Supabase mode)', () => {
       'assign_list_contacts',
       { p_list_id: 'l1', p_member_id: 'm1', p_count: 100, p_contact_ids: null },
     ]);
+  });
+
+  // PostgREST caps responses at max-rows (1000), so tie queries must be keyset-paged too.
+  it('feed tie queries are keyset-paged per source', async () => {
+    calls.length = 0;
+    respond = () => ({ data: [], error: null });
+    const at = '2026-11-17T10:00:00+00:00';
+    await listsDb.getActivityFeed({ before: { at, key: 'log:L5' }, pageSize: 2 });
+    const ties = calls.filter((c) => c.ops.some(([o, a]) => o === 'eq' && a[1] === at));
+    const tie = (t: string) => ties.find((c) => c.table === t)!;
+    expect(op(tie('activity_logs'), 'lt')).toEqual(['id', 'L5']);
+    expect(op(tie('activity_logs'), 'limit')).toEqual([2]);
+    expect(op(tie('emails'), 'lt')).toBeUndefined(); // 'email:*' keys all sort before 'log:L5'
+    expect(op(tie('emails'), 'limit')).toEqual([2]);
+    expect(op(tie('interactions'), 'limit')).toEqual([2]);
+
+    calls.length = 0;
+    await listsDb.getActivityFeed({ before: { at, key: 'email:E5' }, pageSize: 2 });
+    const tables = calls.filter((c) => c.ops.some(([o, a]) => o === 'eq' && a[1] === at)).map((c) => c.table);
+    expect(tables).toEqual(['emails']); // log:* and interaction:* ties sort after the cursor
+  });
+
+  it('archiveList throws when RLS lets no row change', async () => {
+    respond = () => ({ data: [], error: null });
+    await expect(listsDb.archiveList('l1', true)).rejects.toThrow(/Only admins can manage contact lists/);
   });
 });

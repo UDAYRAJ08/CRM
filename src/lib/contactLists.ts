@@ -268,7 +268,7 @@ function feedSources(f: FeedFilter): FeedSource[] {
   }
 
   const remote =
-    <T>(table: string, columns: string, timeCol: string, map: (row: T) => ActivityFeedItem, narrow: (q: any) => any): FeedSource =>
+    <T>(kind: ActivityFeedItem['kind'], table: string, columns: string, timeCol: string, map: (row: T) => ActivityFeedItem, narrow: (q: any) => any): FeedSource =>
     async (cursor, limit) => {
       const base = () => {
         let q = narrow(supabase!.from(table).select(columns));
@@ -278,7 +278,17 @@ function feedSources(f: FeedFilter): FeedSource[] {
       };
       const older = cursor ? base().lt(timeCol, cursor.at) : base();
       const queries = [older.order(timeCol, { ascending: false }).order('id', { ascending: false }).limit(limit)];
-      if (cursor) queries.push(base().eq(timeCol, cursor.at));
+      if (cursor) {
+        // Ties at the cursor time, keyset-paged too (PostgREST caps a response at max-rows).
+        // Keys are "<kind>:<id>": compare this source's kind with the cursor's first.
+        const sep = cursor.key.indexOf(':');
+        const cursorKind = cursor.key.slice(0, sep);
+        if (kind <= cursorKind) {
+          let tie = base().eq(timeCol, cursor.at);
+          if (kind === cursorKind) tie = tie.lt('id', cursor.key.slice(sep + 1));
+          queries.push(tie.order('id', { ascending: false }).limit(limit));
+        }
+      }
       const results = await Promise.all(queries);
       const rows: T[] = [];
       for (const { data, error } of results) {
@@ -289,7 +299,7 @@ function feedSources(f: FeedFilter): FeedSource[] {
     };
 
   const sources: FeedSource[] = [
-    remote<ActivityLog>('activity_logs', '*', 'created_at', fromLog, (q) => {
+    remote<ActivityLog>('log', 'activity_logs', '*', 'created_at', fromLog, (q) => {
       if (f.listId) q = q.eq('list_id', f.listId);
       if (f.memberId) q = q.or(`actor_id.eq.${f.memberId},target_member_id.eq.${f.memberId}`);
       return q;
@@ -297,11 +307,11 @@ function feedSources(f: FeedFilter): FeedSource[] {
   ];
   if (withMessages) {
     sources.push(
-      remote<EmailRecord>('emails', 'id, contact_id, subject, sent_by, sent_at, status, is_inbound', 'sent_at', fromEmail, (q) => {
+      remote<EmailRecord>('email', 'emails', 'id, contact_id, subject, sent_by, sent_at, status, is_inbound', 'sent_at', fromEmail, (q) => {
         q = q.eq('status', 'sent').or('is_inbound.is.null,is_inbound.eq.false');
         return f.memberId ? q.eq('sent_by', f.memberId) : q;
       }),
-      remote<Interaction>('interactions', 'id, contact_id, type, content, created_by, created_at', 'created_at', fromInteraction, (q) =>
+      remote<Interaction>('interaction', 'interactions', 'id, contact_id, type, content, created_by, created_at', 'created_at', fromInteraction, (q) =>
         f.memberId ? q.eq('created_by', f.memberId) : q
       )
     );
@@ -321,9 +331,10 @@ function addLocal(listId: string, contactIds: string[]): string[] {
 
 async function updateList(listId: string, patch: Partial<StoredList>): Promise<void> {
   if (supabase) {
-    // RLS limits writes on contact_lists to admins.
-    const { error } = await supabase.from('contact_lists').update(patch).eq('id', listId);
+    // RLS limits writes on contact_lists to admins, and a blocked update returns no error, only no rows.
+    const { data, error } = await supabase.from('contact_lists').update(patch).eq('id', listId).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('Only admins can manage contact lists');
   } else {
     setLocal('contact_lists', getLocal<StoredList[]>('contact_lists', []).map((l) => (l.id === listId ? { ...l, ...patch } : l)));
   }
