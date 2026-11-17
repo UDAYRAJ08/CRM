@@ -542,22 +542,33 @@ export const ContactList: React.FC<ContactListProps> = ({
   };
 
   // Bulk Assign (admins): one logged action for all selected contacts
-  const handleBulkAssign = async (memberId: string | null) => {
+  const handleBulkAssign = (memberId: string | null) => {
     if (selectedContacts.length === 0) return;
-    try {
-      const n = await listsDb.assign({
-        listId: null,
-        memberId,
-        contactIds: selectedContacts.map((c) => c.id),
-        actorId: activeMember?.id,
-      });
-      const who = memberId ? teamMembers.find((m) => m.id === memberId)?.name || 'team member' : 'nobody (unassigned)';
-      success('Contacts Assigned', `Assigned ${n} contacts to ${who}.`);
-      setSelectedIds(new Set());
-      onRefresh();
-    } catch (err: any) {
-      error('Assign Failed', err.message || 'Could not assign contacts.');
-    }
+    const ids = selectedContacts.map((c) => c.id);
+    const who = memberId ? teamMembers.find((m) => m.id === memberId)?.name || 'team member' : 'nobody (unassigned)';
+    // No undo for owner changes, so confirm like bulk delete does.
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Assign Contacts',
+      message: (
+        <p className="text-sm text-slate-600">
+          Make <strong className="text-slate-900">{who}</strong> the owner of{' '}
+          <strong className="text-slate-900">{ids.length} selected {ids.length === 1 ? 'contact' : 'contacts'}</strong>? Their current owners are replaced.
+        </p>
+      ),
+      confirmText: `Assign ${ids.length}`,
+      variant: 'primary',
+      onConfirm: async () => {
+        try {
+          const n = await listsDb.assign({ listId: null, memberId, contactIds: ids, actorId: activeMember?.id });
+          success('Contacts Assigned', `Assigned ${n} contacts to ${who}.`);
+          setSelectedIds(new Set());
+          onRefresh();
+        } catch (err: any) {
+          error('Assign Failed', err.message || 'Could not assign contacts.');
+        }
+      },
+    });
   };
 
   // Bulk Delete

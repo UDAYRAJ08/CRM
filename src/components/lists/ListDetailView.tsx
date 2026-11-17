@@ -8,6 +8,7 @@ import { usePermissions } from '../../hooks/usePermissions';
 import type { Contact, ContactList, ContactStatus, ListProgressRow } from '../../types/crm';
 import { STATUS_CONFIG } from '../contacts/ContactList';
 import { Button } from '../ui/Button';
+import { ConfirmModal } from '../ui/ConfirmModal';
 import { AssignMemberSelect } from './AssignMemberSelect';
 import { ActivityLogView } from './ActivityLogView';
 
@@ -33,7 +34,10 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<'people' | 'contacts' | 'activity'>('people');
 
-  const [assignCount, setAssignCount] = useState(100);
+  // Kept as typed text; parsed on submit so clearing the field doesn't snap it to 1.
+  const [assignCountText, setAssignCountText] = useState('100');
+  const assignCount = /^\d+$/.test(assignCountText.trim()) ? parseInt(assignCountText, 10) : 0;
+  const [pendingReassign, setPendingReassign] = useState<{ memberId: string | null } | null>(null);
   const [assignTo, setAssignTo] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
 
@@ -207,14 +211,14 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
           <input
             type="number"
             min={1}
-            value={assignCount}
-            onChange={(e) => setAssignCount(Math.max(1, Number(e.target.value) || 1))}
+            value={assignCountText}
+            onChange={(e) => setAssignCountText(e.target.value)}
             aria-label="How many contacts to assign"
             className="w-20 bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
           <span className="text-slate-700">unassigned to</span>
           <AssignMemberSelect value={assignTo} onChange={(id) => setAssignTo(id ?? '')} />
-          <Button size="sm" variant="primary" isLoading={isAssigning} disabled={!assignTo || list.unassigned === 0} onClick={handleAssign}>
+          <Button size="sm" variant="primary" isLoading={isAssigning} disabled={!assignTo || assignCount < 1 || list.unassigned === 0} onClick={handleAssign}>
             Assign
           </Button>
           <span className="text-xs text-slate-500 ml-auto">{list.unassigned} unassigned left</span>
@@ -303,7 +307,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
             {canManageLists && selected.size > 0 && (
               <>
                 <span className="text-slate-600">{selected.size} selected</span>
-                <AssignMemberSelect value="" includeUnassigned placeholder="Reassign to..." onChange={handleReassign} />
+                <AssignMemberSelect value="" includeUnassigned placeholder="Reassign to..." onChange={(memberId) => setPendingReassign({ memberId })} />
                 <Button size="sm" variant="outline" onClick={handleRemove}>
                   Remove from list
                 </Button>
@@ -375,6 +379,21 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
         </div>
       )}
 
+
+      <ConfirmModal
+        isOpen={!!pendingReassign}
+        onClose={() => setPendingReassign(null)}
+        onConfirm={() => handleReassign(pendingReassign?.memberId ?? null)}
+        title="Assign Contacts"
+        message={
+          <p className="text-sm text-slate-600">
+            Make <strong className="text-slate-900">{memberName(pendingReassign?.memberId)}</strong> the owner of{' '}
+            <strong className="text-slate-900">{selected.size} selected contacts</strong>? Their current owners are replaced.
+          </p>
+        }
+        confirmText={`Assign ${selected.size}`}
+        variant="primary"
+      />
 
       {tab === 'activity' && <ActivityLogView listId={listId} contacts={contacts} onSelectContact={onSelectContact} />}
     </div>
