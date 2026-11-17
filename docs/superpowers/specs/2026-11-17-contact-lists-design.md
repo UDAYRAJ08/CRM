@@ -152,7 +152,7 @@ Managers keep their existing ability to change an owner in the edit form; it is 
 
 ### Permissions
 
-- Admin rule: one SQL helper `is_crm_admin()` that matches the UI rule in `usePermissions.ts` (role contains "admin" or "owner", or is "founder" or "ceo", case-insensitive), so the UI never shows a button the database then rejects. Used only by the new tables and the assign function; existing policies are untouched. Safe because `audit_fixes.sql` already stops non-admins changing roles. *(Design call.)*
+- Admin rule: `is_crm_admin()` accepts only `role = 'Admin'` exactly, and the UI uses the same rule (`usePermissions().canManageLists`). *(Changed after review: `audit_fixes.sql` only stops non-admins giving themselves exactly `Admin`; any user can insert their own row as `Owner` or `admin`, so the broader UI rule could not be trusted in SQL.)*
 - RLS on the three new tables: authenticated users can read. Only `is_crm_admin()` can insert, update or delete `contact_lists` and `contact_list_members`. Nobody inserts into `activity_logs` directly; rows come only from the trigger and the security-definer assign/list functions. No updates or deletes on `activity_logs`.
 - UI hides list and assign actions unless `isAdmin`.
 
