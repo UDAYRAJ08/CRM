@@ -166,6 +166,10 @@ Only CRM team members can use the connector. A signed-in user with no `team_memb
 - Run `supabase/audit_fixes.sql` **before** deploying this version: the app now saves inbound
   replies with `sender_email` / `is_inbound`, logs `linkedin` timeline entries, and the file stops
   non-admins from setting roles or other people's logins.
+- Run `supabase/contact_lists.sql` **after** `audit_fixes.sql` to enable Lists and Activity.
+  Admins can then save an import as a list, assign "next N unassigned" contacts to a team member,
+  and see every assignment, owner change and status change on the Activity page. Without it, list
+  actions fail with a "function not found" error.
 - Apply `supabase/security_hardening.sql` (and review `supabase/persona_pin_and_rls.sql`) in the
   Supabase SQL editor. The default policies let any authenticated user read and write every table;
   tighten them to roles before onboarding people outside the core team.
