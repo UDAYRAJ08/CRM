@@ -202,7 +202,7 @@ export const ContactList: React.FC<ContactListProps> = ({
 }) => {
   const { teamMembers, activeMember } = useTeam();
   const { success, error, info } = useToast();
-  const { canDeleteContacts, canBulkDelete, canEditContacts, canChangeStatus, isAdmin, isManager } = usePermissions();
+  const { canDeleteContacts, canBulkDelete, canEditContacts, canChangeStatus, isAdmin, isManager, canManageLists } = usePermissions();
 
   // Filter States
   const [pipelineTab, setPipelineTab] = useState<'all' | 'uncontacted' | 'due' | 'replied'>('all');
@@ -1640,7 +1640,7 @@ export const ContactList: React.FC<ContactListProps> = ({
               </div>
 
               {/* Assign / Add to list (Admin Only) */}
-              {isAdmin && (
+              {canManageLists && (
                 <>
                   <AssignMemberSelect
                     value=""
@@ -1724,7 +1724,7 @@ export const ContactList: React.FC<ContactListProps> = ({
         badgeLabel={confirmConfig.badgeLabel}
       />
 
-      {isAdmin && (
+      {canManageLists && (
         <AddToListModal
           isOpen={isAddToListOpen}
           onClose={() => setIsAddToListOpen(false)}

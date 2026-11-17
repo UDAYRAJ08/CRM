@@ -25,7 +25,7 @@ const STATUSES = Object.keys(STATUS_CONFIG) as ContactStatus[];
 export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts, onBack, onSelectContact, onRefresh }) => {
   const { teamMembers, activeMember } = useTeam();
   const { success, error, info } = useToast();
-  const { isAdmin } = usePermissions();
+  const { canManageLists } = usePermissions();
 
   const [list, setList] = useState<ContactList | null>(null);
   const [memberIds, setMemberIds] = useState<string[]>([]);
@@ -183,7 +183,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
             </p>
           )}
         </div>
-        {isAdmin && list && (
+        {canManageLists && list && (
           <div className="flex gap-2">
             <Button size="sm" variant="outline" leftIcon={<Pencil className="w-3.5 h-3.5" />} onClick={handleRename}>
               Rename
@@ -200,7 +200,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
         )}
       </div>
 
-      {isAdmin && list && (
+      {canManageLists && list && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-wrap items-center gap-2 text-sm">
           <UserPlus className="w-4 h-4 text-indigo-600" />
           <span className="text-slate-700">Assign</span>
@@ -300,7 +300,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
                 </option>
               ))}
             </select>
-            {isAdmin && selected.size > 0 && (
+            {canManageLists && selected.size > 0 && (
               <>
                 <span className="text-slate-600">{selected.size} selected</span>
                 <AssignMemberSelect value="" includeUnassigned placeholder="Reassign to..." onChange={handleReassign} />
@@ -315,7 +315,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
                 <tr>
-                  {isAdmin && (
+                  {canManageLists && (
                     <th className="p-3 w-8">
                       <input
                         type="checkbox"
@@ -336,7 +336,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
               <tbody className="divide-y divide-slate-100">
                 {page.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50/60">
-                    {isAdmin && (
+                    {canManageLists && (
                       <td className="p-3">
                         <input type="checkbox" aria-label={`Select ${c.name}`} checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
                       </td>

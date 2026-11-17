@@ -50,15 +50,29 @@ beforeAll(async () => {
 }, 60_000);
 
 describe('contact_lists.sql', () => {
-  it('is_crm_admin matches the UI rule', async () => {
+  // Only role = 'Admin' counts: audit_fixes.sql stops non-admins inserting exactly 'Admin',
+  // but anyone can insert their own row as 'Owner' or 'admin'.
+  it('is_crm_admin accepts only the guarded Admin role', async () => {
     const check = async (m: string | null) => {
       await asUser(m);
       return (await one<{ v: boolean }>('select is_crm_admin() as v')).v;
     };
     expect(await check(A)).toBe(true);
-    expect(await check(O)).toBe(true);
+    expect(await check(O)).toBe(false);
     expect(await check(R)).toBe(false);
     expect(await check(null)).toBe(false);
+  });
+
+  it('a self-inserted lower-case admin row does not grant admin', async () => {
+    const X = '00000000-0000-0000-0000-00000000000e';
+    await db.query(`insert into team_members (id, name, role, auth_user_id) values ($1, 'x', 'admin', $2)`, [X, authOf(X)]);
+    await asUser(X);
+    expect((await one<{ v: boolean }>('select is_crm_admin() as v')).v).toBe(false);
+  });
+
+  it('indexes activity_logs.contact_id for contact deletes', async () => {
+    const idx = await db.query(`select 1 from pg_indexes where tablename = 'activity_logs' and indexdef like '%(contact_id)%'`);
+    expect(idx.rows).toHaveLength(1);
   });
 
   it('create_contact_list rejects non-admins', async () => {

@@ -45,6 +45,8 @@ create index if not exists idx_activity_logs_created on activity_logs(created_at
 create index if not exists idx_activity_logs_list on activity_logs(list_id);
 create index if not exists idx_activity_logs_target on activity_logs(target_member_id);
 create index if not exists idx_activity_logs_actor on activity_logs(actor_id);
+-- FK on delete set null: without this every contact delete scans the whole log.
+create index if not exists idx_activity_logs_contact on activity_logs(contact_id);
 
 -- 2. Who is calling ---------------------------------------------------------------
 
@@ -53,17 +55,13 @@ language sql stable security definer set search_path = public as $$
   select id from team_members where auth_user_id = auth.uid() limit 1
 $$;
 
--- Same rule as usePermissions().isAdmin in the browser.
+-- Only role = 'Admin' exactly: guard_team_member_update (audit_fixes.sql) stops non-admins
+-- giving themselves that role, but not 'Owner', 'admin' etc. Matches usePermissions().canManageLists.
 create or replace function is_crm_admin() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from team_members
-    where auth_user_id = auth.uid()
-      and (
-        lower(role) like '%admin%'
-        or lower(role) like '%owner%'
-        or lower(trim(role)) in ('founder', 'ceo')
-      )
+    where auth_user_id = auth.uid() and role = 'Admin'
   )
 $$;
 

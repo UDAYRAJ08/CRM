@@ -27,7 +27,12 @@ export interface Permissions {
   canSendEmail: boolean;
   canChangeStatus: boolean;
   canManageAIKeys: boolean;
+  /** Create lists and assign contacts. Same rule as is_crm_admin() in contact_lists.sql. */
+  canManageLists: boolean;
 }
+
+// The database only protects the exact 'Admin' role from self-assignment (audit_fixes.sql).
+export const isListAdminRole = (role?: string | null): boolean => role === 'Admin';
 
 export function usePermissions(): Permissions {
   const { activeMember } = useTeam();
@@ -92,5 +97,6 @@ export function usePermissions(): Permissions {
     canChangeStatus: true,
     // AI API Keys configuration restricted to Admins & Owners only
     canManageAIKeys: isAdmin,
+    canManageLists: isListAdminRole(activeMember?.role),
   };
 }
