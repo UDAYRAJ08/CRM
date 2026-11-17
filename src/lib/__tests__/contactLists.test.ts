@@ -82,6 +82,83 @@ describe('listsDb (localStorage mode)', () => {
   });
 });
 
+describe('activity feed (localStorage mode)', () => {
+  let listsDb: typeof import('../contactLists').listsDb;
+
+  beforeAll(async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', '');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+    vi.resetModules();
+    ({ listsDb } = await import('../contactLists'));
+  });
+
+  const log = (id: string, at: string, extra: Partial<ActivityLog> = {}): ActivityLog => ({
+    id, action: 'assigned', actor_id: 'admin', list_id: 'L1', target_member_id: 'm1', contact_id: null,
+    contact_count: 1, contact_ids: [], details: {}, created_at: at, ...extra,
+  });
+  const seed = (logs: ActivityLog[], emails: object[] = [], interactions: object[] = []) => {
+    localStorage.clear();
+    localStorage.setItem('crm_activity_logs', JSON.stringify(logs));
+    localStorage.setItem('crm_emails', JSON.stringify(emails));
+    localStorage.setItem('crm_interactions', JSON.stringify(interactions));
+  };
+
+  it('feed merges logs, outbound emails and interactions newest first', async () => {
+    seed(
+      [log('l1', '2026-11-17T10:00:00.000Z')],
+      [
+        { id: 'e1', contact_id: 'c1', sent_by: 'm1', sent_at: '2026-11-17T12:00:00.000Z', status: 'sent', is_inbound: false, subject: 'Hi', body: '', recipient_email: 'x' },
+        { id: 'e2', contact_id: 'c1', sent_at: '2026-11-17T13:00:00.000Z', status: 'received', is_inbound: true, subject: 'Re', body: '', recipient_email: 'x' },
+      ],
+      [{ id: 'i1', contact_id: 'c1', type: 'call', content: 'x', created_by: 'm1', created_at: '2026-11-17T11:00:00.000Z' }]
+    );
+    const { items, next } = await listsDb.getActivityFeed({});
+    expect(items.map((i) => i.key)).toEqual(['email:e1', 'interaction:i1', 'log:l1']);
+    expect(next).toBeNull();
+  });
+
+  it('feed filters by member (actor or target for logs, sent_by, created_by)', async () => {
+    seed(
+      [log('l1', '2026-11-17T10:00:00.000Z', { actor_id: 'admin', target_member_id: 'm1' }), log('l2', '2026-11-17T10:01:00.000Z', { actor_id: 'm2', target_member_id: 'm2' })],
+      [{ id: 'e1', sent_by: 'm2', sent_at: '2026-11-17T12:00:00.000Z', status: 'sent', is_inbound: false, subject: 'Hi', body: '', recipient_email: 'x' }],
+      [{ id: 'i1', contact_id: 'c1', type: 'note', content: 'x', created_by: 'm1', created_at: '2026-11-17T11:00:00.000Z' }]
+    );
+    const { items } = await listsDb.getActivityFeed({ memberId: 'm1' });
+    expect(items.map((i) => i.key)).toEqual(['interaction:i1', 'log:l1']);
+  });
+
+  it('feed pages without gaps or repeats when 120 rows share one timestamp', async () => {
+    const at = '2026-11-17T10:00:00.000Z';
+    seed(Array.from({ length: 120 }, (_, n) => log(`l${String(n).padStart(3, '0')}`, at)));
+    const seen: string[] = [];
+    const sizes: number[] = [];
+    let before = null as { at: string; key: string } | null;
+    do {
+      const page = await listsDb.getActivityFeed({ before, pageSize: 50 });
+      sizes.push(page.items.length);
+      seen.push(...page.items.map((i) => i.key));
+      before = page.next;
+    } while (before);
+    expect(sizes).toEqual([50, 50, 20]);
+    expect(new Set(seen).size).toBe(120);
+  });
+
+  it('list filter keeps only that list’s log rows', async () => {
+    seed(
+      [log('l1', '2026-11-17T10:00:00.000Z', { list_id: 'L1' }), log('l2', '2026-11-17T10:01:00.000Z', { list_id: 'L2' })],
+      [{ id: 'e1', contact_id: 'c1', sent_by: 'm1', sent_at: '2026-11-17T12:00:00.000Z', status: 'sent', is_inbound: false, subject: 'Hi', body: '', recipient_email: 'x' }]
+    );
+    const { items } = await listsDb.getActivityFeed({ listId: 'L1' });
+    expect(items.map((i) => i.key)).toEqual(['log:l1']);
+  });
+
+  it('date range keeps rows between from and to', async () => {
+    seed([log('l1', '2026-11-15T10:00:00.000Z'), log('l2', '2026-11-17T10:00:00.000Z')]);
+    const { items } = await listsDb.getActivityFeed({ from: '2026-11-16T00:00:00.000Z', to: '2026-11-18T00:00:00.000Z' });
+    expect(items.map((i) => i.key)).toEqual(['log:l2']);
+  });
+});
+
 describe('listsDb (Supabase mode)', () => {
   let listsDb: typeof import('../contactLists').listsDb;
 

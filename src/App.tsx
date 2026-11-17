@@ -40,6 +40,7 @@ const LinkedInView = lazy(() => import('./components/linkedin/LinkedInView').the
 const InviteModal = lazy(() => import('./components/team/InviteModal').then((m) => ({ default: m.InviteModal })));
 const DashboardView = lazy(() => import('./components/dashboard/DashboardView').then((m) => ({ default: m.DashboardView })));
 const ListsView = lazy(() => import('./components/lists/ListsView').then((m) => ({ default: m.ListsView })));
+const ActivityLogView = lazy(() => import('./components/lists/ActivityLogView').then((m) => ({ default: m.ActivityLogView })));
 const ListDetailView = lazy(() => import('./components/lists/ListDetailView').then((m) => ({ default: m.ListDetailView })));
 const PipelineView = lazy(() => import('./components/pipeline/PipelineView').then((m) => ({ default: m.PipelineView })));
 
@@ -553,6 +554,13 @@ const CRMMain: React.FC = () => {
                   />
                 ) : (
                   <ListsView onOpenList={(id) => (window.location.hash = `lists/${encodeURIComponent(id)}`)} />
+                ))}
+
+              {activeView === 'activity' &&
+                (isManager ? (
+                  <ActivityLogView contacts={contacts} onSelectContact={(c) => setSelectedContact(c)} />
+                ) : (
+                  <NotFoundView onNavigate={(v) => handleNavigate(v)} requestedView={window.location.hash} />
                 ))}
 
               {activeView === 'imports' && (

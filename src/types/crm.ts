@@ -235,3 +235,19 @@ export interface ListProgressRow {
   touched: number;
   last_activity: string | null;
 }
+
+export interface ActivityFeedItem {
+  key: string;
+  kind: 'log' | 'email' | 'interaction';
+  at: string;
+  actorId: string | null;
+  contactId: string | null;
+  log?: ActivityLog;
+  email?: EmailRecord;
+  interaction?: Interaction;
+}
+
+export interface ActivityCursor {
+  at: string;
+  key: string;
+}

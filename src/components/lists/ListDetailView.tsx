@@ -9,6 +9,7 @@ import type { Contact, ContactList, ContactStatus, ListProgressRow } from '../..
 import { STATUS_CONFIG } from '../contacts/ContactList';
 import { Button } from '../ui/Button';
 import { AssignMemberSelect } from './AssignMemberSelect';
+import { ActivityLogView } from './ActivityLogView';
 
 interface ListDetailViewProps {
   listId: string;
@@ -30,7 +31,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [progress, setProgress] = useState<ListProgressRow[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [tab, setTab] = useState<'people' | 'contacts'>('people');
+  const [tab, setTab] = useState<'people' | 'contacts' | 'activity'>('people');
 
   const [assignCount, setAssignCount] = useState(100);
   const [assignTo, setAssignTo] = useState('');
@@ -221,13 +222,13 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
       )}
 
       <div className="flex gap-1 border-b border-slate-200 text-sm">
-        {(['people', 'contacts'] as const).map((t) => (
+        {(['people', 'contacts', 'activity'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`px-3 py-2 -mb-px border-b-2 ${tab === t ? 'border-indigo-600 text-slate-900 font-medium' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
           >
-            {t === 'people' ? 'Progress by person' : `Contacts (${listContacts.length})`}
+            {t === 'people' ? 'Progress by person' : t === 'contacts' ? `Contacts (${listContacts.length})` : 'Activity'}
           </button>
         ))}
       </div>
@@ -374,6 +375,8 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
         </div>
       )}
 
+
+      {tab === 'activity' && <ActivityLogView listId={listId} contacts={contacts} onSelectContact={onSelectContact} />}
     </div>
   );
 };

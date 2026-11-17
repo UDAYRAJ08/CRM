@@ -1,5 +1,15 @@
 import { supabase, getLocal, setLocal, notifyCRMEvent, fetchAllPages } from './supabase';
-import type { ActivityAction, ActivityLog, Contact, ContactList, ListProgressRow } from '../types/crm';
+import type {
+  ActivityAction,
+  ActivityCursor,
+  ActivityFeedItem,
+  ActivityLog,
+  Contact,
+  ContactList,
+  EmailRecord,
+  Interaction,
+  ListProgressRow,
+} from '../types/crm';
 
 // Contact lists, assignment and the activity log. With Supabase every write goes
 // through the admin-checked SQL functions in supabase/contact_lists.sql; without
@@ -191,7 +201,113 @@ export const listsDb = {
   async archiveList(listId: string, archived: boolean): Promise<void> {
     await updateList(listId, { archived });
   },
+
+  // Assignment logs + outbound emails + interactions, newest first, keyset-paged by (at, key).
+  async getActivityFeed(f: FeedFilter): Promise<{ items: ActivityFeedItem[]; next: ActivityCursor | null }> {
+    const size = f.pageSize ?? 50;
+    const cursor = f.before ?? null;
+    const batches = await Promise.all(feedSources(f).map((source) => source(cursor, size)));
+    const items = batches
+      .flat()
+      .filter((i) => !cursor || isBefore(i, cursor))
+      .sort(newestFirst)
+      .slice(0, size);
+    const last = items[items.length - 1];
+    return { items, next: items.length === size ? { at: last.at, key: last.key } : null };
+  },
 };
+
+export interface FeedFilter {
+  memberId?: string;
+  listId?: string;
+  from?: string;
+  to?: string;
+  before?: ActivityCursor | null;
+  pageSize?: number;
+}
+
+// Timestamps from one backend share a format, so string order is time order.
+const isBefore = (i: ActivityFeedItem, c: ActivityCursor) => i.at < c.at || (i.at === c.at && i.key < c.key);
+const newestFirst = (a: ActivityFeedItem, b: ActivityFeedItem) =>
+  a.at === b.at ? (a.key < b.key ? 1 : a.key > b.key ? -1 : 0) : a.at < b.at ? 1 : -1;
+
+const fromLog = (l: ActivityLog): ActivityFeedItem => ({
+  key: `log:${l.id}`, kind: 'log', at: l.created_at, actorId: l.actor_id, contactId: l.contact_id, log: l,
+});
+const fromEmail = (e: EmailRecord): ActivityFeedItem => ({
+  key: `email:${e.id}`, kind: 'email', at: e.sent_at || e.created_at || '', actorId: e.sent_by ?? null, contactId: e.contact_id ?? null, email: e,
+});
+const fromInteraction = (i: Interaction): ActivityFeedItem => ({
+  key: `interaction:${i.id}`, kind: 'interaction', at: i.created_at, actorId: i.created_by ?? null, contactId: i.contact_id, interaction: i,
+});
+
+// A source returns its newest `limit` rows strictly before the cursor, plus every row AT the
+// cursor time (ties), so the merged page can never skip a row.
+type FeedSource = (cursor: ActivityCursor | null, limit: number) => Promise<ActivityFeedItem[]>;
+
+function feedSources(f: FeedFilter): FeedSource[] {
+  // The list view shows that list's assignment log only (spec: "filtered activity_logs").
+  const withMessages = !f.listId;
+
+  if (!supabase) {
+    const inRange = (at: string) => (!f.from || at >= f.from) && (!f.to || at <= f.to);
+    const local = (rows: ActivityFeedItem[]): FeedSource => async () => rows.filter((r) => inRange(r.at));
+    const logs = getLocal<ActivityLog[]>('activity_logs', [])
+      .filter((l) => !f.listId || l.list_id === f.listId)
+      .filter((l) => !f.memberId || l.actor_id === f.memberId || l.target_member_id === f.memberId)
+      .map(fromLog);
+    if (!withMessages) return [local(logs)];
+    const emails = getLocal<EmailRecord[]>('emails', [])
+      .filter((e) => !e.is_inbound && e.status === 'sent')
+      .filter((e) => !f.memberId || e.sent_by === f.memberId)
+      .map(fromEmail);
+    const interactions = getLocal<Interaction[]>('interactions', [])
+      .filter((i) => !f.memberId || i.created_by === f.memberId)
+      .map(fromInteraction);
+    return [local(logs), local(emails), local(interactions)];
+  }
+
+  const remote =
+    <T>(table: string, columns: string, timeCol: string, map: (row: T) => ActivityFeedItem, narrow: (q: any) => any): FeedSource =>
+    async (cursor, limit) => {
+      const base = () => {
+        let q = narrow(supabase!.from(table).select(columns));
+        if (f.from) q = q.gte(timeCol, f.from);
+        if (f.to) q = q.lte(timeCol, f.to);
+        return q;
+      };
+      const older = cursor ? base().lt(timeCol, cursor.at) : base();
+      const queries = [older.order(timeCol, { ascending: false }).order('id', { ascending: false }).limit(limit)];
+      if (cursor) queries.push(base().eq(timeCol, cursor.at));
+      const results = await Promise.all(queries);
+      const rows: T[] = [];
+      for (const { data, error } of results) {
+        if (error) throw new Error(error.message);
+        rows.push(...(data || []));
+      }
+      return rows.map(map);
+    };
+
+  const sources: FeedSource[] = [
+    remote<ActivityLog>('activity_logs', '*', 'created_at', fromLog, (q) => {
+      if (f.listId) q = q.eq('list_id', f.listId);
+      if (f.memberId) q = q.or(`actor_id.eq.${f.memberId},target_member_id.eq.${f.memberId}`);
+      return q;
+    }),
+  ];
+  if (withMessages) {
+    sources.push(
+      remote<EmailRecord>('emails', 'id, contact_id, subject, sent_by, sent_at, status, is_inbound', 'sent_at', fromEmail, (q) => {
+        q = q.eq('status', 'sent').or('is_inbound.is.null,is_inbound.eq.false');
+        return f.memberId ? q.eq('sent_by', f.memberId) : q;
+      }),
+      remote<Interaction>('interactions', 'id, contact_id, type, content, created_by, created_at', 'created_at', fromInteraction, (q) =>
+        f.memberId ? q.eq('created_by', f.memberId) : q
+      )
+    );
+  }
+  return sources;
+}
 
 function addLocal(listId: string, contactIds: string[]): string[] {
   const all = localMembers();
