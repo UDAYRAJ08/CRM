@@ -4,6 +4,8 @@ import { useToast } from '../../context/ToastContext';
 import { Contact, ImportSummary, ParsedContactRow } from '../../types/crm';
 import { parseExcelOrCsv, generateSampleExcelTemplate } from '../../lib/excelParser';
 import { db } from '../../lib/supabase';
+import { listsDb } from '../../lib/contactLists';
+import { usePermissions } from '../../hooks/usePermissions';
 import { cleanCompanyName, getCompanyUrl } from '../../lib/utils';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -34,11 +36,13 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 }) => {
   const { activeMember } = useTeam();
   const { success, error, info } = useToast();
+  const { isAdmin } = usePermissions();
 
   const [file, setFile] = useState<File | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
+  const [listName, setListName] = useState('');
   const [activeTab, setActiveTab] = useState<'valid' | 'duplicate' | 'invalid'>('valid');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -46,6 +50,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     if (!selectedFile) return;
 
     setFile(selectedFile);
+    setListName(selectedFile.name.replace(/\.[^.]+$/, ''));
     setIsProcessing(true);
 
     try {
@@ -124,6 +129,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       const companyMap = new Map<string, string>();
       existingCompanies.forEach((c) => companyMap.set(c.name.toLowerCase(), c.id));
 
+      // Contacts saved into a list start unassigned so the admin can hand them out.
+      const saveAsList = isAdmin && listName.trim().length > 0;
       const contactsPayload: Partial<Contact>[] = [];
 
       for (const row of totalToInsert) {
@@ -151,18 +158,29 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           phone: row.phone,
           title: row.title,
           company_id: companyId,
-          owner_id: activeMember?.id || null,
+          owner_id: saveAsList ? null : activeMember?.id || null,
           status: row.status || 'new',
           tags: row.tags || ['Imported'],
           custom_fields: row.custom_fields || {},
         });
       }
 
-      const { count: insertedCount } = await db.batchInsertContacts(contactsPayload, {
+      const { count: insertedCount, contactIds, importLogId } = await db.batchInsertContacts(contactsPayload, {
         fileName: summary.fileName,
         uploadedBy: activeMember?.id,
         flaggedCount: summary.duplicateRows.length + summary.invalidRows.length,
       });
+
+      let listNote = '';
+      if (saveAsList) {
+        try {
+          await listsDb.createList(listName, contactIds, { importLogId, actorId: activeMember?.id });
+          listNote = ` Saved as list "${listName.trim()}".`;
+        } catch (listErr: any) {
+          // Contacts are already saved; don't report the whole import as failed.
+          error('Contacts imported, list not saved', listErr.message || 'Could not create the list.');
+        }
+      }
 
       confetti({
         particleCount: 80,
@@ -172,7 +190,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
       success(
         'Import Successful!',
-        `Added ${insertedCount} contacts to the CRM. Action logged under ${activeMember?.name}.`
+        `Added ${insertedCount} contacts to the CRM.${listNote} Action logged under ${activeMember?.name}.`
       );
 
       onImportComplete();
@@ -320,6 +338,21 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               activeTab={activeTab}
               setActiveTab={setActiveTab}
             />
+
+            {isAdmin && (
+              <label className="block text-xs text-slate-600">
+                <span className="font-medium text-slate-700">Save as list (optional)</span>
+                <input
+                  value={listName}
+                  onChange={(e) => setListName(e.target.value)}
+                  placeholder="Leave empty to import without a list"
+                  className="mt-1 w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <span className="block mt-1 text-slate-500">
+                  Contacts in a list start unassigned, so you can assign them from the Lists page.
+                </span>
+              </label>
+            )}
 
             {/* Bottom action confirmation */}
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">

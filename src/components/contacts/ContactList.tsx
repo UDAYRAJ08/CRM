@@ -2,8 +2,11 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
-import { Contact, ContactStatus } from '../../types/crm';
+import { Contact, ContactStatus, ContactList as SavedList } from '../../types/crm';
 import { db } from '../../lib/supabase';
+import { listsDb } from '../../lib/contactLists';
+import { AssignMemberSelect } from '../lists/AssignMemberSelect';
+import { AddToListModal } from '../lists/AddToListModal';
 import { getInitials, cleanCompanyName } from '../../lib/utils';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -197,14 +200,18 @@ export const ContactList: React.FC<ContactListProps> = ({
   onRefresh,
   title = 'Contacts',
 }) => {
-  const { teamMembers } = useTeam();
+  const { teamMembers, activeMember } = useTeam();
   const { success, error, info } = useToast();
-  const { canDeleteContacts, canBulkDelete, canEditContacts, canChangeStatus, isAdmin } = usePermissions();
+  const { canDeleteContacts, canBulkDelete, canEditContacts, canChangeStatus, isAdmin, isManager } = usePermissions();
 
   // Filter States
   const [pipelineTab, setPipelineTab] = useState<'all' | 'uncontacted' | 'due' | 'replied'>('all');
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
+  const [listFilter, setListFilter] = useState<string>('all');
+  const [savedLists, setSavedLists] = useState<SavedList[]>([]);
+  const [listMemberIds, setListMemberIds] = useState<Set<string>>(new Set());
+  const [isAddToListOpen, setIsAddToListOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'accordion' | 'table' | 'cards'>('accordion');
   const [openDateKey, setOpenDateKey] = useState<string | null>(null);
 
@@ -286,6 +293,24 @@ export const ContactList: React.FC<ContactListProps> = ({
     };
   }, [contacts]);
 
+  // Saved lists for the list filter (admins and managers only).
+  useEffect(() => {
+    if (!isManager) return;
+    listsDb.getLists().then(setSavedLists).catch(() => setSavedLists([]));
+  }, [isManager, contacts]);
+
+  useEffect(() => {
+    if (listFilter === 'all') return;
+    let cancelled = false;
+    listsDb
+      .getListContactIds(listFilter)
+      .then((ids) => !cancelled && setListMemberIds(new Set(ids)))
+      .catch(() => !cancelled && setListMemberIds(new Set()));
+    return () => {
+      cancelled = true;
+    };
+  }, [listFilter, contacts]);
+
   // Contacts matching search, owner and tag filters (everything except the pipeline tab)
   const baseFilteredContacts = useMemo(() => {
     return contacts.filter((c) => {
@@ -313,9 +338,12 @@ export const ContactList: React.FC<ContactListProps> = ({
         return false;
       }
 
+      // List filter
+      if (listFilter !== 'all' && !listMemberIds.has(c.id)) return false;
+
       return true;
     });
-  }, [contacts, searchQuery, ownerFilter, tagFilter]);
+  }, [contacts, searchQuery, ownerFilter, tagFilter, listFilter, listMemberIds]);
 
   // Due follow-ups within the current owner/tag/search filters
   const dueContacts = useMemo(
@@ -362,7 +390,7 @@ export const ContactList: React.FC<ContactListProps> = ({
   // and selectedContacts already limits bulk actions to visible rows.
   useEffect(() => {
     setSelectedIds((prev) => (prev.size ? new Set() : prev));
-  }, [pipelineTab, ownerFilter, tagFilter, openDateKey, viewMode]);
+  }, [pipelineTab, ownerFilter, tagFilter, listFilter, openDateKey, viewMode]);
 
   // Group contacts by Date Added (created_at) for the Accordion View
   const dateGroups = useMemo(() => {
@@ -510,6 +538,25 @@ export const ContactList: React.FC<ContactListProps> = ({
       onRefresh();
     } catch (err: any) {
       error('Bulk Update Failed', err.message || 'Could not update contacts.');
+    }
+  };
+
+  // Bulk Assign (admins): one logged action for all selected contacts
+  const handleBulkAssign = async (memberId: string | null) => {
+    if (selectedContacts.length === 0) return;
+    try {
+      const n = await listsDb.assign({
+        listId: null,
+        memberId,
+        contactIds: selectedContacts.map((c) => c.id),
+        actorId: activeMember?.id,
+      });
+      const who = memberId ? teamMembers.find((m) => m.id === memberId)?.name || 'team member' : 'nobody (unassigned)';
+      success('Contacts Assigned', `Assigned ${n} contacts to ${who}.`);
+      setSelectedIds(new Set());
+      onRefresh();
+    } catch (err: any) {
+      error('Assign Failed', err.message || 'Could not assign contacts.');
     }
   };
 
@@ -683,6 +730,28 @@ export const ContactList: React.FC<ContactListProps> = ({
                     #{tag}
                   </option>
                 ))}
+              </select>
+            )}
+
+            {/* List Filter */}
+            {isManager && savedLists.length > 0 && (
+              <select
+                value={listFilter}
+                onChange={(e) => {
+                  setListMemberIds(new Set());
+                  setListFilter(e.target.value);
+                }}
+                aria-label="Filter by list"
+                className="bg-slate-50 hover:bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer transition-colors"
+              >
+                <option value="all">All Lists</option>
+                {savedLists
+                  .filter((l) => !l.archived || l.id === listFilter)
+                  .map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} ({l.total})
+                    </option>
+                  ))}
               </select>
             )}
 
@@ -1570,6 +1639,26 @@ export const ContactList: React.FC<ContactListProps> = ({
                 </select>
               </div>
 
+              {/* Assign / Add to list (Admin Only) */}
+              {isAdmin && (
+                <>
+                  <AssignMemberSelect
+                    value=""
+                    includeUnassigned
+                    placeholder="Assign to..."
+                    onChange={handleBulkAssign}
+                    className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsAddToListOpen(true)}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer"
+                  >
+                    Add to list
+                  </button>
+                </>
+              )}
+
               {/* Bulk Follow-up Button */}
               <button
                 type="button"
@@ -1634,6 +1723,18 @@ export const ContactList: React.FC<ContactListProps> = ({
         icon={confirmConfig.icon}
         badgeLabel={confirmConfig.badgeLabel}
       />
+
+      {isAdmin && (
+        <AddToListModal
+          isOpen={isAddToListOpen}
+          onClose={() => setIsAddToListOpen(false)}
+          contactIds={selectedContacts.map((c) => c.id)}
+          onDone={() => {
+            setSelectedIds(new Set());
+            onRefresh();
+          }}
+        />
+      )}
     </div>
   );
 };
