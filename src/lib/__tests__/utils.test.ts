@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { getInitials, cleanCompanyName, stripHtml, getCompanyUrl } from '../utils';
+import { getInitials, cleanCompanyName, stripHtml, getCompanyUrl, contactMatchesSearch } from '../utils';
+import type { Contact } from '../../types/crm';
 
 describe('getInitials', () => {
   it('uses first and second word', () => {
@@ -53,5 +54,28 @@ describe('stripHtml', () => {
 describe('getCompanyUrl', () => {
   it('returns a string for missing company', () => {
     expect(typeof getCompanyUrl(null)).toBe('string');
+  });
+});
+
+describe('contactMatchesSearch', () => {
+  const c = {
+    id: '1', name: 'Sri Sai Automobiles', email: null, phone: '7123456789', status: 'new', tags: [], created_at: '',
+    custom_fields: { ADDRESS: 'Shop No 3, Madhapur, Hyderabad', 'PIN CODE': '500081' },
+  } as unknown as Contact;
+
+  it('matches name, phone and extra columns like address and pin code', () => {
+    expect(contactMatchesSearch(c, 'automobiles')).toBe(true);
+    expect(contactMatchesSearch(c, '71234')).toBe(true);
+    expect(contactMatchesSearch(c, 'madhapur')).toBe(true);
+    expect(contactMatchesSearch(c, '500081')).toBe(true);
+  });
+
+  it('needs every word to match, in any field', () => {
+    expect(contactMatchesSearch(c, '500081 sai')).toBe(true);
+    expect(contactMatchesSearch(c, '500081 kukatpally')).toBe(false);
+  });
+
+  it('empty search matches everything', () => {
+    expect(contactMatchesSearch(c, '   ')).toBe(true);
   });
 });

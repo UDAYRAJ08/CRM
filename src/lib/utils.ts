@@ -1,3 +1,5 @@
+import type { Contact } from '../types/crm';
+
 export function getInitials(name?: string | null, fallback = 'U'): string {
   if (!name || typeof name !== 'string') return fallback;
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -207,3 +209,20 @@ export function stripHtml(html?: string | null): string {
 }
 
 
+
+// Every word of the query must appear in some field: name, email, phone, company or any extra column.
+export function contactMatchesSearch(contact: Contact, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const haystack = [
+    contact.name,
+    contact.email,
+    contact.phone,
+    contact.company?.name,
+    ...Object.values(contact.custom_fields || {}),
+  ]
+    .filter((v) => v !== null && v !== undefined)
+    .join(' ')
+    .toLowerCase();
+  return words.every((w) => haystack.includes(w));
+}
