@@ -31,6 +31,25 @@ describe('parseExcelOrCsv', () => {
     expect(row.status).toBe('qualified');
   });
 
+  it('reads Indian business lists: PHONE NO as phone, address and pin kept', () => {
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['NAME', 'ADDRESS', 'PIN CODE', 'PHONE NO'],
+      ['Sri Sai Automobiles', 'Shop No 3, Hyderabad', 500001, 7123456789], // Excel stores phones as numbers
+    ]);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, 'Sheet1');
+    const data = new Uint8Array(XLSX.write(book, { type: 'array', bookType: 'xlsx' }));
+    const [row] = parseExcelOrCsv(data, 'x.xlsx', []).validRows;
+    expect(row.name).toBe('Sri Sai Automobiles');
+    expect(row.phone).toBe('7123456789');
+    expect(row.custom_fields).toEqual({ ADDRESS: 'Shop No 3, Hyderabad', 'PIN CODE': '500001' });
+  });
+
+  it.each(['Phone No.', 'Mobile No', 'Mobile Number', 'Contact No', 'WhatsApp Number'])('maps "%s" to phone', (header) => {
+    const [row] = parseExcelOrCsv(workbook([['Name', header], ['A', '9876543210']]), 'x.xlsx', []).validRows;
+    expect(row.phone).toBe('9876543210');
+  });
+
   it('flags rows with no name as invalid', () => {
     const data = workbook([['Name', 'Email'], ['', 'a@b.com']]);
     const result = parseExcelOrCsv(data, 'x.xlsx', []);

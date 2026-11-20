@@ -5,7 +5,10 @@ import { Contact, ContactStatus, ParsedContactRow, ImportSummary } from '../type
 const COLUMN_ALIASES = {
   name: ['name', 'full name', 'contact name', 'contact', 'customer name', 'lead name', 'person', 'first name', 'last name'],
   email: ['email', 'e-mail', 'email address', 'contact email', 'work email', 'mail'],
-  phone: ['phone', 'phone number', 'telephone', 'mobile', 'cell', 'cell phone', 'work phone', 'contact number'],
+  phone: [
+    'phone', 'phone number', 'phone no', 'telephone', 'mobile', 'mobile no', 'mobile number', 'cell', 'cell phone',
+    'work phone', 'contact number', 'contact no', 'ph no', 'whatsapp', 'whatsapp number', 'whatsapp no',
+  ],
   company: ['company', 'company name', 'organization', 'org', 'account', 'business', 'employer'],
   title: ['title', 'job title', 'position', 'role', 'designation', 'occupation'],
   status: ['status', 'stage', 'lead status', 'pipeline stage', 'state'],
