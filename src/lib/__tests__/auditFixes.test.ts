@@ -70,6 +70,12 @@ describe('db with Supabase', () => {
     await expect(db.saveContact({ id: 'c1', name: 'X' })).rejects.toThrow('permission denied');
   });
 
+  it('addTeamMember throws when the insert is refused (e.g. duplicate login) instead of faking a local row', async () => {
+    respond = () => ({ data: null, error: { message: 'duplicate key value violates unique constraint "team_members_auth_user_id_key"' } });
+    await expect(db.addTeamMember({ name: 'K', auth_user_id: 'u1' })).rejects.toThrow(/duplicate key/);
+    expect(localStorage.getItem('crm_team_members')).toBeNull();
+  });
+
   it('does not delete any reminder when the contacts fetch fails', async () => {
     respond = (c) =>
       c.table === 'contacts'

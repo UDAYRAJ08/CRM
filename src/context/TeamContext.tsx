@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { TeamMember } from '../types/crm';
-import { db } from '../lib/supabase';
+import { db, invalidateCache } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { hashPassword } from '../lib/authCrypto';
 
@@ -30,8 +30,14 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Supabase sends several auth events per sign-in, each with a new user object. Re-run only when the
+  // login changes, or two runs race and both create a team member row. Primitives keep the deps stable.
+  const userId = user?.id;
+  const userEmail = user?.email;
+  const metadataName = user?.user_metadata?.full_name as string | undefined;
+
   const refreshTeam = useCallback(async () => {
-    if (!user) {
+    if (!userId) {
       setActiveMemberState(null);
       setIsLoading(false);
       return;
@@ -42,23 +48,22 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setTeamMembers(members);
 
       // 1. Look for team member already linked by auth_user_id
-      let matched = members.find((m) => m.auth_user_id === user.id);
+      let matched = members.find((m) => m.auth_user_id === userId);
 
       // 2. If not matched, try matching by email and link auth_user_id
-      if (!matched && user.email) {
+      if (!matched && userEmail) {
         matched = members.find(
-          (m) => m.email?.toLowerCase().trim() === user.email?.toLowerCase().trim()
+          (m) => m.email?.toLowerCase().trim() === userEmail.toLowerCase().trim()
         );
         if (matched) {
-          await db.linkTeamMemberAuth(matched.id, user.id);
-          matched = { ...matched, auth_user_id: user.id };
+          await db.linkTeamMemberAuth(matched.id, userId);
+          matched = { ...matched, auth_user_id: userId };
         }
       }
 
       // 3. If user has no team member record, auto-create one
       if (!matched) {
-        const metadataName = user.user_metadata?.full_name as string | undefined;
-        const fallbackName = user.email ? user.email.split('@')[0] : 'Team Member';
+        const fallbackName = userEmail ? userEmail.split('@')[0] : 'Team Member';
         const formattedName =
           metadataName ||
           fallbackName.charAt(0).toUpperCase() + fallbackName.slice(1).replace(/[._]/g, ' ');
@@ -66,13 +71,22 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Never from user_metadata: the user picks that at sign-up.
         const role = isFirstUser ? 'Admin' : 'Sales Representative';
 
-        matched = await db.addTeamMember({
-          name: formattedName,
-          email: user.email || '',
-          role,
-          auth_user_id: user.id,
-        });
-        setTeamMembers((prev) => [...prev, matched!]);
+        try {
+          matched = await db.addTeamMember({
+            name: formattedName,
+            email: userEmail || '',
+            role,
+            auth_user_id: userId,
+          });
+          setTeamMembers((prev) => [...prev, matched!]);
+        } catch (e) {
+          // Another run created this login's row first (unique on auth_user_id): use that row.
+          invalidateCache('team_members');
+          const fresh = await db.getTeamMembers();
+          setTeamMembers(fresh);
+          matched = fresh.find((m) => m.auth_user_id === userId);
+          if (!matched) throw e;
+        }
       }
 
       // 4. Preserve currently active persona if selected in localStorage
@@ -92,7 +106,7 @@ export const TeamProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [userId, userEmail, metadataName]);
 
   useEffect(() => {
     refreshTeam();

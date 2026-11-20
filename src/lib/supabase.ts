@@ -238,7 +238,10 @@ export const db = {
 
     if (supabase) {
       const { data, error } = await supabase.from('team_members').insert(newMember).select().single();
-      if (!error && data) return data;
+      // Don't fall back to localStorage: a refused insert (e.g. duplicate login) must reach the caller.
+      if (error) throw new Error(error.message);
+      invalidateCache('team_members');
+      return data;
     }
 
     const members = getLocal('team_members', INITIAL_TEAM);
