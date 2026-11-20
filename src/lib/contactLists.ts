@@ -179,6 +179,41 @@ export const listsDb = {
     return localMembers().filter((m) => m.list_id === listId).map((m) => m.contact_id);
   },
 
+  // Every contact that is in at least one list (they live on the Lists page, not Contacts).
+  async getAllListContactIds(): Promise<Set<string>> {
+    if (supabase) {
+      const { data, error } = await fetchAllPages<{ contact_id: string }>((from, to) =>
+        supabase!.from('contact_list_members').select('contact_id').order('list_id').order('contact_id').range(from, to)
+      );
+      if (error) throw new Error(error.message);
+      return new Set((data || []).map((r) => r.contact_id));
+    }
+    return new Set(localMembers().map((m) => m.contact_id));
+  },
+
+  // Deletes a list; with deleteContacts also deletes every contact in it. Returns contacts deleted.
+  async deleteList(listId: string, deleteContacts: boolean, actorId?: string): Promise<number> {
+    let n = 0;
+    if (supabase) {
+      n = await rpc<number>('delete_contact_list', { p_list_id: listId, p_delete_contacts: deleteContacts });
+    } else {
+      const lists = getLocal<StoredList[]>('contact_lists', []);
+      const name = lists.find((l) => l.id === listId)?.name;
+      const ids = new Set(localMembers().filter((m) => m.list_id === listId).map((m) => m.contact_id));
+      if (deleteContacts) {
+        const contacts = localContacts();
+        setLocal('contacts', contacts.filter((c) => !ids.has(c.id)));
+        n = contacts.filter((c) => ids.has(c.id)).length;
+      }
+      setLocal('contact_lists', lists.filter((l) => l.id !== listId));
+      // Deleted contacts leave every list, as the database's cascade does.
+      setLocal('contact_list_members', localMembers().filter((m) => m.list_id !== listId && !(deleteContacts && ids.has(m.contact_id))));
+      logLocal({ action: 'list_deleted', actor_id: actorId ?? null, contact_count: n, details: { name, deleted_contacts: deleteContacts } });
+    }
+    notifyCRMEvent('crm_contacts_updated');
+    return n;
+  },
+
   async getListProgress(listId: string): Promise<ListProgressRow[]> {
     if (supabase) return rpc<ListProgressRow[]>('get_list_progress', { p_list_id: listId });
     // Local mode has no email/interaction timestamps worth tracking here: status counts only.
@@ -216,6 +251,10 @@ export const listsDb = {
     return { items, next: items.length === size ? { at: last.at, key: last.key } : null };
   },
 };
+
+// List contacts are worked from the Lists page; on Contacts you only see the ones assigned to you.
+export const isListOnlyContact = (c: Contact, listContactIds: Set<string>, memberId?: string | null): boolean =>
+  listContactIds.has(c.id) && (!memberId || c.owner_id !== memberId);
 
 export interface FeedFilter {
   memberId?: string;

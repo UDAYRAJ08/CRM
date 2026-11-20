@@ -29,7 +29,7 @@ create table if not exists activity_logs (
   actor_id uuid references team_members(id) on delete set null,
   action text not null check (action in (
     'list_created', 'assigned', 'unassigned', 'list_contacts_added',
-    'list_contacts_removed', 'owner_changed', 'status_changed'
+    'list_contacts_removed', 'owner_changed', 'status_changed', 'list_deleted'
   )),
   list_id uuid references contact_lists(id) on delete set null,
   target_member_id uuid references team_members(id) on delete set null,
@@ -39,6 +39,13 @@ create table if not exists activity_logs (
   details jsonb default '{}'::jsonb,
   created_at timestamptz default now()
 );
+
+-- Databases created before 'list_deleted' existed: replace the action check.
+alter table activity_logs drop constraint if exists activity_logs_action_check;
+alter table activity_logs add constraint activity_logs_action_check check (action in (
+    'list_created', 'assigned', 'unassigned', 'list_contacts_added',
+    'list_contacts_removed', 'owner_changed', 'status_changed', 'list_deleted'
+));
 
 create index if not exists idx_contact_list_members_contact on contact_list_members(contact_id);
 create index if not exists idx_activity_logs_created on activity_logs(created_at desc);
@@ -151,6 +158,35 @@ begin
   insert into activity_logs (actor_id, action, list_id, contact_count, contact_ids)
   values (current_member_id(), 'list_contacts_removed', p_list_id, cardinality(v_ids), v_ids);
   return cardinality(v_ids);
+end;
+$$;
+
+-- Deletes a list. With p_delete_contacts, also deletes every contact in it (their emails,
+-- notes, reminders and deals cascade). Returns how many contacts were deleted.
+create or replace function delete_contact_list(p_list_id uuid, p_delete_contacts boolean default false) returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  v_name text;
+  v_deleted integer := 0;
+begin
+  if not is_crm_admin() then
+    raise exception 'Only admins can manage contact lists';
+  end if;
+  select name into v_name from contact_lists where id = p_list_id;
+  if v_name is null then
+    raise exception 'List not found';
+  end if;
+
+  if p_delete_contacts then
+    delete from contacts where id in (select contact_id from contact_list_members where list_id = p_list_id);
+    get diagnostics v_deleted = row_count;
+  end if;
+  delete from contact_lists where id = p_list_id;
+
+  insert into activity_logs (actor_id, action, contact_count, details)
+  values (current_member_id(), 'list_deleted', v_deleted,
+          jsonb_build_object('name', v_name, 'deleted_contacts', p_delete_contacts));
+  return v_deleted;
 end;
 $$;
 
@@ -327,6 +363,7 @@ grant execute on function
   create_contact_list(text, uuid[], uuid, text),
   add_contacts_to_list(uuid, uuid[]),
   remove_contacts_from_list(uuid, uuid[]),
+  delete_contact_list(uuid, boolean),
   assign_list_contacts(uuid, uuid, integer, uuid[]),
   get_contact_lists(),
   get_list_progress(uuid)

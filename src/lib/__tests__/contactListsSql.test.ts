@@ -168,4 +168,27 @@ describe('contact_lists.sql', () => {
     expect((await logs('list_contacts_added'))[0]).toMatchObject({ contact_count: 1, contact_ids: [c(7)] });
     expect((await logs('list_contacts_removed'))[0]).toMatchObject({ contact_count: 1 });
   });
+
+  it('delete_contact_list rejects non-admins', async () => {
+    await asUser(R);
+    await expect(db.query('select delete_contact_list($1)', [listId])).rejects.toThrow(/Only admins can manage contact lists/);
+  });
+
+  it('deleting only the list keeps its contacts and logs list_deleted', async () => {
+    await asUser(A);
+    const id = (await one<{ id: string }>(`select create_contact_list('Del1', $1::uuid[]) as id`, [[c(1)]])).id;
+    expect((await one<{ n: number }>('select delete_contact_list($1) as n', [id])).n).toBe(0);
+    expect((await db.query('select 1 from contact_lists where id = $1', [id])).rows).toHaveLength(0);
+    expect((await db.query('select 1 from contact_list_members where list_id = $1', [id])).rows).toHaveLength(0);
+    expect((await db.query('select 1 from contacts where id = $1', [c(1)])).rows).toHaveLength(1);
+    expect((await logs('list_deleted')).at(-1)).toMatchObject({ actor_id: A, contact_count: 0, details: { name: 'Del1', deleted_contacts: false } });
+  });
+
+  it('deleting the list with its contacts removes exactly those contacts', async () => {
+    await asUser(A);
+    const id = (await one<{ id: string }>(`select create_contact_list('Del2', $1::uuid[]) as id`, [[c(4), c(5)]])).id;
+    expect((await one<{ n: number }>('select delete_contact_list($1, true) as n', [id])).n).toBe(2);
+    expect((await db.query('select id from contacts where id = any($1::uuid[])', [[c(3), c(4), c(5)]])).rows.map((r: any) => r.id)).toEqual([c(3)]);
+    expect((await logs('list_deleted')).at(-1)).toMatchObject({ contact_count: 2, details: { name: 'Del2', deleted_contacts: true } });
+  });
 });

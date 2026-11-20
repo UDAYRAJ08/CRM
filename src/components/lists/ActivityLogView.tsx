@@ -110,6 +110,13 @@ export const ActivityLogView: React.FC<ActivityLogViewProps> = ({ listId, contac
         return <><b>{actor}</b> added {n} to <b>{list}</b></>;
       case 'list_contacts_removed':
         return <><b>{actor}</b> removed {n} from <b>{list}</b></>;
+      case 'list_deleted':
+        return (
+          <>
+            <b>{actor}</b> deleted list <b>{l.details?.name}</b>
+            {l.details?.deleted_contacts ? <> and its {n}</> : null}
+          </>
+        );
       case 'owner_changed':
         return (
           <>

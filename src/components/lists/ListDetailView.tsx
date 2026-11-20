@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Archive, ArchiveRestore, ArrowLeft, Pencil, UserPlus } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowLeft, Pencil, Trash2, UserPlus } from 'lucide-react';
 import { listsDb } from '../../lib/contactLists';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import type { Contact, ContactList, ContactStatus, ListProgressRow } from '../../types/crm';
 import { STATUS_CONFIG } from '../contacts/ContactList';
+import { contactMatchesSearch } from '../../lib/utils';
 import { Button } from '../ui/Button';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { AssignMemberSelect } from './AssignMemberSelect';
@@ -37,11 +38,14 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
   // Kept as typed text; parsed on submit so clearing the field doesn't snap it to 1.
   const [assignCountText, setAssignCountText] = useState('100');
   const assignCount = /^\d+$/.test(assignCountText.trim()) ? parseInt(assignCountText, 10) : 0;
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [deleteContactsToo, setDeleteContactsToo] = useState(false);
   const [pendingReassign, setPendingReassign] = useState<{ memberId: string | null } | null>(null);
   const [assignTo, setAssignTo] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
 
   const [ownerFilter, setOwnerFilter] = useState('all');
+  const [search, setSearch] = useState('');
   const [shown, setShown] = useState(PAGE);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -76,11 +80,20 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
 
   const filtered = useMemo(
     () =>
-      listContacts.filter((c) =>
-        ownerFilter === 'all' ? true : ownerFilter === 'unassigned' ? !c.owner_id : c.owner_id === ownerFilter
+      listContacts.filter(
+        (c) =>
+          (ownerFilter === 'all' ? true : ownerFilter === 'unassigned' ? !c.owner_id : c.owner_id === ownerFilter) &&
+          contactMatchesSearch(c, search)
       ),
-    [listContacts, ownerFilter]
+    [listContacts, ownerFilter, search]
   );
+
+  // Imported columns the CRM has no field for (e.g. ADDRESS, PIN CODE) live in custom_fields.
+  const extraColumns = useMemo(
+    () => [...new Set(listContacts.flatMap((c) => Object.keys(c.custom_fields || {})))],
+    [listContacts]
+  );
+  const showEmail = listContacts.some((c) => c.email);
 
   const afterChange = () => {
     setSelected(new Set());
@@ -134,6 +147,18 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
       load();
     } catch (e: any) {
       error('Rename Failed', e.message);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!list) return;
+    try {
+      const n = await listsDb.deleteList(listId, deleteContactsToo, activeMember?.id);
+      success('List deleted', deleteContactsToo ? `Deleted "${list.name}" and ${n} contacts.` : `Deleted "${list.name}". Its contacts are back on the Contacts page.`);
+      onRefresh();
+      onBack();
+    } catch (e: any) {
+      error('Delete Failed', e.message);
     }
   };
 
@@ -199,6 +224,17 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
               onClick={handleArchive}
             >
               {list.archived ? 'Restore' : 'Archive'}
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+              onClick={() => {
+                setDeleteContactsToo(false);
+                setIsDeleteOpen(true);
+              }}
+            >
+              Delete
             </Button>
           </div>
         )}
@@ -286,6 +322,18 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
       {tab === 'contacts' && (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2 text-sm">
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setShown(PAGE);
+                setSelected(new Set());
+              }}
+              placeholder="Search name, phone, address, pin code…"
+              aria-label="Search contacts in this list"
+              className="w-72 max-w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
             <select
               value={ownerFilter}
               onChange={(e) => {
@@ -304,10 +352,18 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
                 </option>
               ))}
             </select>
+            {canManageLists && filtered.length > 0 && selected.size < filtered.length && (
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set(filtered.map((c) => c.id)))}>
+                Select all {filtered.length} matching
+              </Button>
+            )}
             {canManageLists && selected.size > 0 && (
               <>
                 <span className="text-slate-600">{selected.size} selected</span>
-                <AssignMemberSelect value="" includeUnassigned placeholder="Reassign to..." onChange={(memberId) => setPendingReassign({ memberId })} />
+                <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                  Clear
+                </Button>
+                <AssignMemberSelect value="" includeUnassigned placeholder="Assign selected to..." onChange={(memberId) => setPendingReassign({ memberId })} />
                 <Button size="sm" variant="outline" onClick={handleRemove}>
                   Remove from list
                 </Button>
@@ -332,7 +388,11 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
                     </th>
                   )}
                   <th className="p-3">Name</th>
-                  <th className="p-3">Email</th>
+                  <th className="p-3">Phone</th>
+                  {showEmail && <th className="p-3">Email</th>}
+                  {extraColumns.map((key) => (
+                    <th key={key} className="p-3 whitespace-nowrap">{key}</th>
+                  ))}
                   <th className="p-3">Owner</th>
                   <th className="p-3">Status</th>
                 </tr>
@@ -350,7 +410,13 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
                         {c.name}
                       </button>
                     </td>
-                    <td className="p-3 text-slate-600">{c.email || '—'}</td>
+                    <td className="p-3 text-slate-600 whitespace-nowrap">{c.phone || '—'}</td>
+                    {showEmail && <td className="p-3 text-slate-600">{c.email || '—'}</td>}
+                    {extraColumns.map((key) => (
+                      <td key={key} className="p-3 text-slate-600 max-w-[260px] truncate" title={String(c.custom_fields?.[key] ?? '')}>
+                        {c.custom_fields?.[key] || '—'}
+                      </td>
+                    ))}
                     <td className={`p-3 ${c.owner_id ? 'text-slate-700' : 'text-amber-700'}`}>{memberName(c.owner_id)}</td>
                     <td className="p-3">
                       <span className={`px-2 py-0.5 rounded-full border ${STATUS_CONFIG[c.status]?.bg} ${STATUS_CONFIG[c.status]?.text} ${STATUS_CONFIG[c.status]?.border}`}>
@@ -361,7 +427,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
                 ))}
                 {page.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="p-6 text-center text-slate-500">
+                    <td colSpan={6 + extraColumns.length} className="p-6 text-center text-slate-500">
                       No contacts match.
                     </td>
                   </tr>
@@ -379,6 +445,29 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
         </div>
       )}
 
+
+      {/* Mounted only while open: ConfirmModal keeps its own checkbox state, which must start unticked. */}
+      {isDeleteOpen && (
+        <ConfirmModal
+          isOpen
+          onClose={() => setIsDeleteOpen(false)}
+          onConfirm={handleDelete}
+          title="Delete List"
+          badgeLabel="Permanent"
+          variant="danger"
+          icon={<Trash2 className="w-7 h-7 text-rose-600" />}
+          message={
+            <p className="text-sm text-slate-600">
+              Delete the list <strong className="text-slate-900">{list?.name}</strong>? Its {list?.total ?? 0} contacts move back to
+              the Contacts page unless you also delete them below.
+            </p>
+          }
+          checkboxLabel={`Also delete the ${list?.total ?? 0} contacts in this list, with their emails, notes, tasks and deals. This cannot be undone.`}
+          checkboxDefaultChecked={false}
+          onCheckboxChange={setDeleteContactsToo}
+          confirmText="Delete"
+        />
+      )}
 
       <ConfirmModal
         isOpen={!!pendingReassign}

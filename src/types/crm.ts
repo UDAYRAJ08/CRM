@@ -213,7 +213,8 @@ export type ActivityAction =
   | 'list_contacts_added'
   | 'list_contacts_removed'
   | 'owner_changed'
-  | 'status_changed';
+  | 'status_changed'
+  | 'list_deleted';
 
 export interface ActivityLog {
   id: string;

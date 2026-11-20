@@ -9,7 +9,6 @@ import {
   Loader2,
   X,
   Layers,
-  Check,
 } from 'lucide-react';
 
 export type ConfirmVariant = 'danger' | 'warning' | 'primary' | 'success';
@@ -135,26 +134,16 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           </div>
 
           {checkboxLabel && (
-            <div className="mb-6 p-3.5 bg-slate-50 rounded-xl flex items-center justify-start text-left gap-3 hover:bg-slate-100 transition-colors cursor-pointer"
-              onClick={() => !isLoading && handleCheckboxToggle(!isChecked)}
-            >
-              <div
-                className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-                  isChecked
-                    ? 'bg-indigo-600 border-indigo-600 text-white'
-                    : 'border-slate-300 bg-white'
-                }`}
-              >
-                {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-              </div>
-              <label
-                htmlFor="confirm-modal-checkbox"
-                className="text-xs font-medium text-slate-700 cursor-pointer select-none leading-snug flex-1"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {checkboxLabel}
-              </label>
-            </div>
+            <label className="mb-6 p-3.5 bg-slate-50 rounded-xl flex items-center justify-start text-left gap-3 hover:bg-slate-100 transition-colors cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isChecked}
+                disabled={isLoading}
+                onChange={(e) => handleCheckboxToggle(e.target.checked)}
+                className="w-5 h-5 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+              />
+              <span className="text-xs font-medium text-slate-700 select-none leading-snug flex-1">{checkboxLabel}</span>
+            </label>
           )}
 
           <div className="flex flex-col-reverse sm:flex-row items-center justify-center gap-2.5">

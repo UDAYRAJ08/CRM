@@ -15,6 +15,7 @@ import { syncOutlookInbox } from './lib/inboundSyncService';
 import { sendDueScheduledEmails } from './lib/scheduledEmailRunner';
 import { runNextLinkedInAction } from './lib/linkedinQueueRunner';
 import { getInvitedContactIds } from './lib/linkedinService';
+import { listsDb, isListOnlyContact } from './lib/contactLists';
 import { LoginPage } from './components/auth/LoginPage';
 import { OAuthConsentPage } from './components/auth/OAuthConsentPage';
 import { MobileNavDrawer } from './components/layout/MobileNavDrawer';
@@ -65,6 +66,7 @@ const CRMMain: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [invitedContactIds, setInvitedContactIds] = useState<Set<string>>(new Set());
+  const [listContactIds, setListContactIds] = useState<Set<string>>(new Set());
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [dealCount, setDealCount] = useState(0);
   const [inboxCount, setInboxCount] = useState(0);
@@ -115,7 +117,7 @@ const CRMMain: React.FC = () => {
     if (!user) return;
     const seq = ++refreshSeqRef.current;
     try {
-      const [fetchedContacts, fetchedReminders, fetchedDeals, fetchedInvitedIds] = await Promise.all([
+      const [fetchedContacts, fetchedReminders, fetchedDeals, fetchedInvitedIds, fetchedListIds] = await Promise.all([
         db.getContacts(),
         db.getReminders(),
         db.getDeals(),
@@ -124,10 +126,16 @@ const CRMMain: React.FC = () => {
           console.warn('Could not load LinkedIn invites:', e);
           return new Set<string>();
         }),
+        // Same for lists: before contact_lists.sql is run, everyone stays on Contacts.
+        listsDb.getAllListContactIds().catch((e) => {
+          console.warn('Could not load contact lists:', e);
+          return new Set<string>();
+        }),
       ]);
       if (seq !== refreshSeqRef.current) return;
       setContacts(fetchedContacts);
       setInvitedContactIds(fetchedInvitedIds);
+      setListContactIds(fetchedListIds);
       setReminders(fetchedReminders);
       setDealCount(fetchedDeals.filter((d) => d.stage !== 'won' && d.stage !== 'lost').length);
       countInboundReplies(fetchedContacts);
@@ -275,12 +283,16 @@ const CRMMain: React.FC = () => {
   const activeRemindersCount = reminders.filter((r) => !r.done).length;
 
   // People we sent a LinkedIn invite to live on their own page, not in Contacts.
+  // List contacts live on the Lists page; Contacts shows only the ones assigned to you.
   const [crmContacts, linkedinContacts] = useMemo(() => {
     const crm: Contact[] = [];
     const li: Contact[] = [];
-    contacts.forEach((c) => (invitedContactIds.has(c.id) ? li : crm).push(c));
+    contacts.forEach((c) => {
+      if (invitedContactIds.has(c.id)) li.push(c);
+      else if (!isListOnlyContact(c, listContactIds, activeMember?.id)) crm.push(c);
+    });
     return [crm, li];
-  }, [contacts, invitedContactIds]);
+  }, [contacts, invitedContactIds, listContactIds, activeMember?.id]);
 
   // Dynamic document title updates
   useEffect(() => {

@@ -46,6 +46,7 @@ const contact = (id: string, owner_id: string | null = null): Contact => ({
 
 describe('listsDb (localStorage mode)', () => {
   let listsDb: typeof import('../contactLists').listsDb;
+  let isListOnlyContact: typeof import('../contactLists').isListOnlyContact;
   let db: typeof import('../supabase').db;
   let invalidateCache: typeof import('../supabase').invalidateCache;
 
@@ -54,7 +55,7 @@ describe('listsDb (localStorage mode)', () => {
     vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
     vi.resetModules();
     ({ db, invalidateCache } = await import('../supabase'));
-    ({ listsDb } = await import('../contactLists'));
+    ({ listsDb, isListOnlyContact } = await import('../contactLists'));
   });
 
   let listId: string;
@@ -94,6 +95,33 @@ describe('listsDb (localStorage mode)', () => {
 
   it('getListContactIds returns members in added order', async () => {
     expect(await listsDb.getListContactIds(listId)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('getAllListContactIds returns every contact that is in any list', async () => {
+    await listsDb.createList('L2', ['a']);
+    expect([...(await listsDb.getAllListContactIds())].sort()).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('deleteList without contacts keeps the contacts', async () => {
+    expect(await listsDb.deleteList(listId, false)).toBe(0);
+    expect(await listsDb.getLists()).toEqual([]);
+    expect((await db.getContacts()).map((c) => c.id).sort()).toEqual(['a', 'b', 'c', 'd']);
+    expect(await listsDb.getAllListContactIds()).toEqual(new Set());
+  });
+
+  it('deleteList with contacts deletes exactly the list contacts', async () => {
+    localStorage.setItem('crm_contacts', JSON.stringify([...JSON.parse(localStorage.getItem('crm_contacts')!), contact('e')]));
+    invalidateCache();
+    expect(await listsDb.deleteList(listId, true)).toBe(4);
+    expect((await db.getContacts()).map((c) => c.id)).toEqual(['e']);
+  });
+
+  it('list contacts stay off the Contacts page unless they are assigned to you', () => {
+    const inList = new Set(['a', 'd']);
+    expect(isListOnlyContact(contact('a'), inList, 'me')).toBe(true); // unassigned, in a list
+    expect(isListOnlyContact(contact('d', 'm2'), inList, 'me')).toBe(true); // someone else's
+    expect(isListOnlyContact(contact('d', 'me'), inList, 'me')).toBe(false); // mine: show it
+    expect(isListOnlyContact(contact('b'), inList, 'me')).toBe(false); // not in any list
   });
 
   it('batchInsertContacts returns inserted ids and the import log id', async () => {
