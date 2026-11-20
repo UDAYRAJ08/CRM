@@ -32,6 +32,9 @@ export const ImportPreviewTable: React.FC<ImportPreviewTableProps> = ({
   const allSelected =
     currentRows.length > 0 && currentRows.every((r) => r.selected);
 
+  // File columns the importer doesn't map (e.g. ADDRESS, PIN CODE) are kept as custom fields; show them too.
+  const extraColumns = [...new Set(currentRows.flatMap((r) => Object.keys(r.custom_fields || {})))];
+
   return (
     <div className="space-y-3">
       {/* Tabs */}
@@ -111,7 +114,7 @@ export const ImportPreviewTable: React.FC<ImportPreviewTableProps> = ({
       </div>
 
       {/* Table */}
-      <div className="max-h-[300px] overflow-y-auto border border-slate-200 rounded-xl">
+      <div className="max-h-[300px] overflow-auto border border-slate-200 rounded-xl">
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-100/90 text-slate-700 font-semibold sticky top-0 border-b border-slate-200">
             <tr>
@@ -131,6 +134,9 @@ export const ImportPreviewTable: React.FC<ImportPreviewTableProps> = ({
               <th className="p-2.5">Phone</th>
               <th className="p-2.5">Company</th>
               <th className="p-2.5">Status</th>
+              {extraColumns.map((key) => (
+                <th key={key} className="p-2.5 whitespace-nowrap">{key}</th>
+              ))}
               {activeTab === 'duplicate' && <th className="p-2.5">Reason</th>}
               {activeTab === 'invalid' && <th className="p-2.5">Error</th>}
             </tr>
@@ -139,7 +145,7 @@ export const ImportPreviewTable: React.FC<ImportPreviewTableProps> = ({
             {currentRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={8 + extraColumns.length}
                   className="p-8 text-center text-slate-400 font-medium"
                 >
                   No rows in this category.
@@ -182,6 +188,11 @@ export const ImportPreviewTable: React.FC<ImportPreviewTableProps> = ({
                   <td className="p-2.5">
                     <StatusBadge status={row.status || 'new'} size="sm" />
                   </td>
+                  {extraColumns.map((key) => (
+                    <td key={key} className="p-2.5 text-slate-600 max-w-[240px] truncate" title={row.custom_fields?.[key] ?? ''}>
+                      {row.custom_fields?.[key] || '—'}
+                    </td>
+                  ))}
                   {activeTab === 'duplicate' && (
                     <td className="p-2.5 text-amber-700 text-[11px]">
                       {row.duplicateReason}
