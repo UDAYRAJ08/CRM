@@ -7,7 +7,8 @@ import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
 import type { Contact, ContactList, ContactStatus, ListProgressRow } from '../../types/crm';
 import { STATUS_CONFIG } from '../contacts/ContactList';
-import { contactMatchesSearch } from '../../lib/utils';
+import { contactMatchesSearch, googleMapsUrl } from '../../lib/utils';
+import { db } from '../../lib/supabase';
 import { Button } from '../ui/Button';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { AssignMemberSelect } from './AssignMemberSelect';
@@ -125,6 +126,16 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
       afterChange();
     } catch (e: any) {
       error('Assign Failed', e.message);
+    }
+  };
+
+  const handleStatusChange = async (contactId: string, status: ContactStatus) => {
+    try {
+      await db.saveContact({ id: contactId, status });
+      success('Status Changed', `Contact updated to ${STATUS_CONFIG[status].label}`);
+      onRefresh();
+    } catch (e: any) {
+      error('Update Failed', e.message || 'Could not change status.');
     }
   };
 
@@ -410,18 +421,46 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
                         {c.name}
                       </button>
                     </td>
-                    <td className="p-3 text-slate-600 whitespace-nowrap">{c.phone || '—'}</td>
+                    <td className="p-3 text-slate-600 whitespace-nowrap">
+                      {c.phone ? (
+                        // tel: opens the computer's calling app (e.g. Phone Link on Windows).
+                        <a href={`tel:${c.phone}`} className="hover:text-indigo-600 hover:underline" title="Call">
+                          {c.phone}
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     {showEmail && <td className="p-3 text-slate-600">{c.email || '—'}</td>}
-                    {extraColumns.map((key) => (
-                      <td key={key} className="p-3 text-slate-600 max-w-[260px] truncate" title={String(c.custom_fields?.[key] ?? '')}>
-                        {c.custom_fields?.[key] || '—'}
-                      </td>
-                    ))}
+                    {extraColumns.map((key) => {
+                      const value = c.custom_fields?.[key];
+                      const mapUrl = /address/i.test(key) ? googleMapsUrl(c.custom_fields) : null;
+                      return (
+                        <td key={key} className="p-3 text-slate-600 max-w-[260px] truncate" title={String(value ?? '')}>
+                          {mapUrl && value ? (
+                            <a href={mapUrl} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 hover:underline">
+                              {value}
+                            </a>
+                          ) : (
+                            value || '—'
+                          )}
+                        </td>
+                      );
+                    })}
                     <td className={`p-3 ${c.owner_id ? 'text-slate-700' : 'text-amber-700'}`}>{memberName(c.owner_id)}</td>
                     <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded-full border ${STATUS_CONFIG[c.status]?.bg} ${STATUS_CONFIG[c.status]?.text} ${STATUS_CONFIG[c.status]?.border}`}>
-                        {STATUS_CONFIG[c.status]?.label ?? c.status}
-                      </span>
+                      <select
+                        value={c.status}
+                        onChange={(e) => handleStatusChange(c.id, e.target.value as ContactStatus)}
+                        aria-label={`Status of ${c.name}`}
+                        className={`px-2 py-1 rounded-full border text-xs font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 ${STATUS_CONFIG[c.status]?.bg} ${STATUS_CONFIG[c.status]?.text} ${STATUS_CONFIG[c.status]?.border}`}
+                      >
+                        {STATUSES.map((st) => (
+                          <option key={st} value={st}>
+                            {STATUS_CONFIG[st].label}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                   </tr>
                 ))}

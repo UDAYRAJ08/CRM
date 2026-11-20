@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getInitials, cleanCompanyName, stripHtml, getCompanyUrl, contactMatchesSearch } from '../utils';
+import { getInitials, cleanCompanyName, stripHtml, getCompanyUrl, contactMatchesSearch, googleMapsUrl } from '../utils';
 import type { Contact } from '../../types/crm';
 
 describe('getInitials', () => {
@@ -77,5 +77,22 @@ describe('contactMatchesSearch', () => {
 
   it('empty search matches everything', () => {
     expect(contactMatchesSearch(c, '   ')).toBe(true);
+  });
+});
+
+describe('googleMapsUrl', () => {
+  it('searches the address plus pin code', () => {
+    expect(googleMapsUrl({ ADDRESS: 'Shop No 3, Madhapur, Hyderabad', 'PIN CODE': '500081' })).toBe(
+      'https://www.google.com/maps/search/?api=1&query=Shop%20No%203%2C%20Madhapur%2C%20Hyderabad%20500081'
+    );
+  });
+
+  it('finds address and pin columns by name, any case', () => {
+    expect(googleMapsUrl({ 'Full Address': 'Ameerpet', Pincode: '500016' })).toContain('query=Ameerpet%20500016');
+  });
+
+  it('returns null when there is no address', () => {
+    expect(googleMapsUrl({ 'PIN CODE': '500081' })).toBeNull();
+    expect(googleMapsUrl(undefined)).toBeNull();
   });
 });

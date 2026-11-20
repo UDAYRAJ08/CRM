@@ -226,3 +226,13 @@ export function contactMatchesSearch(contact: Contact, query: string): boolean {
     .toLowerCase();
   return words.every((w) => haystack.includes(w));
 }
+
+// Google Maps search for an imported address column, plus the pin code column when there is one.
+export function googleMapsUrl(fields?: Record<string, any> | null): string | null {
+  const entries = Object.entries(fields || {});
+  const address = entries.find(([k, v]) => /address/i.test(k) && String(v ?? '').trim())?.[1];
+  if (!address) return null;
+  const pin = entries.find(([k]) => /pin|zip|postal/i.test(k))?.[1];
+  const query = [address, pin].map((v) => String(v ?? '').trim()).filter(Boolean).join(' ');
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
