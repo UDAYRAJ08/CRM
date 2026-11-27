@@ -75,11 +75,21 @@ describe('contact_lists.sql', () => {
     expect(idx.rows).toHaveLength(1);
   });
 
-  it('create_contact_list rejects non-admins', async () => {
-    await asUser(R);
+  it('create_contact_list rejects callers without a team member row', async () => {
+    await asUser(null);
     await expect(db.query(`select create_contact_list('X', array[$1]::uuid[])`, [c(1)])).rejects.toThrow(
-      /Only admins can manage contact lists/
+      /Only team members can edit contact lists/
     );
+  });
+
+  it('any team member can create a list and add or remove contacts', async () => {
+    await asUser(R);
+    const id = (await one<{ id: string }>(`select create_contact_list('Rep list', $1::uuid[]) as id`, [[c(1)]])).id;
+    expect((await one<{ n: number }>('select add_contacts_to_list($1, $2::uuid[]) as n', [id, [c(2)]])).n).toBe(1);
+    expect((await one<{ n: number }>('select remove_contacts_from_list($1, $2::uuid[]) as n', [id, [c(1), c(2)]])).n).toBe(2);
+    expect((await one('select created_by from contact_lists where id = $1', [id])).created_by).toBe(R);
+    await db.query('delete from activity_logs where list_id = $1', [id]);
+    await db.query('delete from contact_lists where id = $1', [id]);
   });
 
   it('create_contact_list stores members and logs list_created', async () => {
@@ -128,6 +138,24 @@ describe('contact_lists.sql', () => {
     expect((await one<{ n: number }>('select assign_list_contacts(null, null, null, $1::uuid[]) as n', [[c(1)]])).n).toBe(1);
     expect(await ownerOf(c(1))).toBeNull();
     expect(await logs('unassigned')).toHaveLength(1);
+  });
+
+  it('any team member can bulk assign and reassign to anyone', async () => {
+    await asUser(null);
+    await expect(db.query('select assign_list_contacts($1, $2, 1)', [listId, R])).rejects.toThrow(
+      /Only team members can assign contacts/
+    );
+    await asUser(S);
+    // c2 is owned by R: S reassigns it to S, then back to R.
+    expect((await one<{ n: number }>('select assign_list_contacts($1, $2, null, $3::uuid[]) as n', [listId, S, [c(2)]])).n).toBe(1);
+    expect(await ownerOf(c(2))).toBe(S);
+    expect((await one<{ n: number }>('select assign_list_contacts($1, $2, null, $3::uuid[]) as n', [listId, R, [c(2)]])).n).toBe(1);
+    expect(await ownerOf(c(2))).toBe(R);
+    // Unassigned c1: S hands it to R by count, then unassigns it again.
+    expect((await one<{ n: number }>('select assign_list_contacts($1, $2, 5) as n', [listId, R])).n).toBe(1);
+    expect(await ownerOf(c(1))).toBe(R);
+    expect((await one<{ n: number }>('select assign_list_contacts(null, null, null, $1::uuid[]) as n', [[c(1)]])).n).toBe(1);
+    expect(await ownerOf(c(1))).toBeNull();
   });
 
   it('trigger logs owner and status changes with the acting member', async () => {

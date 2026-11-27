@@ -36,7 +36,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 }) => {
   const { activeMember } = useTeam();
   const { success, error, info } = useToast();
-  const { canManageLists } = usePermissions();
+  const { canEditLists } = usePermissions();
 
   const [file, setFile] = useState<File | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
@@ -130,7 +130,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       existingCompanies.forEach((c) => companyMap.set(c.name.toLowerCase(), c.id));
 
       // Contacts saved into a list start unassigned so the admin can hand them out.
-      const saveAsList = canManageLists && listName.trim().length > 0;
+      const saveAsList = canEditLists && listName.trim().length > 0;
       const contactsPayload: Partial<Contact>[] = [];
 
       for (const row of totalToInsert) {
@@ -339,7 +339,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               setActiveTab={setActiveTab}
             />
 
-            {canManageLists && (
+            {canEditLists && (
               <label className="block text-xs text-slate-600">
                 <span className="font-medium text-slate-700">Save as list (optional)</span>
                 <input

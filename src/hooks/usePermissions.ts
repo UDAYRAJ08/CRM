@@ -29,6 +29,8 @@ export interface Permissions {
   canManageAIKeys: boolean;
   /** Create lists and assign contacts. Same rule as is_crm_admin() in contact_lists.sql. */
   canManageLists: boolean;
+  /** Create lists, rename, archive, add/remove contacts. Any team member (contact_lists.sql). */
+  canEditLists: boolean;
 }
 
 // The database only protects the exact 'Admin' role from self-assignment (audit_fixes.sql).
@@ -98,5 +100,6 @@ export function usePermissions(): Permissions {
     // AI API Keys configuration restricted to Admins & Owners only
     canManageAIKeys: isAdmin,
     canManageLists: isListAdminRole(activeMember?.role),
+    canEditLists: !!activeMember,
   };
 }

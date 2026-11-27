@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Archive, ArchiveRestore, ArrowLeft, Pencil, Trash2, UserPlus } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowLeft, Calendar, ChevronRight, Pencil, Trash2, UserPlus } from 'lucide-react';
 import { listsDb } from '../../lib/contactLists';
 import { useTeam } from '../../context/TeamContext';
 import { useToast } from '../../context/ToastContext';
 import { usePermissions } from '../../hooks/usePermissions';
-import type { Contact, ContactList, ContactStatus, ListProgressRow } from '../../types/crm';
+import type { Contact, ContactList, ContactStatus } from '../../types/crm';
+import { dateAddedKey, groupByDateAdded } from '../../lib/dateGroups';
 import { STATUS_CONFIG } from '../contacts/ContactList';
 import { contactMatchesSearch, googleMapsUrl } from '../../lib/utils';
 import { db } from '../../lib/supabase';
@@ -28,13 +29,16 @@ const STATUSES = Object.keys(STATUS_CONFIG) as ContactStatus[];
 export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts, onBack, onSelectContact, onRefresh }) => {
   const { teamMembers, activeMember } = useTeam();
   const { success, error, info } = useToast();
-  const { canManageLists } = usePermissions();
+  const { canManageLists, canEditLists } = usePermissions();
+  // Admins assign anyone; everyone else can take unassigned contacts for themselves.
+  const canAssign = canManageLists || !!activeMember;
 
   const [list, setList] = useState<ContactList | null>(null);
   const [memberIds, setMemberIds] = useState<string[]>([]);
-  const [progress, setProgress] = useState<ListProgressRow[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [tab, setTab] = useState<'people' | 'contacts' | 'activity'>('people');
+  const [tab, setTab] = useState<'contacts' | 'activity'>('contacts');
+  // Date opened from the date rows (null = show the dates).
+  const [openDateKey, setOpenDateKey] = useState<string | null>(null);
 
   // Kept as typed text; parsed on submit so clearing the field doesn't snap it to 1.
   const [assignCountText, setAssignCountText] = useState('100');
@@ -52,14 +56,9 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
 
   const load = useCallback(async () => {
     try {
-      const [lists, ids, prog] = await Promise.all([
-        listsDb.getLists(),
-        listsDb.getListContactIds(listId),
-        listsDb.getListProgress(listId),
-      ]);
+      const [lists, ids] = await Promise.all([listsDb.getLists(), listsDb.getListContactIds(listId)]);
       setList(lists.find((l) => l.id === listId) ?? null);
       setMemberIds(ids);
-      setProgress(prog);
     } catch (e: any) {
       error('Could not load list', e.message);
     } finally {
@@ -89,6 +88,14 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
     [listContacts, ownerFilter, search]
   );
 
+  const dateGroups = useMemo(() => groupByDateAdded(filtered), [filtered]);
+  // Rows of the opened date; the table only shows once a date is opened.
+  const rows = useMemo(
+    () => (openDateKey ? filtered.filter((c) => dateAddedKey(c) === openDateKey) : filtered),
+    [filtered, openDateKey]
+  );
+  const openGroup = dateGroups.find((g) => g.key === openDateKey);
+
   // Imported columns the CRM has no field for (e.g. ADDRESS, PIN CODE) live in custom_fields.
   const extraColumns = useMemo(
     () => [...new Set(listContacts.flatMap((c) => Object.keys(c.custom_fields || {})))],
@@ -102,12 +109,12 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
     load();
   };
 
-  const handleAssign = async () => {
-    if (!assignTo || assignCount < 1) return;
+  const handleAssign = async (assignTarget: string) => {
+    if (!assignTarget || assignCount < 1) return;
     setIsAssigning(true);
     try {
-      const n = await listsDb.assign({ listId, memberId: assignTo, count: assignCount, actorId: activeMember?.id });
-      const who = memberName(assignTo);
+      const n = await listsDb.assign({ listId, memberId: assignTarget, count: assignCount, actorId: activeMember?.id });
+      const who = memberName(assignTarget);
       if (n === 0) info('Nothing to assign', 'Every contact in this list already has an owner.');
       else if (n < assignCount) success('Contacts Assigned', `Assigned ${n} to ${who} (no more unassigned).`);
       else success('Contacts Assigned', `Assigned ${n} to ${who}.`);
@@ -122,7 +129,8 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
   const handleReassign = async (memberId: string | null) => {
     try {
       const n = await listsDb.assign({ listId, memberId, contactIds: [...selected], actorId: activeMember?.id });
-      success('Contacts Assigned', `Assigned ${n} contacts to ${memberName(memberId)}.`);
+      const skipped = selected.size - n;
+      success('Contacts Assigned', `Assigned ${n} contacts to ${memberName(memberId)}.${skipped > 0 ? ` ${skipped} already had an owner.` : ''}`);
       afterChange();
     } catch (e: any) {
       error('Assign Failed', e.message);
@@ -136,6 +144,16 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
       onRefresh();
     } catch (e: any) {
       error('Update Failed', e.message || 'Could not change status.');
+    }
+  };
+
+  const handleOwnerChange = async (contactId: string, ownerId: string | null) => {
+    try {
+      await db.saveContact({ id: contactId, owner_id: ownerId });
+      success('Owner Changed', `Contact assigned to ${memberName(ownerId)}`);
+      onRefresh();
+    } catch (e: any) {
+      error('Update Failed', e.message || 'Could not change owner.');
     }
   };
 
@@ -202,7 +220,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
       else next.add(id);
       return next;
     });
-  const page = filtered.slice(0, shown);
+  const page = rows.slice(0, shown);
   const allOnPageSelected = page.length > 0 && page.every((c) => selected.has(c.id));
 
   return (
@@ -223,7 +241,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
             </p>
           )}
         </div>
-        {canManageLists && list && (
+        {canEditLists && list && (
           <div className="flex gap-2">
             <Button size="sm" variant="outline" leftIcon={<Pencil className="w-3.5 h-3.5" />} onClick={handleRename}>
               Rename
@@ -236,22 +254,24 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
             >
               {list.archived ? 'Restore' : 'Archive'}
             </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              leftIcon={<Trash2 className="w-3.5 h-3.5" />}
-              onClick={() => {
-                setDeleteContactsToo(false);
-                setIsDeleteOpen(true);
-              }}
-            >
-              Delete
-            </Button>
+            {canManageLists && (
+              <Button
+                size="sm"
+                variant="danger"
+                leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                onClick={() => {
+                  setDeleteContactsToo(false);
+                  setIsDeleteOpen(true);
+                }}
+              >
+                Delete
+              </Button>
+            )}
           </div>
         )}
       </div>
 
-      {canManageLists && list && (
+      {canAssign && list && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-wrap items-center gap-2 text-sm">
           <UserPlus className="w-4 h-4 text-indigo-600" />
           <span className="text-slate-700">Assign</span>
@@ -263,72 +283,36 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
             aria-label="How many contacts to assign"
             className="w-20 bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
-          <span className="text-slate-700">unassigned to</span>
-          <AssignMemberSelect value={assignTo} onChange={(id) => setAssignTo(id ?? '')} />
-          <Button size="sm" variant="primary" isLoading={isAssigning} disabled={!assignTo || assignCount < 1 || list.unassigned === 0} onClick={handleAssign}>
-            Assign
-          </Button>
+          <span className="text-slate-700">unassigned</span>
+          {activeMember && (
+            <Button size="sm" variant="primary" isLoading={isAssigning} disabled={assignCount < 1 || list.unassigned === 0} onClick={() => handleAssign(activeMember.id)}>
+              Assign to me
+            </Button>
+          )}
+          {canAssign && (
+            <>
+              <span className="text-slate-700">{activeMember ? 'or to' : 'to'}</span>
+              <AssignMemberSelect value={assignTo} onChange={(id) => setAssignTo(id ?? '')} />
+              <Button size="sm" variant="outline" isLoading={isAssigning} disabled={!assignTo || assignCount < 1 || list.unassigned === 0} onClick={() => handleAssign(assignTo)}>
+                Assign
+              </Button>
+            </>
+          )}
           <span className="text-xs text-slate-500 ml-auto">{list.unassigned} unassigned left</span>
         </div>
       )}
 
       <div className="flex gap-1 border-b border-slate-200 text-sm">
-        {(['people', 'contacts', 'activity'] as const).map((t) => (
+        {(['contacts', 'activity'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`px-3 py-2 -mb-px border-b-2 ${tab === t ? 'border-indigo-600 text-slate-900 font-medium' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
           >
-            {t === 'people' ? 'Progress by person' : t === 'contacts' ? `Contacts (${listContacts.length})` : 'Activity'}
+            {t === 'contacts' ? `Contacts (${listContacts.length})` : 'Activity'}
           </button>
         ))}
       </div>
-
-      {tab === 'people' && (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="p-3">Person</th>
-                <th className="p-3 text-right">Assigned</th>
-                {STATUSES.map((s) => (
-                  <th key={s} className="p-3 text-right whitespace-nowrap">
-                    {STATUS_CONFIG[s].label}
-                  </th>
-                ))}
-                <th className="p-3 text-right">Touched</th>
-                <th className="p-3">Last activity</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {progress.length === 0 && (
-                <tr>
-                  <td colSpan={STATUSES.length + 4} className="p-6 text-center text-slate-500">
-                    {loaded ? 'No contacts in this list yet.' : 'Loading…'}
-                  </td>
-                </tr>
-              )}
-              {[...progress]
-                .sort((a, b) => (a.owner_id === null ? 1 : b.owner_id === null ? -1 : b.total - a.total))
-                .map((row) => (
-                  <tr key={row.owner_id ?? 'none'} className="hover:bg-slate-50/60">
-                    <td className={`p-3 font-semibold ${row.owner_id ? 'text-slate-900' : 'text-amber-700'}`}>{memberName(row.owner_id)}</td>
-                    <td className="p-3 text-right tabular-nums font-semibold">{row.total}</td>
-                    {STATUSES.map((s) => (
-                      <td key={s} className="p-3 text-right tabular-nums text-slate-700">
-                        {row.by_status?.[s] || <span className="text-slate-300">0</span>}
-                      </td>
-                    ))}
-                    <td className="p-3 text-right tabular-nums">{row.touched}</td>
-                    <td className="p-3 text-slate-500 whitespace-nowrap">
-                      {row.last_activity ? formatDistanceToNow(new Date(row.last_activity), { addSuffix: true }) : '—'}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      )}
 
       {tab === 'contacts' && (
         <div className="space-y-2">
@@ -363,30 +347,102 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
                 </option>
               ))}
             </select>
-            {canManageLists && filtered.length > 0 && selected.size < filtered.length && (
-              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set(filtered.map((c) => c.id)))}>
-                Select all {filtered.length} matching
+            {canAssign && rows.length > 0 && selected.size < rows.length && (
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set(rows.map((c) => c.id)))}>
+                Select all {rows.length} matching
               </Button>
             )}
-            {canManageLists && selected.size > 0 && (
+            {canAssign && selected.size > 0 && (
               <>
                 <span className="text-slate-600">{selected.size} selected</span>
                 <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
                   Clear
                 </Button>
-                <AssignMemberSelect value="" includeUnassigned placeholder="Assign selected to..." onChange={(memberId) => setPendingReassign({ memberId })} />
-                <Button size="sm" variant="outline" onClick={handleRemove}>
-                  Remove from list
-                </Button>
+                {activeMember && (
+                  <Button size="sm" variant="primary" onClick={() => setPendingReassign({ memberId: activeMember.id })}>
+                    Assign selected to me
+                  </Button>
+                )}
+                <AssignMemberSelect value="" includeUnassigned placeholder="Assign / reassign to..." onChange={(memberId) => setPendingReassign({ memberId })} />
+                {canEditLists && (
+                  <Button size="sm" variant="outline" onClick={handleRemove}>
+                    Remove from list
+                  </Button>
+                )}
               </>
             )}
           </div>
 
+          {!openDateKey ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2 px-1 text-xs text-slate-500">
+                <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-indigo-600" />
+                  Grouped by Date Added:
+                </span>
+                <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full font-bold">
+                  {dateGroups.length} {dateGroups.length === 1 ? 'Date' : 'Dates'}
+                </span>
+                <span>•</span>
+                <span className="font-medium text-slate-600">{filtered.length} people total</span>
+              </div>
+              {dateGroups.length === 0 && (
+                <p className="p-6 text-center text-sm text-slate-500">{loaded ? 'No contacts match.' : 'Loading…'}</p>
+              )}
+              {dateGroups.map((group) => (
+                <button
+                  type="button"
+                  key={group.key}
+                  onClick={() => {
+                    setOpenDateKey(group.key);
+                    setShown(PAGE);
+                    setSelected(new Set());
+                  }}
+                  className="w-full text-left bg-white border border-slate-200 hover:border-indigo-300 rounded-2xl px-5 md:px-6 py-4 flex items-center justify-between gap-4 shadow-xs hover:shadow-sm transition cursor-pointer"
+                  title="Open the people added on this date"
+                >
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100/80 shrink-0">
+                      <Calendar className="w-4 h-4" />
+                    </div>
+                    <h3 className="font-bold text-slate-900 text-sm md:text-base tracking-tight">{group.displayLabel}</h3>
+                    <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/70">
+                      {group.count} {group.count === 1 ? 'person added' : 'people added'}
+                    </span>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
+                </button>
+              ))}
+            </div>
+          ) : (
+          <>
+          <div className="flex flex-wrap items-center gap-3 px-1">
+            <button
+              type="button"
+              onClick={() => {
+                setOpenDateKey(null);
+                setSelected(new Set());
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              All dates
+            </button>
+            {openGroup && (
+              <>
+                <span className="text-slate-300">•</span>
+                <h3 className="font-bold text-slate-900 text-sm tracking-tight">{openGroup.displayLabel}</h3>
+                <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/70">
+                  {openGroup.count} {openGroup.count === 1 ? 'person added' : 'people added'}
+                </span>
+              </>
+            )}
+          </div>
           <div className="bg-white rounded-2xl border border-slate-200 overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
                 <tr>
-                  {canManageLists && (
+                  {canAssign && (
                     <th className="p-3 w-8">
                       <input
                         type="checkbox"
@@ -411,7 +467,7 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
               <tbody className="divide-y divide-slate-100">
                 {page.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50/60">
-                    {canManageLists && (
+                    {canAssign && (
                       <td className="p-3">
                         <input type="checkbox" aria-label={`Select ${c.name}`} checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
                       </td>
@@ -447,7 +503,25 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
                         </td>
                       );
                     })}
-                    <td className={`p-3 ${c.owner_id ? 'text-slate-700' : 'text-amber-700'}`}>{memberName(c.owner_id)}</td>
+                    <td className="p-3">
+                      <select
+                        value={c.owner_id ?? ''}
+                        onChange={(e) => handleOwnerChange(c.id, e.target.value || null)}
+                        aria-label={`Owner of ${c.name}`}
+                        className={`px-2 py-1 rounded-full border border-slate-200 bg-white text-xs font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 ${c.owner_id ? 'text-slate-700' : 'text-amber-700'}`}
+                      >
+                        <option value="">Unassigned</option>
+                        {/* Keeps a removed member's name instead of showing a blank select. */}
+                        {c.owner_id && !teamMembers.some((m) => m.id === c.owner_id) && (
+                          <option value={c.owner_id}>{memberName(c.owner_id)}</option>
+                        )}
+                        {teamMembers.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                     <td className="p-3">
                       <select
                         value={c.status}
@@ -474,12 +548,14 @@ export const ListDetailView: React.FC<ListDetailViewProps> = ({ listId, contacts
               </tbody>
             </table>
           </div>
-          {filtered.length > shown && (
+          {rows.length > shown && (
             <div className="text-center">
               <Button size="sm" variant="ghost" onClick={() => setShown((n) => n + PAGE)}>
-                Show more ({filtered.length - shown} left)
+                Show more ({rows.length - shown} left)
               </Button>
             </div>
+          )}
+          </>
           )}
         </div>
       )}

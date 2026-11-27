@@ -554,10 +554,9 @@ const CRMMain: React.FC = () => {
               )}
 
               {activeView === 'lists' &&
-                (!isManager ? (
-                  <NotFoundView onNavigate={(v) => handleNavigate(v)} requestedView={window.location.hash} />
-                ) : activeListId ? (
+                (activeListId ? (
                   <ListDetailView
+                    key={activeListId}
                     listId={activeListId}
                     contacts={contacts}
                     onBack={() => handleNavigate('lists')}

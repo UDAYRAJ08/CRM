@@ -1,7 +1,8 @@
 -- ==============================================================================
 -- CONTACT LISTS, ASSIGNMENT AND ACTIVITY LOG
--- Adds named contact lists, admin-only assignment of list contacts to team
--- members, and an activity log of assignments plus every owner/status change.
+-- Adds named contact lists that any team member can create, edit and assign from
+-- (deleting a list is admin only), and an activity log of assignments plus every
+-- owner/status change.
 -- Run in the Supabase SQL editor AFTER audit_fixes.sql. Safe to run again.
 -- ==============================================================================
 
@@ -72,7 +73,8 @@ language sql stable security definer set search_path = public as $$
   )
 $$;
 
--- 3. List writes (admin only) -----------------------------------------------------
+-- 3. List writes -----------------------------------------------------------------
+-- Any team member creates lists and adds/removes contacts. Deleting stays admin only.
 
 create or replace function create_contact_list(
   p_name text,
@@ -85,8 +87,8 @@ declare
   v_list_id uuid;
   v_count integer;
 begin
-  if not is_crm_admin() then
-    raise exception 'Only admins can manage contact lists';
+  if current_member_id() is null then
+    raise exception 'Only team members can edit contact lists';
   end if;
   if coalesce(trim(p_name), '') = '' then
     raise exception 'List name is required';
@@ -113,8 +115,8 @@ language plpgsql security definer set search_path = public as $$
 declare
   v_ids uuid[];
 begin
-  if not is_crm_admin() then
-    raise exception 'Only admins can manage contact lists';
+  if current_member_id() is null then
+    raise exception 'Only team members can edit contact lists';
   end if;
 
   with ins as (
@@ -140,8 +142,8 @@ language plpgsql security definer set search_path = public as $$
 declare
   v_ids uuid[];
 begin
-  if not is_crm_admin() then
-    raise exception 'Only admins can manage contact lists';
+  if current_member_id() is null then
+    raise exception 'Only team members can edit contact lists';
   end if;
 
   with del as (
@@ -190,9 +192,10 @@ begin
 end;
 $$;
 
--- 4. Assignment (admin only) -------------------------------------------------------
+-- 4. Assignment ------------------------------------------------------------------
 -- p_count: next N unassigned contacts of the list (oldest first).
 -- p_contact_ids: exactly these contacts (list optional). p_member_id null = unassign.
+-- Any team member can assign, reassign or unassign anyone (same as the Owner dropdown).
 
 create or replace function assign_list_contacts(
   p_list_id uuid,
@@ -205,8 +208,8 @@ declare
   v_ids uuid[];
   v_prev jsonb;
 begin
-  if not is_crm_admin() then
-    raise exception 'Only admins can manage contact lists';
+  if current_member_id() is null then
+    raise exception 'Only team members can assign contacts';
   end if;
   if (p_count is null) = (p_contact_ids is null) then
     raise exception 'Pass either a count or contact ids';
@@ -345,6 +348,11 @@ create policy "Authenticated users can read contact lists"
 drop policy if exists "Admins can write contact lists" on contact_lists;
 create policy "Admins can write contact lists"
   on contact_lists for all to authenticated using (is_crm_admin()) with check (is_crm_admin());
+-- Rename and archive come straight from the client.
+drop policy if exists "Members can update contact lists" on contact_lists;
+create policy "Members can update contact lists"
+  on contact_lists for update to authenticated
+  using (current_member_id() is not null) with check (current_member_id() is not null);
 
 drop policy if exists "Authenticated users can read list members" on contact_list_members;
 create policy "Authenticated users can read list members"

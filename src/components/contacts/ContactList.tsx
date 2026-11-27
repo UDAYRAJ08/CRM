@@ -7,6 +7,7 @@ import { db } from '../../lib/supabase';
 import { listsDb } from '../../lib/contactLists';
 import { AssignMemberSelect } from '../lists/AssignMemberSelect';
 import { AddToListModal } from '../lists/AddToListModal';
+import { groupByDateAdded } from '../../lib/dateGroups';
 import { getInitials, cleanCompanyName } from '../../lib/utils';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -202,7 +203,7 @@ export const ContactList: React.FC<ContactListProps> = ({
 }) => {
   const { teamMembers, activeMember } = useTeam();
   const { success, error, info } = useToast();
-  const { canDeleteContacts, canBulkDelete, canEditContacts, canChangeStatus, isAdmin, isManager, canManageLists } = usePermissions();
+  const { canDeleteContacts, canBulkDelete, canEditContacts, canChangeStatus, isAdmin, isManager, canManageLists, canEditLists } = usePermissions();
 
   // Filter States
   const [pipelineTab, setPipelineTab] = useState<'all' | 'uncontacted' | 'due' | 'replied'>('all');
@@ -393,56 +394,7 @@ export const ContactList: React.FC<ContactListProps> = ({
   }, [pipelineTab, ownerFilter, tagFilter, listFilter, openDateKey, viewMode]);
 
   // Group contacts by Date Added (created_at) for the Accordion View
-  const dateGroups = useMemo(() => {
-    const groups: { [key: string]: { rawDate: Date; contacts: Contact[] } } = {};
-
-    filteredContacts.forEach((contact) => {
-      const d = new Date(contact.created_at || Date.now());
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const key = `${year}-${month}-${day}`;
-
-      if (!groups[key]) {
-        groups[key] = {
-          rawDate: d,
-          contacts: [],
-        };
-      }
-      groups[key].contacts.push(contact);
-    });
-
-    const now = new Date();
-    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-
-    return Object.entries(groups)
-      .sort(([a], [b]) => b.localeCompare(a))
-      .map(([key, data]) => {
-        const d = data.rawDate;
-        let displayLabel = d.toLocaleDateString(undefined, {
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric',
-        });
-
-        if (key === todayKey) {
-          displayLabel = `Today — ${d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}`;
-        } else if (key === yesterdayKey) {
-          displayLabel = `Yesterday — ${d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}`;
-        }
-
-        return {
-          key,
-          displayLabel,
-          count: data.contacts.length,
-          contacts: data.contacts,
-        };
-      });
-  }, [filteredContacts]);
+  const dateGroups = useMemo(() => groupByDateAdded(filteredContacts), [filteredContacts]);
 
   // The date page opened from the list (null = show the list of dates).
   const openGroup = dateGroups.find((g) => g.key === openDateKey);
@@ -1614,7 +1566,7 @@ export const ContactList: React.FC<ContactListProps> = ({
       {/* 3. FLOATING ACTION BAR (SLIDES UP ON SELECTION)                        */}
       {/* ===================================================================== */}
       {selectedContacts.length > 0 && (
-        <div className="fixed bottom-6 inset-x-0 mx-auto max-w-2xl px-4 z-40 animate-in slide-in-from-bottom-5 duration-200">
+        <div className="fixed bottom-6 inset-x-0 mx-auto w-fit max-w-[calc(100%-2rem)] px-4 z-40 animate-in slide-in-from-bottom-5 duration-200">
           <div className="bg-slate-900 text-white rounded-2xl p-3.5 shadow-lg border border-slate-700/80 flex flex-wrap items-center justify-between gap-3">
 
             {/* Counter */}
@@ -1625,8 +1577,8 @@ export const ContactList: React.FC<ContactListProps> = ({
               </span>
             </div>
 
-            {/* Actions Row */}
-            <div className="flex items-center gap-2">
+            {/* Actions Row: wraps on narrow screens instead of squeezing button labels. */}
+            <div className="flex flex-wrap items-center gap-2 whitespace-nowrap">
               {/* Bulk Status Select */}
               <div className="relative">
                 <select
@@ -1650,24 +1602,25 @@ export const ContactList: React.FC<ContactListProps> = ({
                 </select>
               </div>
 
-              {/* Assign / Add to list (Admin Only) */}
-              {canManageLists && (
-                <>
-                  <AssignMemberSelect
-                    value=""
-                    includeUnassigned
-                    placeholder="Assign to..."
-                    onChange={handleBulkAssign}
-                    className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setIsAddToListOpen(true)}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer"
-                  >
-                    Add to list
-                  </button>
-                </>
+              {/* Bulk assign / reassign (any team member) */}
+              {canEditLists && (
+                <AssignMemberSelect
+                  value=""
+                  includeUnassigned
+                  placeholder="Assign to..."
+                  onChange={handleBulkAssign}
+                  className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium cursor-pointer"
+                />
+              )}
+              {/* Add to list (any team member) */}
+              {canEditLists && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddToListOpen(true)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer"
+                >
+                  Add to list
+                </button>
               )}
 
               {/* Bulk Follow-up Button */}
@@ -1735,7 +1688,7 @@ export const ContactList: React.FC<ContactListProps> = ({
         badgeLabel={confirmConfig.badgeLabel}
       />
 
-      {canManageLists && (
+      {canEditLists && (
         <AddToListModal
           isOpen={isAddToListOpen}
           onClose={() => setIsAddToListOpen(false)}

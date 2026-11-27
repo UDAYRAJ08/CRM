@@ -20,7 +20,7 @@ export interface NavCounts {
   inboxCount?: number;
   dealCount?: number;
   draftCount?: number;
-  /** Admins and managers see the Team section (Lists, Activity). */
+  /** Admins and managers also see Activity; everyone sees Lists. */
   showTeamTools?: boolean;
 }
 
@@ -64,17 +64,13 @@ export const buildNavSections = (c: NavCounts, iconClass = 'w-4 h-4'): NavSectio
       { id: 'linkedin-contacts', label: 'LinkedIn Contacts', icon: <Users className={iconClass} />, badge: c.linkedinContactCount },
     ],
   },
-  ...(c.showTeamTools
-    ? [
-        {
-          title: 'Team',
-          items: [
-            { id: 'lists', label: 'Lists', icon: <ListChecks className={iconClass} /> },
-            { id: 'activity', label: 'Activity', icon: <History className={iconClass} /> },
-          ],
-        },
-      ]
-    : []),
+  {
+    title: 'Team',
+    items: [
+      { id: 'lists', label: 'Lists', icon: <ListChecks className={iconClass} /> },
+      ...(c.showTeamTools ? [{ id: 'activity', label: 'Activity', icon: <History className={iconClass} /> }] : []),
+    ],
+  },
   {
     title: 'Data',
     items: [{ id: 'imports', label: 'Imports', icon: <FileSpreadsheet className={iconClass} /> }],
