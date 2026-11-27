@@ -352,6 +352,8 @@ export const db = {
           .single();
 
         if (error) throw new Error(error.message);
+        // Clears the cached contacts, or the next refresh shows the old values.
+        notifyCRMEvent('crm_contacts_updated');
         return data;
       } else {
         // Insert new contact
