@@ -226,7 +226,8 @@ export const TeamMemberModal: React.FC = () => {
       >
         {!isCreatingNew ? (
           <div className="space-y-4">
-            <div className="grid gap-2 max-h-[340px] overflow-y-auto pr-1">
+            {/* grid-cols-1 = minmax(0,1fr): stops long emails widening rows past the modal. */}
+            <div className="grid grid-cols-1 gap-2 max-h-[340px] overflow-y-auto overflow-x-hidden pr-1">
               {teamMembers.map((member) => {
                 const isSelected = activeMember?.id === member.id;
                 const initials = getInitials(member.name, 'U');
@@ -242,7 +243,7 @@ export const TeamMemberModal: React.FC = () => {
                         : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/80 bg-white'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div
                         className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
                           isSelected
@@ -281,7 +282,7 @@ export const TeamMemberModal: React.FC = () => {
                           )}
                         </div>
                         <div className="text-xs text-slate-500 truncate flex items-center gap-2 mt-0.5">
-                          <span>{member.role || 'Member'}</span>
+                          <span className="shrink-0">{member.role || 'Member'}</span>
                           {member.email && (
                             <>
                               <span>•</span>
